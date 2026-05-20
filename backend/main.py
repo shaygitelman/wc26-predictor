@@ -1,8 +1,14 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from routers import admin, auth, groups, matches, players, predictions, leagues, teams, tournament, users
+
+_db_url = settings.database_url
+_db_host = _db_url.split("@")[-1].split(":")[0] if "@" in _db_url else "UNKNOWN"
+logging.warning("DB host: %s (url starts with: %s)", _db_host, _db_url[:30])
 
 app = FastAPI(title="WC26 Predictor API", version="0.1.0")
 

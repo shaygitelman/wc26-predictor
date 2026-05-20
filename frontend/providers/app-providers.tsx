@@ -5,8 +5,7 @@ import { ThemeProvider } from '@/components/providers/theme-provider'
 import { AuthProvider } from './auth-provider'
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-  if (!clientId) throw new Error('NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set in .env.local')
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
 
   return (
     <GoogleOAuthProvider clientId={clientId}>

@@ -1,0 +1,145 @@
+import Link from 'next/link'
+import { Lock } from 'lucide-react'
+import { cn, formatKickoffTime } from '@/lib/utils'
+import { StatusChip } from '@/components/atoms/status-chip'
+import { TeamFlag } from '@/components/atoms/team-flag'
+import { RoundBadge } from '@/components/atoms/round-badge'
+import { PointsBadge } from '@/components/atoms/points-badge'
+import type { Match } from '@/types/match'
+import type { Prediction } from '@/types/prediction'
+
+interface MatchCardProps {
+  match: Match
+  prediction?: Prediction
+  className?: string
+}
+
+export function MatchCard({ match, prediction, className }: MatchCardProps) {
+  const isLive     = match.status === 'live'
+  const isFinished = match.status === 'finished'
+  const hasPick    = !!prediction
+  const needsPick  = match.status === 'scheduled' && !hasPick
+
+  return (
+    <Link
+      href={`/matches/${match.id}`}
+      className={cn(
+        'relative block rounded-xl border overflow-hidden transition-all duration-200',
+        'active:scale-[0.98]',
+        isLive
+          ? 'bg-card border-status-live/25 shadow-live'
+          : needsPick
+            ? 'bg-card border-primary/20 hover:border-primary/40 hover:shadow-primary-glow'
+            : 'bg-card border-border/50 hover:border-border hover:shadow-card',
+        className,
+      )}
+    >
+      {/* ── Live atmosphere tint ── */}
+      {isLive && (
+        <div className="absolute inset-0 bg-live-atmosphere pointer-events-none" />
+      )}
+
+      {/* ── Top accent strip ── */}
+      {isLive ? (
+        <div className="h-[3px] bg-gradient-to-r from-transparent via-status-live to-transparent" />
+      ) : needsPick ? (
+        <div className="h-[2px] bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+      ) : null}
+
+      {/* ── Round + Status header ── */}
+      <div className="relative flex items-center justify-between px-4 pt-3 pb-2">
+        <RoundBadge round={match.round} group={match.group} />
+        <StatusChip status={match.status} minute={match.minute} />
+      </div>
+
+      {/* ── Teams + Score ── */}
+      <div className="relative flex items-center px-4 pt-1 pb-4 gap-2">
+
+        {/* Home team */}
+        <div className="flex flex-col items-center gap-2 flex-1">
+          <TeamFlag team={match.homeTeam} size="xl" />
+          <span className="text-xs font-bold text-foreground text-center leading-tight line-clamp-2 max-w-[84px]">
+            {match.homeTeam.name}
+          </span>
+        </div>
+
+        {/* Score / time */}
+        <div className="flex flex-col items-center justify-center gap-1 min-w-[80px] flex-shrink-0">
+          {isLive || isFinished ? (
+            <>
+              <div className="flex items-baseline gap-1.5">
+                <span className={cn(
+                  'font-black tabular leading-none tracking-tight',
+                  isLive
+                    ? 'text-[3.25rem] text-status-live'
+                    : 'text-[2.75rem] text-foreground',
+                )}>
+                  {match.homeScore ?? 0}
+                </span>
+                <span className="text-xl font-thin text-muted-foreground/25 leading-none">
+                  :
+                </span>
+                <span className={cn(
+                  'font-black tabular leading-none tracking-tight',
+                  isLive
+                    ? 'text-[3.25rem] text-status-live'
+                    : 'text-[2.75rem] text-foreground',
+                )}>
+                  {match.awayScore ?? 0}
+                </span>
+              </div>
+              {isLive && match.minute && (
+                <div className="flex items-center gap-1.5">
+                  <span className="size-[5px] rounded-full bg-status-live animate-live-pulse flex-shrink-0" />
+                  <span className="text-[11px] font-bold text-status-live tabular">{match.minute}&apos;</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[1.5rem] font-black tabular leading-none text-foreground">
+                {formatKickoffTime(match.scheduledAt)}
+              </span>
+              <span className="text-2xs text-muted-foreground/60 font-semibold tracking-widest uppercase">
+                kick off
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Away team */}
+        <div className="flex flex-col items-center gap-2 flex-1">
+          <TeamFlag team={match.awayTeam} size="xl" />
+          <span className="text-xs font-bold text-foreground text-center leading-tight line-clamp-2 max-w-[84px]">
+            {match.awayTeam.name}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Footer ── */}
+      <div className="relative flex items-center justify-between px-4 py-2.5 border-t border-border/40">
+        <span className="text-2xs text-muted-foreground/55 truncate max-w-[150px]">
+          {[match.venue, match.city].filter(Boolean).join(' · ')}
+        </span>
+
+        {isFinished && hasPick ? (
+          <PointsBadge
+            points={prediction.pointsEarned ?? 0}
+            outcome={prediction.outcome ?? 'wrong'}
+          />
+        ) : hasPick ? (
+          <span className="flex items-center gap-1.5 text-primary">
+            <Lock className="size-3 flex-shrink-0" strokeWidth={2.5} />
+            <span className="text-xs font-bold tabular">
+              {prediction.predictedHome} – {prediction.predictedAway}
+            </span>
+          </span>
+        ) : match.status === 'scheduled' ? (
+          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tracking-wide shadow-[0_0_10px_rgba(124,111,255,0.25)]">
+            Predict →
+          </span>
+        ) : null}
+      </div>
+    </Link>
+  )
+}

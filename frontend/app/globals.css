@@ -1,0 +1,329 @@
+@import "tailwindcss";
+
+/* ─── Class-based dark mode (next-themes sets .dark on <html>) ── */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── Design Tokens ─────────────────────────────────────────────
+   All values live here as CSS custom properties.
+   Switching themes is a single class toggle on <html>.
+   ────────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    /* Backgrounds — cool blue-tinted light system */
+    --background:       #EEF3FB;
+    --surface:          #ffffff;
+    --surface-elevated: #E3EBF6;
+    --surface-overlay:  #D6E4F2;
+
+    /* Typography */
+    --foreground:         #0a0a1f;
+    --muted-foreground:   #5A6A8A;
+
+    /* Brand */
+    --primary:            #7c6fff;
+    --primary-foreground: #ffffff;
+    --primary-muted:      rgba(124, 111, 255, 0.12);
+
+    /* Borders & inputs */
+    --border: #C8D8EE;
+    --input:  #C8D8EE;
+    --ring:   #7c6fff;
+
+    /* Gold accent family */
+    --gold:        #E8A020;
+    --gold-bright: #F5B730;
+    --gold-muted:  rgba(232, 160, 32, 0.14);
+    --gold-border: rgba(232, 160, 32, 0.30);
+
+    /* Shadows — light mode */
+    --shadow-card:     0 2px 10px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
+    --shadow-raised:   0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
+    --shadow-glow-live:    0 0 0 1px rgba(0,212,106,0.25), 0 0 20px rgba(0,212,106,0.10);
+    --shadow-glow-gold:    0 0 0 1px rgba(232,160,32,0.30), 0 0 16px rgba(232,160,32,0.12);
+    --shadow-glow-primary: 0 0 0 1px rgba(124,111,255,0.20), 0 0 16px rgba(124,111,255,0.10);
+
+    /* shadcn-compatible aliases */
+    --card:               #ffffff;
+    --card-foreground:    #0a0a1f;
+    --popover:            #ffffff;
+    --popover-foreground: #0a0a1f;
+    --secondary:          #E3EBF6;
+    --secondary-foreground: #0a0a1f;
+    --muted:              #E3EBF6;
+    --accent:             #D6E4F2;
+    --accent-foreground:  #0a0a1f;
+    --destructive:        #ff4757;
+    --destructive-foreground: #ffffff;
+
+    /* Status */
+    --status-live:    #00d46a;
+    --status-won:     #00d46a;
+    --status-partial: #F0A500;
+    --status-lost:    #ff4757;
+    --status-pending: #8080a8;
+
+    /* Status backgrounds (explicit — avoids opacity-modifier limitations) */
+    --status-live-bg:    rgba(0,   212, 106, 0.12);
+    --status-won-bg:     rgba(0,   212, 106, 0.12);
+    --status-partial-bg: rgba(240, 165,   0, 0.12);
+    --status-lost-bg:    rgba(255,  71,  87, 0.12);
+  }
+
+  .dark {
+    /* Backgrounds — deep navy system */
+    --background:       #060C18;
+    --surface:          #0C1527;
+    --surface-elevated: #132037;
+    --surface-overlay:  #1A2C47;
+
+    --foreground:       #E8F0FF;
+    --muted-foreground: #7A92B8;
+
+    --primary:            #7c6fff;
+    --primary-foreground: #ffffff;
+    --primary-muted:      rgba(124, 111, 255, 0.16);
+
+    --border: #1E3252;
+    --input:  #1E3252;
+    --ring:   #7c6fff;
+
+    /* Gold accent family */
+    --gold:        #E8A020;
+    --gold-bright: #F5B730;
+    --gold-muted:  rgba(232, 160, 32, 0.14);
+    --gold-border: rgba(232, 160, 32, 0.30);
+
+    /* Shadows — dark mode (more dramatic) */
+    --shadow-card:     0 2px 16px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.03);
+    --shadow-raised:   0 6px 28px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04);
+    --shadow-glow-live:    0 0 0 1px rgba(0,212,106,0.30), 0 0 24px rgba(0,212,106,0.14);
+    --shadow-glow-gold:    0 0 0 1px rgba(232,160,32,0.35), 0 0 22px rgba(232,160,32,0.16);
+    --shadow-glow-primary: 0 0 0 1px rgba(124,111,255,0.28), 0 0 22px rgba(124,111,255,0.14);
+
+    --card:               #0C1527;
+    --card-foreground:    #E8F0FF;
+    --popover:            #132037;
+    --popover-foreground: #E8F0FF;
+    --secondary:          #132037;
+    --secondary-foreground: #E8F0FF;
+    --muted:              #1E3252;
+    --accent:             #1A2C47;
+    --accent-foreground:  #E8F0FF;
+    --destructive:        #ff4757;
+    --destructive-foreground: #ffffff;
+
+    --status-live:    #00d46a;
+    --status-won:     #00d46a;
+    --status-partial: #F0A500;
+    --status-lost:    #ff4757;
+    --status-pending: #5A7299;
+
+    --status-live-bg:    rgba(0,   212, 106, 0.14);
+    --status-won-bg:     rgba(0,   212, 106, 0.14);
+    --status-partial-bg: rgba(240, 165,   0, 0.14);
+    --status-lost-bg:    rgba(255,  71,  87, 0.14);
+  }
+}
+
+/* ─── Tailwind v4 Theme Mapping ──────────────────────────────────
+   @theme inline keeps colors as CSS variable references at runtime,
+   so dark mode switching works without re-generating classes.
+   ────────────────────────────────────────────────────────────── */
+@theme inline {
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+
+  /* Core colors */
+  --color-background:       var(--background);
+  --color-foreground:       var(--foreground);
+  --color-card:             var(--card);
+  --color-card-foreground:  var(--card-foreground);
+  --color-popover:          var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary:          var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-muted:    var(--primary-muted);
+  --color-secondary:        var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:            var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent:           var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive:      var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border:           var(--border);
+  --color-input:            var(--input);
+  --color-ring:             var(--ring);
+
+  /* Surface layers */
+  --color-surface:          var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-overlay:  var(--surface-overlay);
+
+  /* Gold accent */
+  --color-gold:        var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-gold-muted:  var(--gold-muted);
+  --color-gold-border: var(--gold-border);
+
+  /* Status colors */
+  --color-status-live:    var(--status-live);
+  --color-status-won:     var(--status-won);
+  --color-status-partial: var(--status-partial);
+  --color-status-lost:    var(--status-lost);
+  --color-status-pending: var(--status-pending);
+
+  /* Status background colors */
+  --color-status-live-bg:    var(--status-live-bg);
+  --color-status-won-bg:     var(--status-won-bg);
+  --color-status-partial-bg: var(--status-partial-bg);
+  --color-status-lost-bg:    var(--status-lost-bg);
+
+  /* Extra text size: 10px — not in Tailwind defaults */
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 0.875rem;
+
+  /* Animations */
+  --animate-live-pulse:    live-pulse 1.5s ease-in-out infinite;
+  --animate-fade-in:       fade-in 0.15s ease-out;
+  --animate-slide-up:      slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-score-pop:     score-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-shimmer:       shimmer 1.6s linear infinite;
+  --animate-slide-up-fade: slide-up-fade 0.25s ease-out;
+  --animate-glow-breathe:  glow-breathe 3s ease-in-out infinite;
+  --animate-enter-up: enter-up 0.2s ease-out;
+}
+
+/* ─── Keyframes ──────────────────────────────────────────────── */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1;    transform: scale(1);    }
+  50%       { opacity: 0.4; transform: scale(0.82); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0);    }
+}
+
+@keyframes score-pop {
+  0%   { transform: scale(0.75); opacity: 0; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes slide-up-fade {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+@keyframes glow-breathe {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1;   }
+}
+
+@keyframes enter-up {
+  from { transform: translateY(6px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* ─── Base Resets ────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after {
+    border-color: var(--border);
+    box-sizing: border-box;
+  }
+
+  html, body {
+    height: 100%;
+    overscroll-behavior: none;       /* prevent bounce on iOS */
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+
+  /* Numbers always render at the same width */
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+/* ─── Custom Utilities ───────────────────────────────────────── */
+@layer utilities {
+  /* iOS safe area helpers */
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pt-safe { padding-top:    env(safe-area-inset-top,    0px); }
+
+  /* Hide scrollbar while keeping scroll functionality */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  /* ── Elevation shadows ── */
+  .shadow-card      { box-shadow: var(--shadow-card); }
+  .shadow-raised    { box-shadow: var(--shadow-raised); }
+  .shadow-live      { box-shadow: var(--shadow-glow-live); }
+  .shadow-gold      { box-shadow: var(--shadow-glow-gold); }
+  .shadow-primary-glow { box-shadow: var(--shadow-glow-primary); }
+
+  /* ── Stadium atmosphere backgrounds ── */
+  .bg-stadium-glow {
+    background: radial-gradient(ellipse at 50% 0%, rgba(232,160,32,0.06) 0%, transparent 65%);
+  }
+
+  .bg-live-atmosphere {
+    background: radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.05) 0%, transparent 60%);
+  }
+
+  /* ── Gold shimmer gradient utility ── */
+  .gold-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--gold-muted) 0%,
+      var(--gold-bright) 50%,
+      var(--gold-muted) 100%
+    );
+    background-size: 200% auto;
+  }
+
+  /* ── Glow animations ── */
+  .animate-glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
+
+  /* ── Hero atmospheric background ── */
+  .bg-hero-atmosphere {
+    background:
+      radial-gradient(ellipse at 50% -5%, rgba(232,160,32,0.10) 0%, transparent 52%),
+      radial-gradient(ellipse at 15% 70%, rgba(124,111,255,0.06) 0%, transparent 45%),
+      radial-gradient(ellipse at 85% 70%, rgba(124,111,255,0.05) 0%, transparent 45%);
+  }
+
+  .bg-live-hero-atmosphere {
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.13) 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 100%, rgba(0,212,106,0.05) 0%, transparent 40%);
+  }
+
+  /* ── Gradient fade overlays ── */
+  .fade-to-background-b {
+    background: linear-gradient(to bottom, transparent, var(--background));
+  }
+
+  /* ── Live score glow (inline style helper class) ── */
+  .live-score-glow {
+    filter: drop-shadow(0 0 12px rgba(0, 212, 106, 0.45));
+  }
+
+  .animate-enter-up { animation: var(--animate-enter-up); }
+}

@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from routers.users import router; from routers.leagues import router as lr; from schemas.user import PrivacySettingsOut, PrivacySettingsIn; print\\('Backend imports OK'\\)\")",
+      "Bash(grep -E \"\\\\.tsx$\")",
+      "Bash(find /Users/gilnahari/Desktop/shay/frontend/app/matches/[id] -type f -name \"*.tsx\")",
+      "Bash(xargs basename -a)",
+      "Bash(python -c \"from routers.leagues import router; from schemas.league import LeagueStandingOut, MemberPredictionOut; print\\('Backend OK'\\)\")",
+      "Bash(python -m pytest tests/test_scoring.py -q)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(python -m tests.integration_e2e)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(cat .env.local)",
+      "Bash(cat .env)",
+      "Bash(curl -s http://localhost:8000/users/me -H \"Authorization: Bearer dummy\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Matches in DB: {len\\(d\\)}'\\); [print\\(f'  {m[\\\\\"id\\\\\"][:8]}... {m.get\\(\\\\\"homeTeam\\\\\",{}\\).get\\(\\\\\"shortCode\\\\\",\\\\\"?\\\\\"\\)} vs {m.get\\(\\\\\"awayTeam\\\\\",{}\\).get\\(\\\\\"shortCode\\\\\",\\\\\"?\\\\\"\\)} [{m[\\\\\"status\\\\\"]}]'\\) for m in d[:5]]\")",
+      "Bash(python -m tests.integration_e2e --no-cleanup)",
+      "Bash(curl -s http://localhost:8000/users/me -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MGJiMGVlMi0wMmE3LTQ4Y2ItYjM1NS1lN2E1ZTk2ZTNhMTEiLCJleHAiOjE3ODE4NjI1MTV9.LGaJieWoM0E8HNcly3QBehg09KTAnOLa3egKL9UbwCY')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f'  {p[\\\\\"predictedHome\\\\\"]}-{p[\\\\\"predictedAway\\\\\"]} outcome={p.get\\(\\\\\"outcome\\\\\"\\)} pts={p.get\\(\\\\\"pointsEarned\\\\\"\\)}'\\) for p in d]\")",
+      "Bash(curl -s http://localhost:8000/leagues/me -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MGJiMGVlMi0wMmE3LTQ4Y2ItYjM1NS1lN2E1ZTk2ZTNhMTEiLCJleHAiOjE3ODE4NjI1MTV9.LGaJieWoM0E8HNcly3QBehg09KTAnOLa3egKL9UbwCY')",
+      "Bash(curl -s http://localhost:8000/users/me/stats -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MGJiMGVlMi0wMmE3LTQ4Y2ItYjM1NS1lN2E1ZTk2ZTNhMTEiLCJleHAiOjE3ODE4NjI1MTV9.LGaJieWoM0E8HNcly3QBehg09KTAnOLa3egKL9UbwCY')",
+      "Bash(curl -s http://localhost:8000/leagues/76b49ec7-255f-4cf1-b5e3-ae7858c43426/standings -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MGJiMGVlMi0wMmE3LTQ4Y2ItYjM1NS1lN2E1ZTk2ZTNhMTEiLCJleHAiOjE3ODE4NjI1MTV9.LGaJieWoM0E8HNcly3QBehg09KTAnOLa3egKL9UbwCY')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f'  rank={r[\\\\\"rank\\\\\"]} {r[\\\\\"username\\\\\"]} pts={r[\\\\\"totalPoints\\\\\"]}'\\) for r in d]\")",
+      "Bash(curl -s http://localhost:8000/matches)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f'  matchId={p[\\\\\"matchId\\\\\"][:8]}... {p[\\\\\"predictedHome\\\\\"]}-{p[\\\\\"predictedAway\\\\\"]} outcome={p.get\\(\\\\\"outcome\\\\\"\\)} pts={p.get\\(\\\\\"pointsEarned\\\\\"\\)}'\\) for p in d]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); import pprint; pprint.pprint\\(d[0]\\)\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f'  {l[\\\\\"name\\\\\"]}  memberCount={l[\\\\\"memberCount\\\\\"]}'\\) for l in d]\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('scripts',{}\\)\\)\")"
+    ]
+  }
+}

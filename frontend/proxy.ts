@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { jwtVerify } from 'jose'
 import { SESSION_COOKIE } from '@/lib/session'
 
 const PUBLIC_PREFIXES = [
@@ -26,22 +25,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
-    await jwtVerify(token, secret, { algorithms: ['HS256'] })
-
-    // Valid session on /login → send home
-    if (pathname === '/login') {
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-
-    return NextResponse.next()
-  } catch {
-    // Expired or tampered token — clear and redirect
-    const response = NextResponse.redirect(new URL('/login', request.url))
-    response.cookies.delete(SESSION_COOKIE)
-    return response
+  // Cookie exists — trust it here; /api/auth/me does full JWT verification
+  if (pathname === '/login') {
+    return NextResponse.redirect(new URL('/', request.url))
   }
+
+  return NextResponse.next()
 }
 
 export const config = {

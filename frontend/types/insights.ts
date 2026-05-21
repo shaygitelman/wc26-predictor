@@ -57,6 +57,15 @@ export interface NarrativeInsight {
   body:     string   // 1–2 sentences of football storytelling
 }
 
+export interface InsightsDebugInfo {
+  rawFactsCount: number
+  groqLatencyMs: number | null
+  groqFallback:  boolean
+  insightCount:  number
+  confidence:    ConfidenceLevel
+  apiBaseUsed:   string
+}
+
 export interface MatchInsights {
   matchId:          string
   generatedAt:      string
@@ -89,4 +98,7 @@ export interface MatchInsights {
   edgeNote:    string
 
   sectionOrder: SectionKey[]   // Dynamic per-match render order
+
+  // Optional debug payload — only present when DEBUG_AI_INSIGHTS=true
+  _debug?: InsightsDebugInfo
 }

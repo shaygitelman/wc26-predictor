@@ -281,16 +281,25 @@ function InlinePredictionHero({
       </p>
 
       {/* Score pickers */}
-      <div className="flex items-center justify-center gap-6">
+      <div className="flex items-center justify-center gap-3">
         <HeroStepper value={home} onChange={setHome} disabled={busy} />
-        <span className="text-[3rem] font-thin text-muted-foreground/20 leading-none self-center select-none">:</span>
+        <OutcomeChip
+          home={home}
+          away={away}
+          homeCode={match.homeTeam.shortCode}
+          awayCode={match.awayTeam.shortCode}
+        />
         <HeroStepper value={away} onChange={setAway} disabled={busy} />
       </div>
 
-      {/* Points hint */}
-      <p className="text-center text-[11px] text-muted-foreground/50 mt-3 mb-5">
-        Earn up to <span className="text-primary font-bold">{pts.exact} pts</span> for exact score
-      </p>
+      {/* Points tiers */}
+      <div className="flex items-center justify-center gap-4 mt-4 mb-5">
+        <PointTier label="Exact" pts={pts.exact} highlight />
+        <span className="text-border/60 text-sm">·</span>
+        <PointTier label="Direction" pts={pts.direction} />
+        <span className="text-border/60 text-sm">·</span>
+        <PointTier label="Wrong" pts={0} />
+      </div>
 
       {/* Lock-in button */}
       <button
@@ -301,7 +310,7 @@ function InlinePredictionHero({
           'flex items-center justify-center gap-2',
           'transition-all duration-200 active:scale-[0.98]',
           status === 'saved'
-            ? 'bg-status-won text-white'
+            ? 'bg-status-won text-white shadow-[0_0_36px_rgba(0,212,106,0.45)] scale-[1.02]'
             : status === 'error'
             ? 'bg-status-lost/20 text-status-lost border border-status-lost/30'
             : 'bg-primary text-primary-foreground shadow-[0_0_24px_rgba(124,111,255,0.35)] hover:shadow-[0_0_36px_rgba(124,111,255,0.5)]',
@@ -335,6 +344,58 @@ function InlinePredictionHero({
   )
 }
 
+// ─── Outcome chip ────────────────────────────────────────────
+
+function OutcomeChip({
+  home,
+  away,
+  homeCode,
+  awayCode,
+}: {
+  home:     number
+  away:     number
+  homeCode: string
+  awayCode: string
+}) {
+  const isDraw = home === away
+  const label  = isDraw ? 'Draw' : home > away ? `${homeCode} Win` : `${awayCode} Win`
+
+  return (
+    <div className="flex flex-col items-center justify-center self-stretch gap-2 px-1">
+      <div className="w-px flex-1 bg-border/35" />
+      <span
+        key={label}
+        className={cn(
+          'text-[10px] font-black tracking-[0.1em] uppercase whitespace-nowrap',
+          'px-2.5 py-1.5 rounded-lg border animate-score-pop',
+          isDraw
+            ? 'bg-gold/[0.10] text-gold border-gold/20'
+            : 'bg-primary/[0.10] text-primary border-primary/20',
+        )}
+      >
+        {label}
+      </span>
+      <div className="w-px flex-1 bg-border/35" />
+    </div>
+  )
+}
+
+// ─── Point tier ──────────────────────────────────────────────
+
+function PointTier({ label, pts, highlight }: { label: string; pts: number; highlight?: boolean }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className={cn(
+        'text-[14px] font-black tabular',
+        highlight ? 'text-primary' : 'text-foreground/60',
+      )}>
+        {pts > 0 ? `+${pts}` : '0'}
+      </span>
+      <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/45">{label}</span>
+    </div>
+  )
+}
+
 // ─── Hero score stepper ───────────────────────────────────────
 
 function HeroStepper({
@@ -347,35 +408,44 @@ function HeroStepper({
   disabled?: boolean
 }) {
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center rounded-2xl overflow-hidden border border-border/50 bg-surface-elevated">
       <button
         onClick={() => onChange(value + 1)}
         disabled={disabled}
         className={cn(
-          'size-12 rounded-full flex items-center justify-center',
-          'text-2xl font-bold text-muted-foreground/50',
-          'hover:text-foreground hover:bg-surface-elevated',
-          'active:scale-90 transition-all duration-100',
-          'disabled:opacity-40 disabled:cursor-not-allowed',
+          'w-[72px] h-11 flex items-center justify-center',
+          'text-muted-foreground hover:text-foreground hover:bg-surface-overlay',
+          'active:scale-95 active:bg-primary/10 transition-all duration-100',
+          'disabled:opacity-30 disabled:cursor-not-allowed',
         )}
       >
-        +
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 13l5-6 5 6" />
+        </svg>
       </button>
-      <span className="text-[5rem] font-black tabular-nums text-foreground w-[64px] text-center leading-none">
-        {value}
-      </span>
+
+      <div className="w-[72px] h-[76px] flex items-center justify-center border-y border-border/40">
+        <span
+          key={value}
+          className="text-[4rem] font-black tabular-nums text-foreground leading-none animate-score-pop"
+        >
+          {value}
+        </span>
+      </div>
+
       <button
         onClick={() => onChange(Math.max(0, value - 1))}
-        disabled={disabled}
+        disabled={disabled || value === 0}
         className={cn(
-          'size-12 rounded-full flex items-center justify-center',
-          'text-2xl font-bold text-muted-foreground/50',
-          'hover:text-foreground hover:bg-surface-elevated',
-          'active:scale-90 transition-all duration-100',
-          'disabled:opacity-40 disabled:cursor-not-allowed',
+          'w-[72px] h-11 flex items-center justify-center',
+          'text-muted-foreground hover:text-foreground hover:bg-surface-overlay',
+          'active:scale-95 active:bg-primary/10 transition-all duration-100',
+          'disabled:opacity-20 disabled:cursor-not-allowed',
         )}
       >
-        −
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 7l5 6 5-6" />
+        </svg>
       </button>
     </div>
   )

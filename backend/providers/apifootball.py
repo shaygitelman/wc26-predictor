@@ -294,6 +294,22 @@ class ApiFootballProvider(FootballDataProvider):
 
         return result
 
+    # ── Injuries ─────────────────────────────────────────────────
+
+    async def fetch_injuries(self, fixture_id: str) -> list[dict]:
+        """Returns raw API-Football injury entries for a fixture."""
+        data = await self._get("/injuries", {"fixture": fixture_id})
+        await asyncio.sleep(0.2)
+        return data.get("response", [])
+
+    # ── Lineups ───────────────────────────────────────────────────
+
+    async def fetch_lineups(self, fixture_id: str) -> list[dict]:
+        """Returns raw API-Football lineup entries for a fixture."""
+        data = await self._get("/fixtures/lineups", {"fixture": fixture_id})
+        await asyncio.sleep(0.2)
+        return data.get("response", [])
+
     # ── Standings (group letters) ──────────────────────────────────
 
     async def fetch_standings(self, league_id: str, season: str) -> dict[str, str]:

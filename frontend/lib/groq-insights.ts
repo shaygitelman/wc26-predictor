@@ -150,6 +150,8 @@ async function callGroq<T>(apiKey: string, userPrompt: string): Promise<T> {
   const controller = new AbortController()
   const timer      = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
+  console.log(`[GroqInsights] → Groq request starting (model=${GROQ_MODEL}, timeout=${TIMEOUT_MS}ms)`)
+
   let res: Response
   try {
     res = await fetch(`${GROQ_BASE}/chat/completions`, {
@@ -179,9 +181,11 @@ async function callGroq<T>(apiKey: string, userPrompt: string): Promise<T> {
     clearTimeout(timer)
   }
 
+  console.log(`[GroqInsights] ← Groq response: HTTP ${res.status}`)
+
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new Error(`Groq ${res.status}: ${body.slice(0, 200)}`)
+    throw new Error(`Groq HTTP ${res.status}: ${body.slice(0, 300)}`)
   }
 
   const data    = await res.json()
@@ -289,27 +293,52 @@ export async function enrichInsightsWithGroq(
   facts:    InsightsFacts,
 ): Promise<MatchInsights> {
   const apiKey = process.env.GROQ_API_KEY
-  if (!apiKey) return insights
-  if (insights.insufficientData) return insights
+
+  if (!apiKey) {
+    console.warn(
+      '[GroqInsights] GROQ_API_KEY is not set — AI enrichment disabled. ' +
+      'Add GROQ_API_KEY to your Vercel environment variables to enable AI-generated insights.',
+    )
+    return insights
+  }
+
+  if (insights.insufficientData) {
+    console.log(`[GroqInsights] match ${insights.matchId} — insufficientData=true, skipping Groq`)
+    return insights
+  }
 
   try {
     if (insights.tactical.length === 0) {
       // GENERATE mode — no rule-based insights, ask Groq to create from team knowledge
+      console.log(`[GroqInsights] match ${insights.matchId} — GENERATE mode (no form data, using AI team knowledge)`)
+      const t = Date.now()
       const prompt = buildGenerationPrompt(facts)
       const gen    = await callGroq<GroqGeneration>(apiKey, prompt)
       const result = applyGeneration(insights, gen, facts)
-      console.log(`[GroqInsights] Generated ${result.tactical.length} insights for match ${insights.matchId} (no form data)`)
+      console.log(
+        `[GroqInsights] match ${insights.matchId} — GENERATE done in ${Date.now() - t}ms | ` +
+        `generated ${result.tactical.length} insights`,
+      )
       return result
     } else {
       // ENRICH mode — rewrite existing rule-based prose
-      const prompt      = buildEnrichPrompt(insights, facts)
-      const enrichment  = await callGroq<GroqEnrichment>(apiKey, prompt)
-      const result      = applyEnrichment(insights, enrichment)
-      console.log(`[GroqInsights] Enriched match ${insights.matchId} (${insights.tactical.length} insights)`)
+      console.log(`[GroqInsights] match ${insights.matchId} — ENRICH mode (${insights.tactical.length} rule-based insights)`)
+      const t = Date.now()
+      const prompt     = buildEnrichPrompt(insights, facts)
+      const enrichment = await callGroq<GroqEnrichment>(apiKey, prompt)
+      const result     = applyEnrichment(insights, enrichment)
+      console.log(
+        `[GroqInsights] match ${insights.matchId} — ENRICH done in ${Date.now() - t}ms | ` +
+        `tactical count unchanged: ${result.tactical.length}`,
+      )
       return result
     }
   } catch (err) {
-    console.warn('[GroqInsights] Falling back to template insights:', err instanceof Error ? err.message : err)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(
+      `[GroqInsights] match ${insights.matchId} — Groq call failed, returning template fallback. ` +
+      `Error: ${msg}`,
+    )
     return insights
   }
 }

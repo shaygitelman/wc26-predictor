@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react'
 import {
   Sparkles, Zap, TriangleAlert, Flame, BookOpen,
   Wind, ArrowRightLeft, Shield, Crosshair, Swords, Target,
-  ChevronRight, ArrowUp, LayoutGrid, Clock,
+  ChevronRight, ArrowUp, LayoutGrid, Clock, WifiOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FormBubble } from '@/components/atoms/form-bubble'
 import type {
   MatchInsights, InsightBullet, ConfidenceLevel, FormResult,
   TacticalInsight, TacticalCategory, NarrativeInsight,
-  MatchPersonality, SectionKey, InsightDataPoint,
+  MatchPersonality, SectionKey, InsightDataPoint, InsightsDebugInfo,
 } from '@/types/insights'
 
 // ─── Props ───────────────────────────────────────────────────
@@ -152,7 +152,7 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
     return () => { ctrl.abort(); clearTimeout(timer) }
   }, [matchId])
 
-  if (status === 'error') return null
+  if (status === 'error')            return <InsightsErrorCard />
   if (status === 'loading' || !insights) return <InsightsSkeleton />
   if (insights.insufficientData) return <InsightsPendingCard homeTeam={homeTeam} awayTeam={awayTeam} />
 
@@ -227,6 +227,9 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
             <ConfidenceChip confidence={safeConfidence} />
           </div>
         </div>
+
+        {/* ── Debug overlay (only when DEBUG_AI_INSIGHTS=true) ── */}
+        {insights._debug && <InsightsDebugOverlay debug={insights._debug} />}
 
         {/* ── Sparse data notice ── */}
         {safeConfidence === 'low' && (
@@ -592,6 +595,61 @@ function EdgeBanner({ edge, edgeNote }: { edge: MatchInsights['edge']; edgeNote?
           {edgeNote}
         </p>
       )}
+    </div>
+  )
+}
+
+// ─── Error card (replaces the old `return null`) ─────────────
+
+function InsightsErrorCard() {
+  return (
+    <div className="bg-card rounded-2xl border border-border overflow-hidden">
+      <div className="h-[2px] bg-gradient-to-r from-status-lost/30 via-status-lost/10 to-transparent" />
+      <div className="flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center gap-2">
+          <Sparkles className="size-[14px] text-muted-foreground/40 flex-shrink-0" strokeWidth={1.75} />
+          <span className="text-[13px] font-bold text-muted-foreground/60 tracking-[-0.01em]">
+            AI Match Insights
+          </span>
+        </div>
+        <span className="text-[10px] font-bold tracking-[0.06em] uppercase px-2 py-[3px] rounded-full border bg-status-lost/10 text-status-lost border-status-lost/20 whitespace-nowrap">
+          Unavailable
+        </span>
+      </div>
+      <div className="px-4 py-5 flex items-start gap-3 border-t border-border/40">
+        <WifiOff className="size-4 text-muted-foreground/35 flex-shrink-0 mt-[1px]" strokeWidth={1.5} />
+        <p className="text-[12px] text-muted-foreground/55 leading-snug">
+          AI insights are temporarily unavailable. Match analysis will be back shortly.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Debug overlay ────────────────────────────────────────────
+
+function InsightsDebugOverlay({ debug }: { debug: InsightsDebugInfo }) {
+  return (
+    <div className="mx-4 mb-3 px-3 py-2.5 rounded-lg bg-amber-500/[0.06] border border-amber-500/20 font-mono">
+      <p className="text-[10px] font-bold text-amber-500/80 mb-1.5 tracking-[0.06em] uppercase">
+        DEBUG_AI_INSIGHTS
+      </p>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[10px]">
+        <span className="text-muted-foreground/60">Raw facts</span>
+        <span className="text-foreground/80">{debug.rawFactsCount} / 5</span>
+        <span className="text-muted-foreground/60">Groq latency</span>
+        <span className="text-foreground/80">{debug.groqLatencyMs != null ? `${debug.groqLatencyMs}ms` : '—'}</span>
+        <span className="text-muted-foreground/60">Fallback mode</span>
+        <span className={debug.groqFallback ? 'text-amber-400 font-bold' : 'text-status-won'}>
+          {debug.groqFallback ? 'YES — no insights generated' : 'no'}
+        </span>
+        <span className="text-muted-foreground/60">Insights count</span>
+        <span className="text-foreground/80">{debug.insightCount}</span>
+        <span className="text-muted-foreground/60">Confidence</span>
+        <span className="text-foreground/80">{debug.confidence}</span>
+        <span className="text-muted-foreground/60">API base</span>
+        <span className="text-foreground/70 truncate">{debug.apiBaseUsed}</span>
+      </div>
     </div>
   )
 }

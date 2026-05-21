@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import get_db
 from models.match import Match
 from schemas.match import MatchOut
+from services.squad_availability import get_squad_availability
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -36,3 +37,25 @@ async def get_match(match_id: str, db: AsyncSession = Depends(get_db)) -> MatchO
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     return MatchOut.from_orm(match)
+
+
+@router.get("/{match_id}/squad/home")
+async def get_match_squad_home(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    availability = await get_squad_availability(match_id, "home", db)
+    if availability is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Squad data not available for this match",
+        )
+    return availability.to_dict()
+
+
+@router.get("/{match_id}/squad/away")
+async def get_match_squad_away(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    availability = await get_squad_availability(match_id, "away", db)
+    if availability is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Squad data not available for this match",
+        )
+    return availability.to_dict()

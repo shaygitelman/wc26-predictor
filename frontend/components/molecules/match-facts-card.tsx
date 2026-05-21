@@ -46,9 +46,36 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
     const ctrl  = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 6000)
 
-    fetch(`/api/matches/${matchId}/facts`, { signal: ctrl.signal })
+    fetch(`/api/matches/${matchId}/facts`, { cache: 'no-store', signal: ctrl.signal })
       .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d: MatchFacts) => { setFacts(d); setStatus('ready') })
+      .then((d: MatchFacts) => {
+        // Invariant check: confidence and player arrays must be consistent
+        const homeTotal = d.squad.home.injured.length + d.squad.home.suspended.length + d.squad.home.doubtful.length
+        const awayTotal = d.squad.away.injured.length + d.squad.away.suspended.length + d.squad.away.doubtful.length
+        if (d.squadConfidence !== 'verified' && (homeTotal > 0 || awayTotal > 0)) {
+          console.error(
+            `[MatchFacts] ${matchId} — INVARIANT VIOLATION: confidence=${d.squadConfidence} ` +
+            `but home=${homeTotal} away=${awayTotal} player entries present. ` +
+            `Entries will be forced empty at render.`,
+            { home: d.squad.home, away: d.squad.away },
+          )
+        }
+
+        setFacts(d)
+        setStatus('ready')
+        console.debug(`[MatchFacts] ${matchId} — squadConfidence=${d.squadConfidence}`, {
+          home: {
+            injured:   d.squad.home.injured.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
+            suspended: d.squad.home.suspended.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
+            doubtful:  d.squad.home.doubtful.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
+          },
+          away: {
+            injured:   d.squad.away.injured.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
+            suspended: d.squad.away.suspended.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
+            doubtful:  d.squad.away.doubtful.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
+          },
+        })
+      })
       .catch(() => setStatus('error'))
       .finally(() => clearTimeout(timer))
 
@@ -57,18 +84,23 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
 
   if (status === 'error') return null
   if (status === 'loading' || !facts) return <FactsSkeleton />
-  if (facts.pendingData) return <FactsPendingCard homeTeam={homeTeam} awayTeam={awayTeam} />
+  if (facts.pendingData)              return <FactsPendingCard homeTeam={homeTeam} awayTeam={awayTeam} />
 
-  const allHomeAbsent: PlayerStatus[] = [
+  // Only expose validated players when confidence is explicitly 'verified'
+  const validPlayer = (p: PlayerStatus) =>
+    typeof p.name === 'string' && p.name.trim().length >= 2 && p.validated === true
+
+  const allHomeAbsent: PlayerStatus[] = facts.squadConfidence === 'verified' ? [
     ...facts.squad.home.injured,
     ...facts.squad.home.suspended,
     ...facts.squad.home.doubtful,
-  ]
-  const allAwayAbsent: PlayerStatus[] = [
+  ].filter(validPlayer) : []
+
+  const allAwayAbsent: PlayerStatus[] = facts.squadConfidence === 'verified' ? [
     ...facts.squad.away.injured,
     ...facts.squad.away.suspended,
     ...facts.squad.away.doubtful,
-  ]
+  ].filter(validPlayer) : []
 
   return (
     <div className="bg-card rounded-2xl border border-border overflow-hidden animate-fade-in shadow-card">
@@ -97,9 +129,20 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
             onClick={() => setSquadOpen(v => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-left"
           >
-            <span className="text-[10px] font-bold tracking-[0.13em] uppercase text-muted-foreground">
-              Squad News
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold tracking-[0.13em] uppercase text-muted-foreground">
+                Squad News
+              </span>
+              {facts.squadConfidence === 'verified' ? (
+                <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-status-won/10 text-status-won border-status-won/20">
+                  Verified
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-muted/20 text-muted-foreground/50 border-border/50">
+                  No live data
+                </span>
+              )}
+            </div>
             {squadOpen
               ? <ChevronUp   className="size-3.5 text-muted-foreground/50" strokeWidth={2} />
               : <ChevronDown className="size-3.5 text-muted-foreground/50" strokeWidth={2} />
@@ -107,17 +150,25 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
           </button>
 
           {squadOpen && (
-            <div className="px-4 pb-4 flex flex-col gap-4">
-              <TeamSquadBlock
-                code={homeTeam.shortCode}
-                name={homeTeam.name}
-                absent={allHomeAbsent}
-              />
-              <TeamSquadBlock
-                code={awayTeam.shortCode}
-                name={awayTeam.name}
-                absent={allAwayAbsent}
-              />
+            <div className="px-4 pb-4">
+              {facts.squadConfidence !== 'verified' ? (
+                <SquadNoDataFallback />
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <TeamSquadBlock
+                    code={homeTeam.shortCode}
+                    name={homeTeam.name}
+                    absent={allHomeAbsent}
+                    verified
+                  />
+                  <TeamSquadBlock
+                    code={awayTeam.shortCode}
+                    name={awayTeam.name}
+                    absent={allAwayAbsent}
+                    verified
+                  />
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -173,15 +224,64 @@ function ContextBanner({ ctx }: { ctx: MatchContext }) {
 
 // ─── Squad block ──────────────────────────────────────────────
 
+// ─── Squad fallback when there's no real data ────────────────
+
+function SquadNoDataFallback() {
+  return (
+    <div className="flex flex-col gap-2 py-2">
+      <p className="text-[12px] text-muted-foreground/55 italic pl-1">
+        No verified squad updates available
+      </p>
+      <p className="text-[11px] text-muted-foreground/40 pl-1 leading-snug">
+        Injury and suspension data appears here once verified by official sources.
+      </p>
+    </div>
+  )
+}
+
 function TeamSquadBlock({
   code,
   name,
   absent,
+  verified,
 }: {
-  code:   string
-  name:   string
-  absent: PlayerStatus[]
+  code:     string
+  name:     string
+  absent:   PlayerStatus[]
+  verified: boolean
 }) {
+  // Belt-and-suspenders: only render players that pass the validation invariant.
+  // Any entry that fails fires console.error so the source is always visible in devtools.
+  const safeAbsent = absent.filter(p => {
+    const ok =
+      typeof p.name === 'string' &&
+      p.name.trim().length >= 2 &&
+      p.validated === true
+    if (!ok) {
+      console.error(
+        `[SquadBlock:${code}] INVARIANT VIOLATION — unvalidated player reached render. ` +
+        `This player will NOT be displayed.`,
+        {
+          name:       p.name,
+          status:     p.status,
+          validated:  p.validated,
+          source:     p.source,
+          fetchedAt:  p.fetchedAt,
+          payload:    p,
+          stackHint:  new Error().stack?.split('\n').slice(1, 4).join(' | '),
+        },
+      )
+    }
+    return ok
+  })
+
+  // Log each validated player being rendered so the source is always traceable
+  safeAbsent.forEach(p => {
+    console.debug(
+      `[SquadBlock:${code}] rendering player name=${JSON.stringify(p.name)} status=${p.status} validated=${p.validated} source=${JSON.stringify(p.source)}`,
+    )
+  })
+
   return (
     <div>
       {/* Team header */}
@@ -190,11 +290,13 @@ function TeamSquadBlock({
         <span className="text-[11px] text-muted-foreground/60">{name}</span>
       </div>
 
-      {absent.length === 0 ? (
-        <p className="text-[12px] text-muted-foreground/70 italic pl-1">Full squad available</p>
+      {safeAbsent.length === 0 ? (
+        <p className="text-[12px] text-muted-foreground/55 italic pl-1">
+          {verified ? 'No confirmed injuries or suspensions' : 'No verified squad updates available'}
+        </p>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {absent.map((p, i) => {
+          {safeAbsent.map((p, i) => {
             const cfg = STATUS_CFG[p.status]
             return (
               <div key={i} className="flex items-start gap-2 pl-1">

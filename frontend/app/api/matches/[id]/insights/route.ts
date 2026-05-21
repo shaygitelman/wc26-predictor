@@ -4,30 +4,105 @@ import { runInsightsEngine }       from '@/lib/insights-engine'
 import { enrichInsightsWithGroq }  from '@/lib/groq-insights'
 import type { Match } from '@/types/match'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE   = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const DEBUG_MODE = process.env.DEBUG_AI_INSIGHTS === 'true'
 
 interface Params { params: Promise<{ id: string }> }
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params
+  const t0 = Date.now()
 
+  console.log(`[Insights] ${id} — start | API_BASE=${API_BASE}`)
+
+  // ── Fetch match ──────────────────────────────────────────────
   let match: Match
   try {
     const res = await fetch(`${API_BASE}/matches/${id}`, { next: { revalidate: 60 } })
-    if (!res.ok) return Response.json({ error: 'Match not found' }, { status: 404 })
+    if (!res.ok) {
+      console.error(`[Insights] ${id} — match fetch failed with status ${res.status}`)
+      return Response.json({ error: 'Match not found' }, { status: 404 })
+    }
     match = await res.json()
-  } catch {
+  } catch (err) {
+    console.error(`[Insights] ${id} — match fetch threw:`, err instanceof Error ? err.message : err)
     return Response.json({ error: 'Service unavailable' }, { status: 503 })
   }
 
-  // Layer 1 → 2 → 3 → 3.5
-  const raw      = await fetchInsightsData(match)          // fetch real API data
-  const facts    = normalizeInsightsFacts(raw)              // normalize into validated facts
-  const insights = runInsightsEngine(facts)                 // interpret facts into display insights
-  const enriched = await enrichInsightsWithGroq(insights, facts)  // AI prose enrichment (optional)
+  const t1 = Date.now()
+  console.log(`[Insights] ${id} — match fetched in ${t1 - t0}ms`)
 
-  // Short cache — insights are data-driven and should reflect current tournament state
-  return Response.json(enriched, {
-    headers: { 'Cache-Control': 'no-store' },
-  })
+  // ── Full pipeline — wrapped so bugs never silently blank the card ──
+  try {
+    // Layer 1: fetch supporting data (form, h2h, stats, etc.)
+    const raw  = await fetchInsightsData(match)
+    const t2   = Date.now()
+    const rawFactsCount = [
+      raw.homeForm, raw.awayForm, raw.h2h,
+      raw.homeStats, raw.awayStats,
+    ].filter(Boolean).length
+    console.log(
+      `[Insights] ${id} — data fetched in ${t2 - t1}ms | ` +
+      `homeForm=${!!raw.homeForm} awayForm=${!!raw.awayForm} ` +
+      `h2h=${!!raw.h2h} homeStats=${!!raw.homeStats} awayStats=${!!raw.awayStats} ` +
+      `(${rawFactsCount}/5 populated)`,
+    )
+
+    // Layer 2: normalize into typed facts
+    const facts = normalizeInsightsFacts(raw)
+    console.log(
+      `[Insights] ${id} — normalized | ` +
+      `home.results=${facts.home.results.length} away.results=${facts.away.results.length} ` +
+      `confidence=${facts.dataConfidence}`,
+    )
+
+    // Layer 3: rule-based engine
+    const insights = runInsightsEngine(facts)
+    const t3 = Date.now()
+    console.log(
+      `[Insights] ${id} — engine in ${t3 - t2}ms | ` +
+      `tactical=${insights.tactical.length} ` +
+      `insufficientData=${insights.insufficientData} ` +
+      `confidence=${insights.confidence}`,
+    )
+
+    // Layer 3.5: Groq AI enrichment / generation
+    const groqStart = Date.now()
+    const enriched  = await enrichInsightsWithGroq(insights, facts)
+    const groqMs    = Date.now() - groqStart
+    console.log(
+      `[Insights] ${id} — groq step in ${groqMs}ms | ` +
+      `tactical_before=${insights.tactical.length} ` +
+      `tactical_after=${enriched.tactical.length}`,
+    )
+
+    const groqFallback =
+      enriched.tactical.length === 0 && insights.tactical.length === 0
+
+    const payload = {
+      ...enriched,
+      ...(DEBUG_MODE && {
+        _debug: {
+          rawFactsCount,
+          groqLatencyMs: groqMs,
+          groqFallback,
+          insightCount:  enriched.tactical.length,
+          confidence:    enriched.confidence,
+          apiBaseUsed:   API_BASE,
+        },
+      }),
+    }
+
+    console.log(`[Insights] ${id} — done in ${Date.now() - t0}ms`)
+
+    return Response.json(payload, {
+      headers: { 'Cache-Control': 'no-store' },
+    })
+  } catch (err) {
+    console.error(
+      `[Insights] ${id} — pipeline threw:`,
+      err instanceof Error ? err.stack : err,
+    )
+    return Response.json({ error: 'Insights generation failed' }, { status: 500 })
+  }
 }

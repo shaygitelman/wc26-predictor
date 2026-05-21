@@ -36,7 +36,7 @@ function applyFilter(matches: Match[], filter: FilterValue): Match[] {
   }
 }
 
-function groupByDate(matches: Match[]): Array<{ dateLabel: string; matches: Match[] }> {
+function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: string; matches: Match[] }> {
   const map = new Map<string, Match[]>()
   for (const m of matches) {
     const key = ilDateKey(m.scheduledAt)
@@ -44,10 +44,19 @@ function groupByDate(matches: Match[]): Array<{ dateLabel: string; matches: Matc
     arr.push(m)
     map.set(key, arr)
   }
-  return Array.from(map.entries()).map(([, ms]) => ({
+  return Array.from(map.entries()).map(([key, ms]) => ({
+    dateKey: key,
     dateLabel: formatMatchDate(ms[0].scheduledAt),
     matches: ms,
   }))
+}
+
+function getSmartDateLabel(dateKey: string, dateLabel: string): string {
+  const today    = new Date().toLocaleDateString('en-CA', { timeZone: IL_TZ })
+  const tomorrow = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA', { timeZone: IL_TZ })
+  if (dateKey === today)    return 'Today'
+  if (dateKey === tomorrow) return 'Tomorrow'
+  return dateLabel
 }
 
 // ─── Segmented filter control ─────────────────────────────────
@@ -64,7 +73,7 @@ function SegmentedFilter({
   const idx = FILTERS.findIndex(f => f.value === active)
 
   return (
-    <div className="px-4 py-3 border-b border-border/80">
+    <div className="sticky top-0 z-10 px-4 py-3 border-b border-border/60 bg-background/95 backdrop-blur-sm">
       <div className="relative flex bg-surface-elevated rounded-xl p-1">
         {/* Sliding pill */}
         <span
@@ -139,8 +148,12 @@ export default function MatchesPage() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const liveCount = matches.filter(m => m.status === 'live').length
-  const groups    = useMemo(() => groupByDate(applyFilter(matches, filter)), [matches, filter])
+  const liveCount    = matches.filter(m => m.status === 'live').length
+  const pendingCount = useMemo(() =>
+    matches.filter(m => m.status === 'scheduled' && !predictions.find(p => p.matchId === m.id)).length,
+    [matches, predictions],
+  )
+  const groups = useMemo(() => groupByDate(applyFilter(matches, filter)), [matches, filter])
 
   if (loading) {
     return (
@@ -183,6 +196,20 @@ export default function MatchesPage() {
 
       <SegmentedFilter active={filter} liveCount={liveCount} onChange={setFilter} />
 
+      {pendingCount > 0 && filter !== 'finished' && (
+        <div className="mx-4 mt-3 flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/[0.07] border border-primary/15">
+          <div className="size-7 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0 text-sm">
+            ⚡
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-bold text-foreground leading-tight">
+              {pendingCount} prediction{pendingCount !== 1 ? 's' : ''} waiting
+            </p>
+            <p className="text-[11px] text-muted-foreground/60">Pick your scores before kick off</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-6 p-4">
         {groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
@@ -195,25 +222,32 @@ export default function MatchesPage() {
             </button>
           </div>
         ) : (
-          groups.map(({ dateLabel, matches: dayMatches }) => (
-            <section key={dateLabel}>
-              <div className="flex items-center gap-3 mb-3">
-                <p className="text-2xs font-bold tracking-[0.12em] text-muted-foreground whitespace-nowrap">
-                  {dateLabel}
-                </p>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-              <div className="flex flex-col gap-3">
-                {dayMatches.map(match => (
-                  <MatchCard
-                    key={match.id}
-                    match={match}
-                    prediction={predictions.find(p => p.matchId === match.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))
+          groups.map(({ dateKey, dateLabel, matches: dayMatches }) => {
+            const smartLabel = getSmartDateLabel(dateKey, dateLabel)
+            const isToday    = smartLabel === 'Today'
+            return (
+              <section key={dateLabel}>
+                <div className="flex items-center gap-3 mb-3">
+                  <p className={cn(
+                    'text-2xs font-bold tracking-[0.12em] whitespace-nowrap',
+                    isToday ? 'text-primary' : 'text-muted-foreground',
+                  )}>
+                    {smartLabel}
+                  </p>
+                  <div className={cn('flex-1 h-px', isToday ? 'bg-primary/25' : 'bg-border')} />
+                </div>
+                <div className="flex flex-col gap-3">
+                  {dayMatches.map(match => (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      prediction={predictions.find(p => p.matchId === match.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )
+          })
         )}
       </div>
     </div>

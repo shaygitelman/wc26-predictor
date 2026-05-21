@@ -44,8 +44,8 @@ async def update_me(
             user.username = new_username
 
     # ── Bio ──────────────────────────────────────────────────
-    if body.bio is not None:
-        user.bio = body.bio or None  # schema validator already strips; None collapses empty str
+    if "bio" in body.model_fields_set:
+        user.bio = body.bio  # validator already strips and coerces "" → None
 
     # ── Avatar ───────────────────────────────────────────────
     # Use model_fields_set so avatarId: null explicitly clears the field

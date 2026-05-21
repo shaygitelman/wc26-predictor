@@ -215,12 +215,12 @@ export const MOCK_LEADERBOARD = [
 export const MOCK_LEAGUES: League[] = [
   {
     id: 'lg1', name: 'The Office FC',
-    inviteCode: 'WC26-OFFC', createdBy: 'user-1',
+    inviteCode: 'MP26-OFFC', createdBy: 'user-1',
     memberCount: 8, createdAt: '2026-05-01T00:00:00Z',
   },
   {
     id: 'lg2', name: 'FC Amigos',
-    inviteCode: 'WC26-FAMI', createdBy: 'user-2',
+    inviteCode: 'MP26-FAMI', createdBy: 'user-2',
     memberCount: 5, createdAt: '2026-05-10T00:00:00Z',
   },
 ]

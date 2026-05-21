@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose'
 import type { SessionPayload } from '@/types/auth'
 
-export const SESSION_COOKIE = 'wc26-session'
+export const SESSION_COOKIE = 'matchpoint26-session'
 
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30 // 30 days
 

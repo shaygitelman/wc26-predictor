@@ -62,7 +62,7 @@ export default async function HomePage() {
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
       <ContextHeader
-        title="WC 2026"
+        title="MatchPoint26"
         actions={
           <div className="flex items-center gap-1">
             <ThemeToggle />

@@ -54,7 +54,7 @@ export default function LoginPage() {
         </div>
         <div className="text-center">
           <h1 className="text-2xl font-extrabold text-foreground tracking-tight">
-            WC26 Predictor
+            MatchPoint26
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
             Predict matches. Compete with friends.<br />Win glory.

@@ -1,4 +1,4 @@
-export const APP_NAME = 'WC26 Predictor'
+export const APP_NAME = 'MatchPoint26'
 export const TOURNAMENT_YEAR = 2026
 
 /** Round-aware points per official תקנון המשחק. */

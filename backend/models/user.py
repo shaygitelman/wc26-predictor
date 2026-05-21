@@ -31,6 +31,10 @@ class User(Base):
     correct_predictions: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     total_predictions:   Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
+    # ── Avatar preference ─────────────────────────────────────────
+    # False = user explicitly reset to default; auth will not restore Google avatar on login
+    use_google_avatar: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+
     # ── Privacy settings ──────────────────────────────────────────
     hide_picks_until_kickoff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     profile_public:           Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

@@ -58,7 +58,8 @@ async def google_auth(
         # ── Returning user — refresh mutable fields ───────────────
         if payload.name:
             user.name = payload.name
-        if payload.avatar_url:
+        # Only sync Google photo if the user hasn't explicitly reset to default avatar
+        if payload.avatar_url and user.use_google_avatar:
             user.avatar_url = payload.avatar_url
 
     user.update_last_login()

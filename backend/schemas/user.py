@@ -33,9 +33,10 @@ class UserProfileOut(BaseModel):
 
 
 class UserUpdateIn(BaseModel):
-    username: str | None = None
-    bio:      str | None = None
-    avatarId: str | None = None  # camelCase matches frontend JSON key
+    username:      str | None = None
+    bio:           str | None = None
+    avatarId:      str | None = None   # camelCase matches frontend JSON key
+    clearAvatarUrl: bool      = False  # explicit "reset to default" flag
 
     @field_validator("username")
     @classmethod

@@ -48,8 +48,13 @@ async def update_me(
         user.bio = body.bio or None  # schema validator already strips; None collapses empty str
 
     # ── Avatar ───────────────────────────────────────────────
-    if body.avatarId is not None:
-        user.avatar_id = body.avatarId or None
+    # Use model_fields_set so avatarId: null explicitly clears the field
+    # (vs. the field simply not being present in the request).
+    if "avatarId" in body.model_fields_set:
+        user.avatar_id = body.avatarId  # validator already coerces "" → None
+    if body.clearAvatarUrl:
+        user.avatar_url = None
+        user.use_google_avatar = False   # prevent auth from restoring it on next login
 
     # ── Persist ──────────────────────────────────────────────
     try:

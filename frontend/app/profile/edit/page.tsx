@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Check } from 'lucide-react'
+import { ArrowLeft, Check, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { UserAvatar } from '@/components/atoms/user-avatar'
 import { AVATARS } from '@/lib/avatars'
@@ -31,17 +31,18 @@ export default function EditProfilePage() {
   const [user,    setUser]    = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [selectedAvatar, setSelectedAvatar] = useState('')
-  const [username,       setUsername]       = useState('')
-  const [bio,            setBio]            = useState('')
+  const [selectedAvatar,  setSelectedAvatar]  = useState('')
+  const [clearAvatarUrl,  setClearAvatarUrl]  = useState(false)
+  const [username,        setUsername]        = useState('')
+  const [bio,             setBio]             = useState('')
 
   const [initAvatar,   setInitAvatar]   = useState('')
   const [initUsername, setInitUsername] = useState('')
   const [initBio,      setInitBio]      = useState('')
 
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
-  const [saveError,  setSaveError]  = useState('')
-  const [showDiscard, setShowDiscard] = useState(false)
+  const [saveStatus,   setSaveStatus]   = useState<SaveStatus>('idle')
+  const [saveError,    setSaveError]    = useState('')
+  const [showDiscard,  setShowDiscard]  = useState(false)
 
   // ── Load user ────────────────────────────────────────────────
   useEffect(() => {
@@ -63,16 +64,28 @@ export default function EditProfilePage() {
 
   // ── Derived ──────────────────────────────────────────────────
   const isDirty = selectedAvatar !== initAvatar ||
+                  clearAvatarUrl ||
                   username.trim() !== initUsername ||
                   bio.trim() !== initBio
 
   const usernameError = validateUsername(username)
   const showUsernameError = !!usernameError && username !== initUsername
 
+  // True when the user has a Google/external photo and hasn't cleared it yet
+  const hasActiveAvatarUrl = !!(user?.avatarUrl && !clearAvatarUrl)
+
+  // True when there's something to reset (emoji selected, or Google photo present)
+  const canReset = selectedAvatar !== '' || hasActiveAvatarUrl
+
   // ── Handlers ─────────────────────────────────────────────────
   const handleBack = () => {
     if (isDirty) setShowDiscard(true)
     else router.push('/profile')
+  }
+
+  const handleResetAvatar = () => {
+    setSelectedAvatar('')
+    setClearAvatarUrl(true)
   }
 
   const handleSave = async () => {
@@ -83,20 +96,19 @@ export default function EditProfilePage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username:  username.trim(),
-          bio:       bio.trim() || null,
-          avatarId:  selectedAvatar || null,
+          username:      username.trim(),
+          bio:           bio.trim() || null,
+          avatarId:      selectedAvatar || null,
+          clearAvatarUrl,
         }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        // FastAPI Pydantic validation errors (422) come as an array
         if (res.status === 422 && Array.isArray(data?.detail)) {
           const msg = data.detail[0]?.msg ?? 'Invalid input'
           throw new Error(msg.replace(/^Value error, /, ''))
         }
-        // Duplicate username (409) or other explicit errors
         throw new Error(data?.detail ?? data?.error ?? `Save failed (${res.status})`)
       }
 
@@ -136,11 +148,17 @@ export default function EditProfilePage() {
             <UserAvatar
               username={user?.username ?? '?'}
               avatarId={selectedAvatar || undefined}
-              avatarUrl={selectedAvatar ? undefined : user?.avatarUrl}
+              avatarUrl={selectedAvatar ? undefined : (clearAvatarUrl ? undefined : user?.avatarUrl)}
               size="xl"
             />
             <p className="text-xs text-muted-foreground">
-              {selectedAvatar ? 'Avatar selected' : 'Choose an avatar below'}
+              {selectedAvatar
+                ? 'Avatar selected'
+                : clearAvatarUrl
+                  ? 'Default — showing initials'
+                  : user?.avatarUrl
+                    ? 'Using profile photo'
+                    : 'Choose an avatar below'}
             </p>
           </div>
 
@@ -176,12 +194,14 @@ export default function EditProfilePage() {
                   )
                 })}
               </div>
-              {selectedAvatar && (
+
+              {canReset && (
                 <button
-                  onClick={() => setSelectedAvatar('')}
-                  className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={handleResetAvatar}
+                  className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-destructive/70 hover:text-destructive hover:bg-destructive/8 transition-colors"
                 >
-                  Remove custom avatar
+                  <RotateCcw className="size-3.5" />
+                  Reset to Default Avatar
                 </button>
               )}
             </div>

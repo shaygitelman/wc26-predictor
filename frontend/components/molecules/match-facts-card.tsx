@@ -107,12 +107,11 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
       <div className="divide-y divide-border/50">
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-4 py-3.5">
+        <div className="flex items-center px-4 py-3.5">
           <div className="flex items-center gap-2">
             <BarChart3 className="size-[15px] text-muted-foreground flex-shrink-0" strokeWidth={1.75} />
             <span className="text-[13px] font-bold text-foreground tracking-[-0.01em]">Match Facts</span>
           </div>
-          <span className="text-[10px] italic text-muted-foreground/60">Estimated data</span>
         </div>
 
         {/* ── Context banners ── */}
@@ -191,11 +190,15 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
 
           {statsOpen && (
             <div className="px-4 pb-4">
-              <StatsTable
-                stats={facts.stats}
-                homeCode={homeTeam.shortCode}
-                awayCode={awayTeam.shortCode}
-              />
+              {facts.stats.length === 0 ? (
+                <StatsNoDataFallback />
+              ) : (
+                <StatsTable
+                  stats={facts.stats}
+                  homeCode={homeTeam.shortCode}
+                  awayCode={awayTeam.shortCode}
+                />
+              )}
             </div>
           )}
         </section>
@@ -317,6 +320,21 @@ function TeamSquadBlock({
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Stats fallback when there's no real data ────────────────
+
+function StatsNoDataFallback() {
+  return (
+    <div className="flex flex-col gap-2 py-2">
+      <p className="text-[12px] text-muted-foreground/55 italic pl-1">
+        No verified statistics available
+      </p>
+      <p className="text-[11px] text-muted-foreground/40 pl-1 leading-snug">
+        Team statistics appear here once live match data is available.
+      </p>
     </div>
   )
 }

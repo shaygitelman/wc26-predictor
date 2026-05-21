@@ -1,9 +1,9 @@
 /**
- * Layer 3.5 — Groq AI enricher + generator.
+ * Layer 3.5 — Groq AI enricher.
  *
- * Two modes:
- *  - ENRICH: rule-based insights exist → Groq rewrites the prose only.
- *  - GENERATE: no form data → Groq generates insights from its own knowledge of the teams.
+ * ENRICH mode only: rewrites rule-based insight prose using verified numbers
+ * from the facts summary. Only runs when form data exists (tactical.length > 0).
+ * When no form data is available, the original engine output is returned unchanged.
  *
  * Falls back to the original template output silently if:
  *   - GROQ_API_KEY is not set
@@ -11,17 +11,12 @@
  *   - The response JSON is malformed
  */
 
-import type { MatchInsights, TacticalCategory, TacticalInsight, EdgeTeam } from '@/types/insights'
+import type { MatchInsights } from '@/types/insights'
 import type { InsightsFacts } from '@/types/insights-facts'
 
 const GROQ_BASE  = 'https://api.groq.com/openai/v1'
 const GROQ_MODEL = 'llama-3.3-70b-versatile'
 const TIMEOUT_MS = 8000
-
-const VALID_CATEGORIES = new Set<string>([
-  'transition', 'pressing', 'possession', 'wide-threats', 'set-pieces',
-  'defensive-shape', 'midfield-control', 'counterattack', 'finishing', 'high-line', 'key-duel',
-])
 
 // ─── Facts summary ────────────────────────────────────────────────
 
@@ -105,43 +100,6 @@ Return JSON with this exact shape:
   "narrativeBody": "..."
 }
 Omit narrativeBody if there is no knockout context.`
-}
-
-// ─── Prompt: GENERATE mode (no form data — use AI knowledge) ─────
-
-function buildGenerationPrompt(facts: InsightsFacts): string {
-  const { home, away, isKnockout } = facts
-  const stage = isKnockout ? 'knockout stage' : 'group stage'
-
-  return `MATCH: ${home.name} vs ${away.name} — FIFA World Cup 2026 (${stage})
-
-No recent match data is available for this fixture. Generate tactical insights based on your knowledge of these national teams — their playing styles, tactical tendencies, typical formations, and historical strengths.
-
-RULES:
-- Do NOT invent specific statistics (goals per game, possession percentages, etc.)
-- Focus on tactical identity, playing style, and team characteristics
-- 3–4 tactical insights, 1–2 sentences each
-- Tone: direct, analytical, confident — no clichés
-- "positive" highlight = advantage favours the home team (${home.name})
-- "negative" highlight = advantage favours the away team (${away.name})
-- "neutral" = balanced or contextual observation
-
-Valid categories (pick the most fitting):
-transition, pressing, possession, wide-threats, set-pieces, defensive-shape, midfield-control, counterattack, finishing, high-line, key-duel
-
-Return JSON with this exact shape:
-{
-  "tactical": [
-    { "category": "possession", "text": "...", "highlight": "positive|negative|neutral" },
-    { "category": "defensive-shape", "text": "...", "highlight": "positive|negative|neutral" }
-  ],
-  "edgeNote": "2–3 sentences about which team has the edge and why",
-  "edgeTeam": "home|away|draw",
-  "edgeStrength": "clear|slight",
-  "coachingHint": "one tactical sentence guiding prediction",
-  "narrativeHeadline": "short punchy title for this fixture",
-  "narrativeBody": "1–2 sentences of football storytelling"
-}`
 }
 
 // ─── Groq API call ────────────────────────────────────────────────
@@ -232,60 +190,6 @@ function applyEnrichment(insights: MatchInsights, enrichment: GroqEnrichment): M
   }
 }
 
-// ─── Apply: GENERATE mode ─────────────────────────────────────────
-
-interface GroqGeneration {
-  tactical:          Array<{ category: string; text: string; highlight?: string }>
-  edgeNote:          string
-  edgeTeam?:         string
-  edgeStrength?:     string
-  coachingHint?:     string
-  narrativeHeadline?: string
-  narrativeBody?:    string
-}
-
-function applyGeneration(
-  insights:  MatchInsights,
-  gen:       GroqGeneration,
-  facts:     InsightsFacts,
-): MatchInsights {
-  const tactical: TacticalInsight[] = Array.isArray(gen.tactical)
-    ? gen.tactical
-        .filter(t => t && typeof t.text === 'string' && VALID_CATEGORIES.has(t.category))
-        .map(t => ({
-          category:  t.category as TacticalCategory,
-          text:      t.text.trim(),
-          highlight: (['positive', 'negative', 'neutral'].includes(t.highlight ?? '')
-            ? t.highlight
-            : 'neutral') as 'positive' | 'negative' | 'neutral',
-        }))
-    : []
-
-  const rawEdgeTeam = gen.edgeTeam ?? 'draw'
-  const edgeTeam    = (['home', 'away', 'draw'].includes(rawEdgeTeam) ? rawEdgeTeam : 'draw') as EdgeTeam
-  const edgeTeamName =
-    edgeTeam === 'home' ? facts.home.name :
-    edgeTeam === 'away' ? facts.away.name :
-    facts.home.name
-
-  return {
-    ...insights,
-    tactical,
-    edgeNote:     gen.edgeNote?.trim()          || insights.edgeNote,
-    coachingHint: gen.coachingHint?.trim()      ?? insights.coachingHint,
-    confidence:   'low',
-    edge: {
-      team:     edgeTeam,
-      teamName: edgeTeamName,
-      strength: gen.edgeStrength === 'clear' ? 'clear' : 'slight',
-    },
-    narrative:
-      gen.narrativeHeadline && gen.narrativeBody
-        ? { headline: gen.narrativeHeadline.trim(), body: gen.narrativeBody.trim() }
-        : insights.narrative,
-  }
-}
-
 // ─── Public API ───────────────────────────────────────────────────
 
 export async function enrichInsightsWithGroq(
@@ -309,17 +213,12 @@ export async function enrichInsightsWithGroq(
 
   try {
     if (insights.tactical.length === 0) {
-      // GENERATE mode — no rule-based insights, ask Groq to create from team knowledge
-      console.log(`[GroqInsights] match ${insights.matchId} — GENERATE mode (no form data, using AI team knowledge)`)
-      const t = Date.now()
-      const prompt = buildGenerationPrompt(facts)
-      const gen    = await callGroq<GroqGeneration>(apiKey, prompt)
-      const result = applyGeneration(insights, gen, facts)
-      console.log(
-        `[GroqInsights] match ${insights.matchId} — GENERATE done in ${Date.now() - t}ms | ` +
-        `generated ${result.tactical.length} insights`,
-      )
-      return result
+      // No rule-based insights exist — no real form data available.
+      // GENERATE mode (AI-invented team narratives) is disabled: without measured
+      // match data, any generated tactical text would be unverifiable inference.
+      // The engine already produced the correct low-confidence edge note.
+      console.log(`[GroqInsights] match ${insights.matchId} — no form data, skipping Groq (no fabrication)`)
+      return insights
     } else {
       // ENRICH mode — rewrite existing rule-based prose
       console.log(`[GroqInsights] match ${insights.matchId} — ENRICH mode (${insights.tactical.length} rule-based insights)`)

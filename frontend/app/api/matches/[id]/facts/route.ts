@@ -18,7 +18,8 @@
  * Context banners: deterministic only — known rivalries and knockout-stage
  *   labels derived from match.round. No PRNG-driven "pressure" banners.
  *
- * Stats: estimated from historical averages, clearly labelled in the UI.
+ * Stats: returns an empty array until real per-match stat endpoints are available.
+ *   The UI shows "No verified statistics available" when the array is empty.
  */
 
 import { fetchSquadNews } from '@/lib/squad-news'
@@ -130,59 +131,6 @@ function buildContext(homeTeam: Team, awayTeam: Team, round: Round): MatchContex
   return context
 }
 
-// ─── Estimated stats ──────────────────────────────────────────────
-// These are rough estimates derived from tournament-wide historical averages
-// when no real per-match stats are available.
-// The UI labels them "Estimated" — they are not presented as exact measurements.
-// No PRNG jitter — purely deterministic so the same match always shows the same values.
-
-interface TeamAvg { goalsFor: number; goalsAgt: number; strength: number }
-
-const TEAM_AVGS: Record<string, TeamAvg> = {
-  BRA: { goalsFor: 2.6, goalsAgt: 0.8, strength: 9.1 }, FRA: { goalsFor: 2.4, goalsAgt: 0.7, strength: 9.0 },
-  ARG: { goalsFor: 2.3, goalsAgt: 0.9, strength: 9.1 }, ESP: { goalsFor: 2.2, goalsAgt: 0.6, strength: 8.8 },
-  GER: { goalsFor: 2.1, goalsAgt: 1.1, strength: 8.5 }, ENG: { goalsFor: 1.9, goalsAgt: 1.0, strength: 8.3 },
-  POR: { goalsFor: 2.0, goalsAgt: 1.0, strength: 8.4 }, NED: { goalsFor: 1.8, goalsAgt: 1.2, strength: 8.0 },
-  BEL: { goalsFor: 2.0, goalsAgt: 1.1, strength: 8.2 }, CRO: { goalsFor: 1.7, goalsAgt: 1.0, strength: 7.8 },
-  URU: { goalsFor: 1.7, goalsAgt: 1.2, strength: 7.6 }, MAR: { goalsFor: 1.6, goalsAgt: 1.0, strength: 7.7 },
-  SEN: { goalsFor: 1.9, goalsAgt: 1.0, strength: 7.9 }, COL: { goalsFor: 1.8, goalsAgt: 1.1, strength: 7.8 },
-  USA: { goalsFor: 1.5, goalsAgt: 1.4, strength: 7.0 }, MEX: { goalsFor: 1.5, goalsAgt: 1.3, strength: 7.2 },
-  CAN: { goalsFor: 1.7, goalsAgt: 1.2, strength: 7.3 }, JPN: { goalsFor: 1.6, goalsAgt: 1.1, strength: 7.5 },
-  KOR: { goalsFor: 1.5, goalsAgt: 1.2, strength: 7.2 }, AUS: { goalsFor: 1.4, goalsAgt: 1.4, strength: 6.8 },
-  SUI: { goalsFor: 1.8, goalsAgt: 0.9, strength: 7.8 }, DEN: { goalsFor: 1.7, goalsAgt: 1.0, strength: 7.7 },
-  POL: { goalsFor: 1.6, goalsAgt: 1.2, strength: 7.4 }, TUR: { goalsFor: 1.7, goalsAgt: 1.2, strength: 7.5 },
-  NGA: { goalsFor: 1.8, goalsAgt: 1.1, strength: 7.5 }, EGY: { goalsFor: 1.5, goalsAgt: 1.2, strength: 7.0 },
-}
-const DEFAULT_AVG: TeamAvg = { goalsFor: 1.5, goalsAgt: 1.3, strength: 7.0 }
-
-function getAvg(code: string): TeamAvg {
-  return TEAM_AVGS[code.toUpperCase()] ?? DEFAULT_AVG
-}
-
-function buildEstimatedStats(homeCode: string, awayCode: string): StatRow[] {
-  const h = getAvg(homeCode)
-  const a = getAvg(awayCode)
-
-  const totalStr = h.strength + a.strength
-  const homePoss = Math.round(48 + (h.strength / totalStr - 0.5) * 26)
-  const awayPoss = 100 - homePoss
-
-  const homeShots   = Math.max(6, Math.round(h.goalsFor / 0.115))
-  const awayShots   = Math.max(6, Math.round(a.goalsFor / 0.115))
-  const homeConvPct = Math.max(5, Math.round((h.goalsFor / homeShots) * 100))
-  const awayConvPct = Math.max(5, Math.round((a.goalsFor / awayShots) * 100))
-  const homeCSPct   = Math.max(10, Math.min(80, Math.round(70 - h.goalsAgt * 30)))
-  const awayCSPct   = Math.max(10, Math.min(80, Math.round(70 - a.goalsAgt * 30)))
-
-  return [
-    { label: 'Goals Scored',   home: +h.goalsFor.toFixed(1), away: +a.goalsFor.toFixed(1), unit: '/g', higherIsBetter: true,  format: 'decimal'  },
-    { label: 'Goals Conceded', home: +h.goalsAgt.toFixed(1), away: +a.goalsAgt.toFixed(1), unit: '/g', higherIsBetter: false, format: 'decimal'  },
-    { label: 'Shots per Game', home: homeShots,               away: awayShots,               unit: '',   higherIsBetter: true,  format: 'integer'  },
-    { label: 'Possession',     home: homePoss,                away: awayPoss,                unit: '%',  higherIsBetter: true,  format: 'integer'  },
-    { label: 'Clean Sheet %',  home: homeCSPct,               away: awayCSPct,               unit: '%',  higherIsBetter: true,  format: 'integer'  },
-    { label: 'Conversion',     home: homeConvPct,             away: awayConvPct,             unit: '%',  higherIsBetter: true,  format: 'integer'  },
-  ]
-}
 
 // ─── Route ────────────────────────────────────────────────────────
 
@@ -245,8 +193,9 @@ export async function GET(_req: Request, { params }: Params) {
     // ── Context: deterministic/factual only ─────────────────────
     const context = buildContext(match.homeTeam, match.awayTeam, match.round)
 
-    // ── Stats: estimated, labelled as such in the UI ────────────
-    const stats = buildEstimatedStats(match.homeTeam.shortCode, match.awayTeam.shortCode)
+    // ── Stats: no verified data available yet — real match stats
+    // will be populated here once live API endpoints are implemented.
+    const stats: StatRow[] = []
 
     // Apply invariant: strip any player entry that fails validation before
     // the response is built. This catches anything that slipped through

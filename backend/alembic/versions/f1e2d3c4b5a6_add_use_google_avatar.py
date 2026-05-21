@@ -17,11 +17,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        'users',
-        sa.Column('use_google_avatar', sa.Boolean(), nullable=False, server_default='true'),
+    # IF NOT EXISTS makes this idempotent — safe whether the column was
+    # added manually, by a previous partial deploy, or not at all.
+    op.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
+        "use_google_avatar BOOLEAN NOT NULL DEFAULT TRUE"
     )
 
 
 def downgrade() -> None:
-    op.drop_column('users', 'use_google_avatar')
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS use_google_avatar")

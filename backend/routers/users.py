@@ -54,7 +54,6 @@ async def update_me(
         user.avatar_id = body.avatarId  # validator already coerces "" → None
     if body.clearAvatarUrl:
         user.avatar_url = None
-        user.use_google_avatar = False   # prevent auth from restoring it on next login
 
     # ── Persist ──────────────────────────────────────────────
     try:

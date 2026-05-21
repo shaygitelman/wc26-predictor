@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { BarChart3, ChevronDown, ChevronUp, Flame, Trophy, AlertTriangle, ShieldAlert } from 'lucide-react'
+import { BarChart3, ChevronDown, ChevronUp, Flame, Trophy, AlertTriangle, ShieldAlert, ShieldCheck, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, PlayerStatus } from '@/types/match-facts'
 
@@ -179,9 +179,21 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
             onClick={() => setStatsOpen(v => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-left"
           >
-            <span className="text-[10px] font-bold tracking-[0.13em] uppercase text-muted-foreground">
-              Team Statistics
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold tracking-[0.13em] uppercase text-muted-foreground">
+                Team Statistics
+              </span>
+              {facts.statsConfidence === 'verified' ? (
+                <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-status-won/10 text-status-won border-status-won/20 flex items-center gap-1">
+                  <ShieldCheck className="size-[9px]" strokeWidth={2.5} />
+                  Live Match Data
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-muted/20 text-muted-foreground/50 border-border/50">
+                  No live data
+                </span>
+              )}
+            </div>
             {statsOpen
               ? <ChevronUp   className="size-3.5 text-muted-foreground/50" strokeWidth={2} />
               : <ChevronDown className="size-3.5 text-muted-foreground/50" strokeWidth={2} />
@@ -190,14 +202,22 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
 
           {statsOpen && (
             <div className="px-4 pb-4">
-              {facts.stats.length === 0 ? (
-                <StatsNoDataFallback />
+              {facts.statsConfidence !== 'verified' || facts.stats.length === 0 ? (
+                <StatsNoDataFallback matchStatus={facts.statsConfidence} />
               ) : (
-                <StatsTable
-                  stats={facts.stats}
-                  homeCode={homeTeam.shortCode}
-                  awayCode={awayTeam.shortCode}
-                />
+                <>
+                  <StatsTable
+                    stats={facts.stats}
+                    homeCode={homeTeam.shortCode}
+                    awayCode={awayTeam.shortCode}
+                  />
+                  {facts.statsFetchedAt && (
+                    <p className="text-[9.5px] text-muted-foreground/35 mt-2 text-right">
+                      <Activity className="size-[9px] inline mr-0.5 -mt-px" strokeWidth={2} />
+                      API-Football · {new Date(facts.statsFetchedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -326,14 +346,17 @@ function TeamSquadBlock({
 
 // ─── Stats fallback when there's no real data ────────────────
 
-function StatsNoDataFallback() {
+function StatsNoDataFallback({ matchStatus }: { matchStatus?: string }) {
+  const isVerifiedButEmpty = matchStatus === 'verified'
   return (
     <div className="flex flex-col gap-2 py-2">
       <p className="text-[12px] text-muted-foreground/55 italic pl-1">
-        No verified statistics available
+        {isVerifiedButEmpty
+          ? 'No statistics returned for this fixture'
+          : 'No verified match statistics available yet'}
       </p>
       <p className="text-[11px] text-muted-foreground/40 pl-1 leading-snug">
-        Team statistics appear here once live match data is available.
+        Statistics will appear once live match data is available from API-Football.
       </p>
     </div>
   )

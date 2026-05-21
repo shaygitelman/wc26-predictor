@@ -12,19 +12,25 @@
  *   - validated: true
  *   Any entry failing these checks is stripped here before the response is built.
  *
- * Cache: always no-store so the client never renders stale fabricated squad data
+ * Cache: always no-store so the client never renders stale squad or stats data
  *   from a previous deployment.
  *
  * Context banners: deterministic only — known rivalries and knockout-stage
  *   labels derived from match.round. No PRNG-driven "pressure" banners.
  *
- * Stats: returns an empty array until real per-match stat endpoints are available.
- *   The UI shows "No verified statistics available" when the array is empty.
+ * Stats: fetched from GET /matches/{id}/stats on the backend which calls
+ *   API-Football /fixtures/statistics. Only available for live/finished matches.
+ *   statsConfidence='none' when unavailable; UI shows explicit no-data fallback.
+ *   We NEVER fabricate, estimate, or interpolate any stat value.
  */
 
 import { fetchSquadNews } from '@/lib/squad-news'
 import type { Match, Team, Round } from '@/types/match'
-import type { MatchFacts, MatchContext, StatRow, PlayerStatus, TeamSquadStatus } from '@/types/match-facts'
+import type {
+  MatchFacts, MatchContext, StatRow,
+  PlayerStatus, TeamSquadStatus,
+  ApiMatchStats, StatsDataSource, StatsConfidence,
+} from '@/types/match-facts'
 
 // ─── Player entry invariant ───────────────────────────────────────
 // Strips any entry that is missing a real player name, has no source URL,
@@ -132,6 +138,110 @@ function buildContext(homeTeam: Team, awayTeam: Team, round: Round): MatchContex
 }
 
 
+// ─── Real match statistics ────────────────────────────────────────
+// Calls the backend stats endpoint which proxies API-Football.
+// Returns null when not available (scheduled match, unmapped fixture, API error).
+// NOTHING is fabricated if null is returned — the UI shows a verified no-data state.
+
+interface StatsFetchResult {
+  rows:       StatRow[]
+  source:     StatsDataSource
+  confidence: StatsConfidence
+  fetchedAt:  string | undefined
+  fixtureId:  string | undefined
+}
+
+function apiStatsToRows(home: ApiMatchStats['home'], away: ApiMatchStats['away']): StatRow[] {
+  const rows: StatRow[] = []
+
+  // Only add a row when BOTH sides have a non-null value.
+  // A null from the API means the stat was not reported — never fill with zero.
+  const add = (
+    label:          string,
+    h:              number | null,
+    a:              number | null,
+    unit:           string,
+    higherIsBetter: boolean,
+    format:         'integer' | 'decimal',
+  ) => {
+    if (h !== null && a !== null) {
+      rows.push({ label, home: h, away: a, unit, higherIsBetter, format })
+    }
+  }
+
+  add('Possession',       home.possession,    away.possession,    '%',  true,  'integer')
+  add('Total Shots',      home.totalShots,    away.totalShots,    '',   true,  'integer')
+  add('Shots on Target',  home.shotsOnTarget, away.shotsOnTarget, '',   true,  'integer')
+  add('Corner Kicks',     home.corners,       away.corners,       '',   true,  'integer')
+  add('Fouls',            home.fouls,         away.fouls,         '',   false, 'integer')
+  add('Yellow Cards',     home.yellowCards,   away.yellowCards,   '',   false, 'integer')
+  add('Saves',            home.saves,         away.saves,         '',   true,  'integer')
+  add('Offsides',         home.offsides,      away.offsides,      '',   false, 'integer')
+  add('Pass Accuracy',    home.passAccuracy,  away.passAccuracy,  '%',  true,  'integer')
+
+  if (home.xG !== null && away.xG !== null) {
+    rows.push({ label: 'Exp. Goals (xG)', home: home.xG, away: away.xG, unit: '', higherIsBetter: true, format: 'decimal' })
+  }
+
+  return rows
+}
+
+async function fetchMatchStats(matchId: string): Promise<StatsFetchResult> {
+  const empty: StatsFetchResult = {
+    rows:       [],
+    source:     'none',
+    confidence: 'none',
+    fetchedAt:  undefined,
+    fixtureId:  undefined,
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/matches/${matchId}/stats`, {
+      cache: 'no-store',
+    })
+
+    if (!res.ok) {
+      // 501 = not available yet (scheduled / unmapped / not yet published) — not an error
+      const level = res.status === 501 ? 'info' : 'warn'
+      console[level](
+        `[MatchFacts] ${matchId} — stats endpoint returned HTTP ${res.status} ` +
+        `(source=api-football; stats unavailable for this fixture)`,
+      )
+      return empty
+    }
+
+    const data = await res.json() as ApiMatchStats
+
+    if (!data.verified) {
+      console.warn(
+        `[MatchFacts] ${matchId} — stats response has verified=false; discarding`,
+      )
+      return empty
+    }
+
+    const rows = apiStatsToRows(data.home, data.away)
+
+    console.log(
+      `[MatchFacts] ${matchId} — stats: verified=true source=${data.source} ` +
+      `fixtureId=${data.fixtureId} rows=${rows.length} fetchedAt=${data.fetchedAt}`,
+    )
+
+    return {
+      rows,
+      source:     'api-football',
+      confidence: 'verified',
+      fetchedAt:  data.fetchedAt,
+      fixtureId:  data.fixtureId,
+    }
+  } catch (err) {
+    console.error(
+      `[MatchFacts] ${matchId} — stats fetch threw: ` +
+      (err instanceof Error ? err.message : String(err)),
+    )
+    return empty
+  }
+}
+
 // ─── Route ────────────────────────────────────────────────────────
 
 interface Params { params: Promise<{ id: string }> }
@@ -170,36 +280,33 @@ export async function GET(_req: Request, { params }: Params) {
       squadSource:     'none',
       squadConfidence: 'none',
       stats:           [],
+      statsSource:     'none',
+      statsConfidence: 'none',
       context:         [],
     }
     return Response.json(pending, { headers: { 'Cache-Control': 'no-store' } })
   }
 
   try {
-    // ── Squad news: real-data only ──────────────────────────────
-    const squadResult = await fetchSquadNews(
-      id,
-      match.homeTeam.shortCode,
-      match.awayTeam.shortCode,
-    )
+    // ── Squad news + match stats: fetch in parallel ─────────────
+    const [squadResult, statsResult] = await Promise.all([
+      fetchSquadNews(id, match.homeTeam.shortCode, match.awayTeam.shortCode),
+      fetchMatchStats(id),
+    ])
     const t1 = Date.now()
+
     console.log(
-      `[MatchFacts] ${id} — squad fetched in ${t1 - t0}ms | ` +
-      `source=${squadResult.dataSource} confidence=${squadResult.confidence} | ` +
-      `home logs: status=${squadResult.logs.home.httpStatus} validation=${squadResult.logs.home.validationResult} | ` +
-      `away logs: status=${squadResult.logs.away.httpStatus} validation=${squadResult.logs.away.validationResult}`,
+      `[MatchFacts] ${id} — fetched in ${t1 - t0}ms | ` +
+      `squad: source=${squadResult.dataSource} confidence=${squadResult.confidence} ` +
+      `home_log=${squadResult.logs.home.validationResult} away_log=${squadResult.logs.away.validationResult} | ` +
+      `stats: source=${statsResult.source} confidence=${statsResult.confidence} rows=${statsResult.rows.length}`,
     )
 
     // ── Context: deterministic/factual only ─────────────────────
     const context = buildContext(match.homeTeam, match.awayTeam, match.round)
 
-    // ── Stats: no verified data available yet — real match stats
-    // will be populated here once live API endpoints are implemented.
-    const stats: StatRow[] = []
-
-    // Apply invariant: strip any player entry that fails validation before
-    // the response is built. This catches anything that slipped through
-    // squad-news.ts or arrived from a stale/malformed upstream response.
+    // ── Apply squad invariant ────────────────────────────────────
+    // Strip any player entry that fails validation before the response is built.
     const homeSquad = scrubSquadTeam(squadResult.home, 'home', id)
     const awaySquad = scrubSquadTeam(squadResult.away, 'away', id)
 
@@ -207,9 +314,8 @@ export async function GET(_req: Request, { params }: Params) {
     const awayPlayers = awaySquad.injured.length + awaySquad.suspended.length + awaySquad.doubtful.length
 
     console.log(
-      `[MatchFacts] ${id} — squad after scrub: ` +
-      `home=${homePlayers} away=${awayPlayers} ` +
-      `confidence=${squadResult.confidence} source=${squadResult.dataSource}`,
+      `[MatchFacts] ${id} — squad after scrub: home=${homePlayers} away=${awayPlayers} | ` +
+      `stats rows=${statsResult.rows.length} verified=${statsResult.confidence === 'verified'}`,
     )
 
     const facts: MatchFacts = {
@@ -220,7 +326,11 @@ export async function GET(_req: Request, { params }: Params) {
       squadConfidence: squadResult.confidence,
       squadFetchedAt:  squadResult.fetchedAt,
       squadLogs:       squadResult.logs,
-      stats,
+      stats:           statsResult.rows,
+      statsSource:     statsResult.source,
+      statsConfidence: statsResult.confidence,
+      statsFetchedAt:  statsResult.fetchedAt,
+      statsFixtureId:  statsResult.fixtureId,
       context,
     }
 

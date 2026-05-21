@@ -302,6 +302,18 @@ class ApiFootballProvider(FootballDataProvider):
         await asyncio.sleep(0.2)
         return data.get("response", [])
 
+    # ── Fixture statistics ────────────────────────────────────────
+
+    async def fetch_fixture_statistics(self, fixture_id: str) -> list[dict]:
+        """Returns raw API-Football statistics blocks for a fixture.
+
+        Each block is one team: { team: {...}, statistics: [{type, value}, ...] }.
+        Only populated for live or finished matches — returns [] for scheduled ones.
+        """
+        data = await self._get("/fixtures/statistics", {"fixture": fixture_id})
+        await asyncio.sleep(0.2)
+        return data.get("response", [])
+
     # ── Lineups ───────────────────────────────────────────────────
 
     async def fetch_lineups(self, fixture_id: str) -> list[dict]:

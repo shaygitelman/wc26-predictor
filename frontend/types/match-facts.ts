@@ -3,6 +3,18 @@ export type AvailabilityStatus = 'injured' | 'suspended' | 'doubtful'
 export type SquadDataSource = 'api-verified' | 'none'
 export type SquadConfidence = 'verified' | 'none'
 
+export type StatsDataSource = 'api-football' | 'none'
+export type StatsConfidence = 'verified' | 'none'
+
+// Provenance carried on every stats response — matches the backend to_dict() shape.
+export interface StatsProvenance {
+  source:     string    // e.g. "api-football:/fixtures/statistics"
+  fetchedAt:  string    // ISO 8601
+  verified:   boolean
+  confidence: 'high' | 'medium' | 'low'
+  fixtureId:  string
+}
+
 export interface PlayerStatus {
   name:    string
   status:  AvailabilityStatus
@@ -38,6 +50,34 @@ export interface StatRow {
   unit:           string         // "" | "%" | "/g"
   higherIsBetter: boolean
   format:         'integer' | 'decimal'
+}
+
+// Raw shape returned by GET /matches/{id}/stats on the backend.
+// Null fields = API did not return a value; never a fabricated fallback.
+export interface ApiTeamStats {
+  possession:    number | null
+  totalShots:    number | null
+  shotsOnTarget: number | null
+  corners:       number | null
+  fouls:         number | null
+  yellowCards:   number | null
+  redCards:      number | null
+  saves:         number | null
+  offsides:      number | null
+  passes:        number | null
+  passAccuracy:  number | null
+  xG:            number | null
+}
+
+export interface ApiMatchStats {
+  matchId:    string
+  fixtureId:  string
+  source:     string
+  fetchedAt:  string
+  verified:   boolean
+  confidence: 'high' | 'medium' | 'low'
+  home:       ApiTeamStats
+  away:       ApiTeamStats
 }
 
 export type ContextType =
@@ -77,6 +117,11 @@ export interface MatchFacts {
     away: SquadFetchLog
   }
 
-  stats:   StatRow[]
+  stats:           StatRow[]
+  statsSource:     StatsDataSource    // 'api-football' when real, 'none' when unavailable
+  statsConfidence: StatsConfidence    // 'verified' when from real API, 'none' otherwise
+  statsFetchedAt?: string             // ISO 8601 timestamp of the API fetch
+  statsFixtureId?: string             // API-Football fixture ID that sourced the stats
+
   context: MatchContext[]
 }

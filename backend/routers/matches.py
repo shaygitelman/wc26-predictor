@@ -7,6 +7,7 @@ from core.database import get_db
 from models.match import Match
 from schemas.match import MatchOut
 from services.squad_availability import get_squad_availability
+from services.match_stats import get_match_statistics
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -59,3 +60,31 @@ async def get_match_squad_away(match_id: str, db: AsyncSession = Depends(get_db)
             detail="Squad data not available for this match",
         )
     return availability.to_dict()
+
+
+@router.get("/{match_id}/stats")
+async def get_match_stats(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Returns verified live match statistics from API-Football.
+
+    Only available for live or finished matches with a mapped fixture ID.
+    Returns 501 when statistics are not yet available (scheduled match, unmapped
+    fixture, or API-Football has not yet published stats for this fixture).
+
+    Response shape:
+      {
+        matchId, fixtureId, source, fetchedAt, verified, confidence,
+        home: { possession, totalShots, shotsOnTarget, corners, fouls,
+                yellowCards, redCards, saves, offsides, passes, passAccuracy, xG },
+        away: { ...same fields... }
+      }
+
+    All null fields mean the API did not return a value — never a fallback estimate.
+    """
+    stats = await get_match_statistics(match_id, db)
+    if stats is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Match statistics not available for this fixture",
+        )
+    return stats.to_dict()

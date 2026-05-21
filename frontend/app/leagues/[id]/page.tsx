@@ -1,22 +1,166 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams, notFound } from 'next/navigation'
-import { Copy, Share2, Users, Check } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { useParams, notFound, useRouter } from 'next/navigation'
+import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X } from 'lucide-react'
 import { ContextHeader } from '@/components/layout/context-header'
 import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
 import { useAuth } from '@/providers/auth-provider'
 import type { League, LeagueStanding } from '@/types/league'
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+type ToastType = 'success' | 'error'
+interface ToastState { message: string; type: ToastType; id: number }
+
+function Toast({ toast, onDismiss }: { toast: ToastState; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3500)
+    return () => clearTimeout(t)
+  }, [toast.id, onDismiss])
+
+  return (
+    <div
+      className={`fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-50
+        flex items-center justify-between gap-3 px-4 py-3 rounded-xl shadow-lg
+        text-sm font-semibold animate-in slide-in-from-bottom-2 duration-200
+        ${toast.type === 'success'
+          ? 'bg-green-600/90 text-white'
+          : 'bg-destructive/90 text-destructive-foreground'
+        }`}
+    >
+      <span>{toast.message}</span>
+      <button onClick={onDismiss} aria-label="Dismiss">
+        <X className="size-4 opacity-70 hover:opacity-100" />
+      </button>
+    </div>
+  )
+}
+
+// ─── Confirmation modal ───────────────────────────────────────────────────────
+
+interface ConfirmModalProps {
+  title: string
+  body: string
+  confirmLabel: string
+  danger?: boolean
+  loading: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+function ConfirmModal({ title, body, confirmLabel, danger = false, loading, onConfirm, onCancel }: ConfirmModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-6 flex flex-col gap-4 shadow-2xl">
+        <h2 className="text-[17px] font-bold text-foreground">{title}</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
+        <div className="flex flex-col gap-2 pt-1">
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={`w-full h-11 rounded-xl text-sm font-bold transition-opacity
+              ${danger
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-primary text-primary-foreground'
+              }
+              ${loading ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'}`}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="size-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                Loading…
+              </span>
+            ) : confirmLabel}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="w-full h-11 rounded-xl text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Settings dropdown ────────────────────────────────────────────────────────
+
+interface SettingsMenuProps {
+  isOwner: boolean
+  onDelete: () => void
+  onLeave: () => void
+}
+
+function SettingsMenu({ isOwner, onDelete, onLeave }: SettingsMenuProps) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-center size-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        aria-label="League settings"
+      >
+        <MoreVertical className="size-4" strokeWidth={1.75} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-10 z-[500] bg-card border border-border rounded-xl shadow-2xl min-w-[160px] overflow-hidden">
+          {isOwner ? (
+            <button
+              onClick={() => { setOpen(false); onDelete() }}
+              className="flex items-center gap-2.5 w-full px-4 py-3 text-sm font-semibold text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <Trash2 className="size-4" />
+              Delete League
+            </button>
+          ) : (
+            <button
+              onClick={() => { setOpen(false); onLeave() }}
+              className="flex items-center gap-2.5 w-full px-4 py-3 text-sm font-semibold text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <LogOut className="size-4" />
+              Leave League
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function LeagueDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
+  const router = useRouter()
 
-  const [league,   setLeague]   = useState<League | null>(null)
-  const [standings, setStandings] = useState<LeagueStanding[]>([])
-  const [loading,  setLoading]  = useState(true)
+  const [league,      setLeague]      = useState<League | null>(null)
+  const [standings,   setStandings]   = useState<LeagueStanding[]>([])
+  const [loading,     setLoading]     = useState(true)
   const [notFound404, setNotFound404] = useState(false)
-  const [copied,   setCopied]   = useState(false)
+  const [copied,      setCopied]      = useState(false)
+
+  const [modal,       setModal]       = useState<'delete' | 'leave' | null>(null)
+  const [actionBusy,  setActionBusy]  = useState(false)
+  const [toast,       setToast]       = useState<ToastState | null>(null)
+
+  const showToast = (message: string, type: ToastType) =>
+    setToast({ message, type, id: Date.now() })
 
   useEffect(() => {
     if (!id) return
@@ -46,6 +190,48 @@ export default function LeagueDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    setActionBusy(true)
+    try {
+      const res = await fetch(`/api/leagues/${id}`, { method: 'DELETE' })
+      if (res.ok || res.status === 204) {
+        setModal(null)
+        showToast('League deleted.', 'success')
+        setTimeout(() => router.push('/leagues'), 1200)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showToast(data?.detail ?? 'Failed to delete league.', 'error')
+        setModal(null)
+      }
+    } catch {
+      showToast('Network error. Please try again.', 'error')
+      setModal(null)
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleLeave = async () => {
+    setActionBusy(true)
+    try {
+      const res = await fetch(`/api/leagues/${id}/leave`, { method: 'DELETE' })
+      if (res.ok || res.status === 204) {
+        setModal(null)
+        showToast('You have left the league.', 'success')
+        setTimeout(() => router.push('/leagues'), 1200)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showToast(data?.detail ?? 'Failed to leave league.', 'error')
+        setModal(null)
+      }
+    } catch {
+      showToast('Network error. Please try again.', 'error')
+      setModal(null)
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
@@ -60,6 +246,7 @@ export default function LeagueDetailPage() {
   if (notFound404 || !league) return notFound()
 
   const leader = standings[0]
+  const isOwner = !!user && league.createdBy === user.sub
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
@@ -67,12 +254,19 @@ export default function LeagueDetailPage() {
         title={league.name}
         back="/leagues"
         actions={
-          <button
-            className="flex items-center justify-center size-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            aria-label="Share"
-          >
-            <Share2 className="size-4" strokeWidth={1.75} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              className="flex items-center justify-center size-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              aria-label="Share"
+            >
+              <Share2 className="size-4" strokeWidth={1.75} />
+            </button>
+            <SettingsMenu
+              isOwner={isOwner}
+              onDelete={() => setModal('delete')}
+              onLeave={() => setModal('leave')}
+            />
+          </div>
         }
       />
 
@@ -146,6 +340,36 @@ export default function LeagueDetailPage() {
           )}
         </div>
       </div>
+
+      {/* ── Confirmation modals ──────────────────────────── */}
+      {modal === 'delete' && (
+        <ConfirmModal
+          title="Delete League?"
+          body={`"${league.name}" will be permanently deleted. All members will lose access and this cannot be undone.`}
+          confirmLabel="Delete League"
+          danger
+          loading={actionBusy}
+          onConfirm={handleDelete}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {modal === 'leave' && (
+        <ConfirmModal
+          title="Leave League?"
+          body={`You will be removed from "${league.name}" and lose your standing. You can rejoin with the invite code.`}
+          confirmLabel="Leave League"
+          danger
+          loading={actionBusy}
+          onConfirm={handleLeave}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {/* ── Toast ───────────────────────────────────────── */}
+      {toast && (
+        <Toast toast={toast} onDismiss={() => setToast(null)} />
+      )}
     </div>
   )
 }

@@ -211,6 +211,47 @@ async def league_match_predictions(
     return out
 
 
+@router.delete("/{league_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_league(
+    league_id: str,
+    user:      User = Depends(get_current_user),
+    db:        AsyncSession = Depends(get_db),
+) -> None:
+    league = await db.get(League, league_id)
+    if not league:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="League not found")
+    if league.created_by != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the league owner can delete it")
+    await db.delete(league)
+    await db.commit()
+
+
+@router.delete("/{league_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_league(
+    league_id: str,
+    user:      User = Depends(get_current_user),
+    db:        AsyncSession = Depends(get_db),
+) -> None:
+    league = await db.get(League, league_id)
+    if not league:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="League not found")
+    if league.created_by == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are the owner — delete the league instead of leaving",
+        )
+    member = await db.scalar(
+        select(LeagueMember).where(
+            LeagueMember.league_id == league_id,
+            LeagueMember.user_id   == user.id,
+        )
+    )
+    if not member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this league")
+    await db.delete(member)
+    await db.commit()
+
+
 async def _require_member(league_id: str, user_id: str, db: AsyncSession) -> None:
     exists = await db.scalar(
         select(LeagueMember).where(

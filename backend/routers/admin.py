@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -422,3 +422,162 @@ async def sync_log(
         )
         for r in rows
     ]
+
+
+# ── Fixture-mapping audit ─────────────────────────────────────────
+
+
+@router.get(
+    "/stats/fixture-mapping",
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Audit how many matches have real API-Football fixture IDs vs. "
+        "manual placeholders vs. NULL. Use this to verify sync coverage "
+        "before expecting live statistics to appear in the UI."
+    ),
+)
+async def fixture_mapping_audit(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Returns a complete audit of the matches table with respect to external_id
+    mapping status. Three buckets:
+
+      synced_numeric  — external_id is a pure integer (real API-Football ID)
+                        → stats available once match goes live/finished
+      manual_seed     — external_id starts with "manual-wc2026-" (placeholder)
+                        → stats never available until real ID is synced
+      null_or_other   — external_id is NULL or unexpected format
+                        → stats never available
+
+    Also returns:
+      - Breakdown by round × id_type
+      - Breakdown by status × id_type
+      - Last 5 fixture sync log entries (to confirm when sync last ran)
+      - Up to 10 sample rows per bucket (match_id, external_id, round, status)
+    """
+    # ── Per-match classification ──────────────────────────────────
+    all_matches = (
+        await db.execute(select(Match).order_by(Match.scheduled_at))
+    ).scalars().all()
+
+    synced:  list[dict] = []
+    manual:  list[dict] = []
+    missing: list[dict] = []
+
+    for m in all_matches:
+        row = {
+            "match_id":    m.id,
+            "external_id": m.external_id,
+            "round":       m.round,
+            "status":      m.status,
+            "home":        m.home_team_code,
+            "away":        m.away_team_code,
+        }
+        if m.external_id and m.external_id.isdigit():
+            synced.append(row)
+        elif m.external_id and m.external_id.startswith("manual-"):
+            manual.append(row)
+        else:
+            missing.append(row)
+
+    total = len(synced) + len(manual) + len(missing)
+
+    # ── Counts by round ───────────────────────────────────────────
+    rounds_all = set(m.round for m in all_matches)
+    by_round: dict[str, dict] = {}
+    for rnd in sorted(rounds_all):
+        rnd_matches = [m for m in all_matches if m.round == rnd]
+        by_round[rnd] = {
+            "total":          len(rnd_matches),
+            "synced_numeric": sum(1 for m in rnd_matches if m.external_id and m.external_id.isdigit()),
+            "manual_seed":    sum(1 for m in rnd_matches if m.external_id and m.external_id.startswith("manual-")),
+            "null_or_other":  sum(1 for m in rnd_matches if not m.external_id or (not m.external_id.isdigit() and not m.external_id.startswith("manual-"))),
+        }
+
+    # ── Counts by status ──────────────────────────────────────────
+    statuses = set(m.status for m in all_matches)
+    by_status: dict[str, dict] = {}
+    for s in sorted(statuses):
+        s_matches = [m for m in all_matches if m.status == s]
+        by_status[s] = {
+            "total":          len(s_matches),
+            "synced_numeric": sum(1 for m in s_matches if m.external_id and m.external_id.isdigit()),
+            "manual_seed":    sum(1 for m in s_matches if m.external_id and m.external_id.startswith("manual-")),
+            "null_or_other":  sum(1 for m in s_matches if not m.external_id or (not m.external_id.isdigit() and not m.external_id.startswith("manual-"))),
+        }
+
+    # ── Stats-ready matches (synced + live or finished) ───────────
+    stats_ready = [
+        m for m in all_matches
+        if m.external_id and m.external_id.isdigit() and m.status in ("live", "finished")
+    ]
+
+    # ── Last fixture sync log entries ─────────────────────────────
+    recent_sync_logs = (
+        await db.execute(
+            select(SyncLog)
+            .where(SyncLog.entity_type == "fixtures")
+            .order_by(SyncLog.started_at.desc())
+            .limit(5)
+        )
+    ).scalars().all()
+
+    sync_log_summary = [
+        {
+            "provider":         s.provider,
+            "status":           s.status,
+            "records_affected": s.records_affected,
+            "started_at":       s.started_at.isoformat(),
+            "finished_at":      s.finished_at.isoformat() if s.finished_at else None,
+            "error":            s.error_message,
+        }
+        for s in recent_sync_logs
+    ]
+
+    # ── Verdict ───────────────────────────────────────────────────
+    if not recent_sync_logs:
+        sync_verdict = "NEVER_SYNCED — POST /admin/sync/fixtures has never run"
+    elif any(s.status == "success" for s in recent_sync_logs):
+        latest_ok = next(s for s in recent_sync_logs if s.status == "success")
+        sync_verdict = f"OK — last successful sync at {latest_ok.started_at.isoformat()}"
+    else:
+        sync_verdict = f"LAST_SYNC_FAILED — last attempt: {recent_sync_logs[0].started_at.isoformat()}"
+
+    stats_verdict = (
+        f"READY — {len(stats_ready)} match(es) are live/finished with numeric external_id "
+        "and can return real statistics from API-Football"
+        if stats_ready else
+        "NOT_READY — no matches are currently live/finished with a real API-Football fixture ID"
+    )
+
+    return {
+        "summary": {
+            "total_matches":    total,
+            "synced_numeric":   len(synced),
+            "manual_seed":      len(manual),
+            "null_or_other":    len(missing),
+            "stats_ready_now":  len(stats_ready),
+        },
+        "verdicts": {
+            "fixture_sync":  sync_verdict,
+            "stats_pipeline": stats_verdict,
+        },
+        "by_round":       by_round,
+        "by_status":      by_status,
+        "stats_ready_matches": [
+            {
+                "match_id":    m.id,
+                "external_id": m.external_id,
+                "round":       m.round,
+                "status":      m.status,
+                "home":        m.home_team_code,
+                "away":        m.away_team_code,
+            }
+            for m in stats_ready
+        ],
+        "samples": {
+            "synced_numeric": synced[:10],
+            "manual_seed":    manual[:10],
+            "null_or_other":  missing[:10],
+        },
+        "recent_fixture_sync_log": sync_log_summary,
+    }

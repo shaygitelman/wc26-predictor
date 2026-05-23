@@ -93,16 +93,16 @@ export default async function HomePage() {
           </div>
           <div className="flex items-center gap-4 flex-shrink-0">
             <div className="text-center">
-              <p className="text-lg font-black text-gold-gradient tabular leading-none">
-                {s ? `#${s.globalRank}` : '—'}
-              </p>
-              <p className="text-2xs text-muted-foreground mt-0.5">rank</p>
-            </div>
-            <div className="text-center">
               <p className="text-lg font-black text-primary tabular leading-none">
                 {s ? s.totalPoints : '—'}
               </p>
               <p className="text-2xs text-muted-foreground mt-0.5">pts</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-black text-foreground tabular leading-none">
+                {s ? s.totalPredictions : '—'}
+              </p>
+              <p className="text-2xs text-muted-foreground mt-0.5">picks</p>
             </div>
             <ChevronRight className="size-4 text-muted-foreground" />
           </div>

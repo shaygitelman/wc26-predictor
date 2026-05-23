@@ -68,10 +68,10 @@ export default async function ProfilePage() {
 
         {/* ── Stats row ─────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-2">
-          <StatCell label="Points"    value={s ? s.totalPoints.toString()    : '—'} variant="primary" />
-          <StatCell label="Rank"      value={s ? `#${s.globalRank}`          : '—'} variant="gold" />
-          <StatCell label="Exact"     value={s ? s.exactScores.toString()    : '—'} />
-          <StatCell label="Predicted" value={s ? `${s.totalPredictions}/104` : '—'} />
+          <StatCell label="Points"    value={s ? s.totalPoints.toString()         : '—'} variant="primary" />
+          <StatCell label="Exact"     value={s ? s.exactScores.toString()         : '—'} />
+          <StatCell label="Correct"   value={s ? s.correctPredictions.toString()  : '—'} />
+          <StatCell label="Predicted" value={s ? `${s.totalPredictions}/104`      : '—'} />
         </div>
 
         {/* ── Tournament picks ──────────────────────────────── */}

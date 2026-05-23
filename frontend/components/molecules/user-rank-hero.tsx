@@ -41,9 +41,9 @@ export function UserRankHero({ user, stats, className }: UserRankHeroProps) {
 
       {/* Stats grid */}
       <div className="relative grid grid-cols-3 gap-2">
-        <StatBox label="Global Rank" value={`#${stats.globalRank.toLocaleString()}`} variant="gold" />
-        <StatBox label="Points"      value={stats.totalPoints.toLocaleString()} variant="primary" />
-        <StatBox label="Predicted"   value={`${stats.totalPredictions}/104`} />
+        <StatBox label="Points"    value={stats.totalPoints.toLocaleString()} variant="primary" />
+        <StatBox label="Exact"     value={stats.exactScores.toLocaleString()} />
+        <StatBox label="Predicted" value={`${stats.totalPredictions}/104`} />
       </div>
     </div>
   )

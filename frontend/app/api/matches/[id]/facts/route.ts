@@ -250,9 +250,15 @@ async function fetchMatchStats(matchId: string): Promise<StatsFetchResult> {
 
 async function safeHistFetch<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { cache: 'no-store' })
-    if (!res.ok) return null
-    return await res.json() as T
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 10000)
+    try {
+      const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal })
+      if (!res.ok) return null
+      return await res.json() as T
+    } finally {
+      clearTimeout(timer)
+    }
   } catch {
     return null
   }

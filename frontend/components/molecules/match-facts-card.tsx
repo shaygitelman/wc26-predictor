@@ -44,7 +44,7 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
 
   useEffect(() => {
     const ctrl  = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 6000)
+    const timer = setTimeout(() => ctrl.abort(), 15000)
 
     fetch(`/api/matches/${matchId}/facts`, { cache: 'no-store', signal: ctrl.signal })
       .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
@@ -82,7 +82,7 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
     return () => { ctrl.abort(); clearTimeout(timer) }
   }, [matchId])
 
-  if (status === 'error') return null
+  if (status === 'error') return <FactsErrorCard />
   if (status === 'loading' || !facts) return <FactsSkeleton />
   if (facts.pendingData)              return <FactsPendingCard homeTeam={homeTeam} awayTeam={awayTeam} />
 
@@ -564,6 +564,27 @@ function StatsTable({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ─── Error fallback ───────────────────────────────────────────
+
+function FactsErrorCard() {
+  return (
+    <div className="bg-card rounded-2xl border border-border overflow-hidden">
+      <div className="flex items-center px-4 py-3.5 border-b border-border/50">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="size-[15px] text-muted-foreground/50 flex-shrink-0" strokeWidth={1.75} />
+          <span className="text-[13px] font-bold text-muted-foreground tracking-[-0.01em]">Match Facts</span>
+        </div>
+      </div>
+      <div className="px-4 py-6 flex flex-col items-center gap-2 text-center">
+        <p className="text-[12px] text-muted-foreground/55">Stats unavailable right now</p>
+        <p className="text-[11px] text-muted-foreground/35 leading-snug">
+          Refresh the page to try again.
+        </p>
+      </div>
     </div>
   )
 }

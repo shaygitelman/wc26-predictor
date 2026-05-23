@@ -12,9 +12,14 @@ export function RoundBadge({ round, group, className }: RoundBadgeProps) {
     ? `GROUP ${group}`
     : ROUND_LABELS[round].toUpperCase()
 
+  const isKnockout = round !== 'group'
+
   return (
     <span className={cn(
-      'text-2xs font-bold tracking-widest text-muted-foreground',
+      'text-2xs font-black tracking-[0.14em]',
+      isKnockout
+        ? 'text-gold/90'
+        : 'text-muted-foreground/75',
       className,
     )}>
       {label}

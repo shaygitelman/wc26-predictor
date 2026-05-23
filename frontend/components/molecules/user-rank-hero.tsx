@@ -13,9 +13,15 @@ export function UserRankHero({ user, stats, className }: UserRankHeroProps) {
   const hasRankChange = stats.rankChange && stats.rankChange !== 0
 
   return (
-    <div className={cn('bg-card rounded-xl border border-border p-4', className)}>
+    <div className={cn(
+      'relative bg-card rounded-2xl border border-border p-4 overflow-hidden shadow-card',
+      className,
+    )}>
+      {/* Subtle atmospheric glow */}
+      <div className="absolute inset-0 bg-championship-atmosphere pointer-events-none" />
+
       {/* User identity row */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="relative flex items-center gap-3 mb-4">
         <UserAvatar username={user.username} avatarId={user.avatarId} avatarUrl={user.avatarUrl} size="md" />
         <div>
           <p className="font-bold text-[15px] text-foreground">{user.username}</p>
@@ -34,9 +40,9 @@ export function UserRankHero({ user, stats, className }: UserRankHeroProps) {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-2">
-        <StatBox label="Global Rank" value={`#${stats.globalRank.toLocaleString()}`} accent />
-        <StatBox label="Points"      value={stats.totalPoints.toLocaleString()} />
+      <div className="relative grid grid-cols-3 gap-2">
+        <StatBox label="Global Rank" value={`#${stats.globalRank.toLocaleString()}`} variant="gold" />
+        <StatBox label="Points"      value={stats.totalPoints.toLocaleString()} variant="primary" />
         <StatBox label="Predicted"   value={`${stats.totalPredictions}/104`} />
       </div>
     </div>
@@ -46,21 +52,23 @@ export function UserRankHero({ user, stats, className }: UserRankHeroProps) {
 function StatBox({
   label,
   value,
-  accent = false,
+  variant,
 }: {
-  label: string
-  value: string
-  accent?: boolean
+  label:    string
+  value:    string
+  variant?: 'gold' | 'primary'
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 bg-surface-elevated rounded-lg py-3 px-1">
+    <div className="flex flex-col items-center gap-1 bg-surface-elevated rounded-xl py-3.5 px-1 border border-border/50">
       <span className={cn(
-        'text-xl font-extrabold tabular leading-none',
-        accent ? 'text-primary' : 'text-foreground',
+        'text-xl font-black tabular leading-none',
+        variant === 'gold'    ? 'text-gold-gradient'  :
+        variant === 'primary' ? 'text-primary'        :
+        'text-foreground',
       )}>
         {value}
       </span>
-      <span className="text-2xs text-muted-foreground font-medium text-center leading-tight">
+      <span className="text-2xs text-muted-foreground/80 font-medium text-center leading-tight">
         {label}
       </span>
     </div>

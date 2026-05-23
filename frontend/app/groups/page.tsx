@@ -178,7 +178,7 @@ function GroupsView({
           {/* Group fixtures */}
           {activeData.matches.length > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground">Fixtures</p>
+              <p className="text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/80">Fixtures</p>
               {activeData.matches.map(m => (
                 <GroupFixtureRow key={m.id} match={m} />
               ))}
@@ -198,7 +198,7 @@ function GroupsView({
 
 function StandingsTable({ group, teams }: { group: string; teams: ApiTeamStanding[] }) {
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden">
+    <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-card">
       <div className="flex items-center px-3 py-2 border-b border-border bg-surface-elevated">
         <span className="text-2xs font-bold text-muted-foreground uppercase tracking-widest w-6 text-center flex-shrink-0">
           #
@@ -317,7 +317,7 @@ function GroupFixtureRow({ match }: { match: import('@/types/standings').ApiGrou
 
   return (
     <div className={cn(
-      'bg-card rounded-xl border px-3 py-2.5 flex items-center gap-3',
+      'bg-card rounded-2xl border px-3 py-2.5 flex items-center gap-3',
       isLive    ? 'border-status-live/40' : 'border-border',
       eitherTbd && 'opacity-70',
     )}>
@@ -452,7 +452,7 @@ function BracketView({ loading, bracket }: { loading: boolean; bracket: ApiBrack
 function RoundLabel({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex items-center gap-3 mb-3">
-      <p className="text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground whitespace-nowrap">
+      <p className="text-[11px] font-black tracking-[0.14em] uppercase text-gold/80 whitespace-nowrap">
         {label}
       </p>
       <div className="flex-1 h-px bg-border" />
@@ -467,7 +467,7 @@ function BracketMatchCard({ match }: { match: ApiBracketEntry }) {
 
   return (
     <div className={cn(
-      'bg-card rounded-xl border overflow-hidden',
+      'bg-card rounded-2xl border overflow-hidden shadow-card',
       isLive ? 'border-status-live/40' : 'border-border',
     )}>
       {(match.scheduledAt || isLive || isFinished) && (
@@ -602,13 +602,13 @@ function TabPill({
     <button
       onClick={onClick}
       className={cn(
-        'flex-1 py-3 text-sm font-bold transition-colors duration-150 relative',
+        'flex-1 py-3 text-sm font-black tracking-wide transition-colors duration-150 relative',
         active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
       )}
     >
       {label}
       {active && (
-        <span className="absolute bottom-0 left-4 right-4 h-[2px] rounded-full bg-primary" />
+        <span className="absolute bottom-0 left-4 right-4 h-[2.5px] rounded-full bg-primary shadow-[0_0_8px_rgba(136,117,255,0.6)]" />
       )}
     </button>
   )

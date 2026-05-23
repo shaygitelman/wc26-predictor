@@ -73,7 +73,7 @@ function SegmentedFilter({
   const idx = FILTERS.findIndex(f => f.value === active)
 
   return (
-    <div className="sticky top-0 z-10 px-4 py-3 border-b border-border/60 bg-background/95 backdrop-blur-sm">
+    <div className="sticky top-0 z-10 px-4 py-3 border-b border-border/60 bg-background/97 backdrop-blur-xl">
       <div className="relative flex bg-surface-elevated rounded-xl p-1">
         {/* Sliding pill */}
         <span
@@ -95,7 +95,7 @@ function SegmentedFilter({
               className={cn(
                 'relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2',
                 'text-sm font-semibold rounded-[10px] transition-colors duration-150',
-                isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/70',
+                isActive ? 'text-foreground font-bold' : 'text-muted-foreground hover:text-foreground/70',
               )}
             >
               {showLive && <LiveDot size="sm" />}
@@ -197,7 +197,7 @@ export default function MatchesPage() {
       <SegmentedFilter active={filter} liveCount={liveCount} onChange={setFilter} />
 
       {pendingCount > 0 && filter !== 'finished' && (
-        <div className="mx-4 mt-3 flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/[0.07] border border-primary/15">
+        <div className="mx-4 mt-3 flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary/[0.08] border border-primary/20 shadow-primary-glow/5">
           <div className="size-7 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0 text-sm">
             ⚡
           </div>
@@ -229,12 +229,12 @@ export default function MatchesPage() {
               <section key={dateLabel}>
                 <div className="flex items-center gap-3 mb-3">
                   <p className={cn(
-                    'text-2xs font-bold tracking-[0.12em] whitespace-nowrap',
-                    isToday ? 'text-primary' : 'text-muted-foreground',
+                    'text-[11px] font-black tracking-[0.14em] uppercase whitespace-nowrap',
+                    isToday ? 'text-primary' : 'text-muted-foreground/80',
                   )}>
                     {smartLabel}
                   </p>
-                  <div className={cn('flex-1 h-px', isToday ? 'bg-primary/25' : 'bg-border')} />
+                  <div className={cn('flex-1 h-px', isToday ? 'bg-primary/30' : 'bg-border')} />
                 </div>
                 <div className="flex flex-col gap-3">
                   {dayMatches.map(match => (

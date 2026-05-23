@@ -124,9 +124,10 @@ export default function LeaguesPage() {
             <button
               onClick={() => setSheet('create')}
               className={cn(
-                'flex items-center justify-center gap-2 rounded-xl py-3.5',
+                'flex items-center justify-center gap-2 rounded-2xl py-3.5',
                 'text-sm font-bold bg-primary text-primary-foreground',
                 'hover:opacity-90 active:scale-[0.98] transition-all duration-150',
+                'shadow-primary-glow',
               )}
             >
               <Plus className="size-4" strokeWidth={2.5} />
@@ -135,9 +136,9 @@ export default function LeaguesPage() {
             <button
               onClick={() => setSheet('join')}
               className={cn(
-                'flex items-center justify-center gap-2 rounded-xl py-3.5',
+                'flex items-center justify-center gap-2 rounded-2xl py-3.5',
                 'text-sm font-bold bg-card text-foreground border border-border',
-                'hover:bg-surface-elevated active:scale-[0.98] transition-all duration-150',
+                'hover:bg-surface-elevated active:scale-[0.98] transition-all duration-150 shadow-card',
               )}
             >
               <Hash className="size-4" strokeWidth={2.5} />
@@ -153,7 +154,7 @@ export default function LeaguesPage() {
                 <div className="size-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
               </div>
             ) : leagues.length === 0 ? (
-              <div className="bg-card rounded-xl border border-border p-6 text-center">
+              <div className="bg-card rounded-2xl border border-border p-6 text-center shadow-card">
                 <p className="text-sm font-semibold text-foreground mb-1">No leagues yet</p>
                 <p className="text-xs text-muted-foreground">
                   Create one or join a friend&apos;s with their invite code.
@@ -170,7 +171,7 @@ export default function LeaguesPage() {
 
           {/* ── Invite hint ─────────────────────────────────── */}
           {leagues.length > 0 && (
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
+            <div className="bg-card rounded-2xl border border-border p-4 text-center shadow-card">
               <p className="text-sm font-semibold text-foreground mb-1">
                 Want to compete with more friends?
               </p>
@@ -203,7 +204,7 @@ export default function LeaguesPage() {
         <SheetCloseButton onClose={closeSheet} disabled={isSheetBusy} />
 
         <div className="px-6 pt-3 pb-2">
-          <p className="text-center text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground">
+          <p className="text-center text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/80">
             Create League
           </p>
         </div>
@@ -264,7 +265,7 @@ export default function LeaguesPage() {
         <SheetCloseButton onClose={closeSheet} disabled={isSheetBusy} />
 
         <div className="px-6 pt-3 pb-2">
-          <p className="text-center text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground">
+          <p className="text-center text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/80">
             Join with Invite Code
           </p>
         </div>

@@ -21,7 +21,7 @@ export function ContextHeader({
     <header
       className={cn(
         'relative sticky top-0 z-40 flex items-center h-14 px-4 gap-3',
-        !transparent && 'bg-surface/90 backdrop-blur-md border-b border-border/80',
+        !transparent && 'bg-surface/92 backdrop-blur-xl border-b border-border',
         className,
       )}
     >
@@ -34,11 +34,11 @@ export function ContextHeader({
             'transition-colors duration-150',
           )}
         >
-          <ArrowLeft className="size-5" />
+          <ArrowLeft className="size-5" strokeWidth={2} />
         </Link>
       )}
 
-      <h1 className="flex-1 font-bold text-[17px] text-foreground tracking-tight truncate">
+      <h1 className="flex-1 font-black text-[18px] text-foreground tracking-tight truncate">
         {title}
       </h1>
 
@@ -46,9 +46,9 @@ export function ContextHeader({
         <div className="flex items-center gap-2">{actions}</div>
       )}
 
-      {/* WC tournament accent */}
+      {/* Gold WC accent line */}
       {!transparent && (
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent pointer-events-none" />
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gold/35 to-transparent pointer-events-none" />
       )}
     </header>
   )

@@ -10,118 +10,120 @@
 @layer base {
   :root {
     /* Backgrounds — cool blue-tinted light system */
-    --background:       #EEF3FB;
+    --background:       #E8F0FA;
     --surface:          #ffffff;
-    --surface-elevated: #E3EBF6;
-    --surface-overlay:  #D6E4F2;
+    --surface-elevated: #DAE6F4;
+    --surface-overlay:  #C8D8EE;
 
     /* Typography */
-    --foreground:         #0a0a1f;
-    --muted-foreground:   #5A6A8A;
+    --foreground:         #07091C;
+    --muted-foreground:   #4E6080;
 
-    /* Brand */
-    --primary:            #7c6fff;
+    /* Brand — electric violet */
+    --primary:            #8875FF;
     --primary-foreground: #ffffff;
-    --primary-muted:      rgba(124, 111, 255, 0.12);
+    --primary-muted:      rgba(136, 117, 255, 0.14);
 
     /* Borders & inputs */
-    --border: #C8D8EE;
-    --input:  #C8D8EE;
-    --ring:   #7c6fff;
+    --border: #BBCDE6;
+    --input:  #BBCDE6;
+    --ring:   #8875FF;
 
-    /* Gold accent family */
-    --gold:        #E8A020;
-    --gold-bright: #F5B730;
-    --gold-muted:  rgba(232, 160, 32, 0.14);
-    --gold-border: rgba(232, 160, 32, 0.30);
+    /* Gold / amber accent family */
+    --gold:        #F0A80C;
+    --gold-bright: #FFB91A;
+    --gold-dim:    #C88A00;
+    --gold-muted:  rgba(240, 168, 12, 0.15);
+    --gold-border: rgba(240, 168, 12, 0.35);
 
     /* Shadows — light mode */
-    --shadow-card:     0 2px 10px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
-    --shadow-raised:   0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
-    --shadow-glow-live:    0 0 0 1px rgba(0,212,106,0.25), 0 0 20px rgba(0,212,106,0.10);
-    --shadow-glow-gold:    0 0 0 1px rgba(232,160,32,0.30), 0 0 16px rgba(232,160,32,0.12);
-    --shadow-glow-primary: 0 0 0 1px rgba(124,111,255,0.20), 0 0 16px rgba(124,111,255,0.10);
+    --shadow-card:         0 2px 12px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+    --shadow-raised:       0 6px 24px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.05);
+    --shadow-glow-live:    0 0 0 1px rgba(0,212,106,0.30), 0 0 24px rgba(0,212,106,0.14);
+    --shadow-glow-gold:    0 0 0 1px rgba(240,168,12,0.40), 0 0 20px rgba(240,168,12,0.18);
+    --shadow-glow-primary: 0 0 0 1px rgba(136,117,255,0.25), 0 0 20px rgba(136,117,255,0.14);
 
     /* shadcn-compatible aliases */
     --card:               #ffffff;
-    --card-foreground:    #0a0a1f;
+    --card-foreground:    #07091C;
     --popover:            #ffffff;
-    --popover-foreground: #0a0a1f;
-    --secondary:          #E3EBF6;
-    --secondary-foreground: #0a0a1f;
-    --muted:              #E3EBF6;
-    --accent:             #D6E4F2;
-    --accent-foreground:  #0a0a1f;
-    --destructive:        #ff4757;
+    --popover-foreground: #07091C;
+    --secondary:          #DAE6F4;
+    --secondary-foreground: #07091C;
+    --muted:              #DAE6F4;
+    --accent:             #C8D8EE;
+    --accent-foreground:  #07091C;
+    --destructive:        #F03A4A;
     --destructive-foreground: #ffffff;
 
     /* Status */
-    --status-live:    #00d46a;
-    --status-won:     #00d46a;
-    --status-partial: #F0A500;
-    --status-lost:    #ff4757;
-    --status-pending: #8080a8;
+    --status-live:    #00D46A;
+    --status-won:     #00D46A;
+    --status-partial: #F59A00;
+    --status-lost:    #F03A4A;
+    --status-pending: #7A90B8;
 
-    /* Status backgrounds (explicit — avoids opacity-modifier limitations) */
+    /* Status backgrounds */
     --status-live-bg:    rgba(0,   212, 106, 0.12);
     --status-won-bg:     rgba(0,   212, 106, 0.12);
-    --status-partial-bg: rgba(240, 165,   0, 0.12);
-    --status-lost-bg:    rgba(255,  71,  87, 0.12);
+    --status-partial-bg: rgba(245, 154,   0, 0.13);
+    --status-lost-bg:    rgba(240,  58,  74, 0.11);
   }
 
   .dark {
-    /* Backgrounds — deep navy system */
-    --background:       #060C18;
-    --surface:          #0C1527;
-    --surface-elevated: #132037;
-    --surface-overlay:  #1A2C47;
+    /* Backgrounds — deep midnight navy */
+    --background:       #040810;
+    --surface:          #080F1E;
+    --surface-elevated: #0E1929;
+    --surface-overlay:  #152236;
 
-    --foreground:       #E8F0FF;
-    --muted-foreground: #7A92B8;
+    --foreground:       #EBF2FF;
+    --muted-foreground: #6E8CB0;
 
-    --primary:            #7c6fff;
+    --primary:            #8875FF;
     --primary-foreground: #ffffff;
-    --primary-muted:      rgba(124, 111, 255, 0.16);
+    --primary-muted:      rgba(136, 117, 255, 0.18);
 
-    --border: #1E3252;
-    --input:  #1E3252;
-    --ring:   #7c6fff;
+    --border: #192D4A;
+    --input:  #192D4A;
+    --ring:   #8875FF;
 
-    /* Gold accent family */
-    --gold:        #E8A020;
-    --gold-bright: #F5B730;
-    --gold-muted:  rgba(232, 160, 32, 0.14);
-    --gold-border: rgba(232, 160, 32, 0.30);
+    /* Gold / amber accent family */
+    --gold:        #F0A80C;
+    --gold-bright: #FFB91A;
+    --gold-dim:    #C88A00;
+    --gold-muted:  rgba(240, 168, 12, 0.16);
+    --gold-border: rgba(240, 168, 12, 0.38);
 
-    /* Shadows — dark mode (more dramatic) */
-    --shadow-card:     0 2px 16px rgba(0,0,0,0.50), 0 0 0 1px rgba(255,255,255,0.03);
-    --shadow-raised:   0 6px 28px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04);
-    --shadow-glow-live:    0 0 0 1px rgba(0,212,106,0.30), 0 0 24px rgba(0,212,106,0.14);
-    --shadow-glow-gold:    0 0 0 1px rgba(232,160,32,0.35), 0 0 22px rgba(232,160,32,0.16);
-    --shadow-glow-primary: 0 0 0 1px rgba(124,111,255,0.28), 0 0 22px rgba(124,111,255,0.14);
+    /* Shadows — dark mode (deep and warm-tinged) */
+    --shadow-card:         0 2px 20px rgba(0,0,0,0.60), 0 0 0 1px rgba(255,255,255,0.035);
+    --shadow-raised:       0 8px 32px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04);
+    --shadow-glow-live:    0 0 0 1px rgba(0,212,106,0.35), 0 0 28px rgba(0,212,106,0.18);
+    --shadow-glow-gold:    0 0 0 1px rgba(240,168,12,0.45), 0 0 28px rgba(240,168,12,0.22);
+    --shadow-glow-primary: 0 0 0 1px rgba(136,117,255,0.35), 0 0 28px rgba(136,117,255,0.18);
 
-    --card:               #0C1527;
-    --card-foreground:    #E8F0FF;
-    --popover:            #132037;
-    --popover-foreground: #E8F0FF;
-    --secondary:          #132037;
-    --secondary-foreground: #E8F0FF;
-    --muted:              #1E3252;
-    --accent:             #1A2C47;
-    --accent-foreground:  #E8F0FF;
-    --destructive:        #ff4757;
+    --card:               #080F1E;
+    --card-foreground:    #EBF2FF;
+    --popover:            #0E1929;
+    --popover-foreground: #EBF2FF;
+    --secondary:          #0E1929;
+    --secondary-foreground: #EBF2FF;
+    --muted:              #192D4A;
+    --accent:             #152236;
+    --accent-foreground:  #EBF2FF;
+    --destructive:        #F03A4A;
     --destructive-foreground: #ffffff;
 
-    --status-live:    #00d46a;
-    --status-won:     #00d46a;
-    --status-partial: #F0A500;
-    --status-lost:    #ff4757;
-    --status-pending: #5A7299;
+    --status-live:    #00D46A;
+    --status-won:     #00D46A;
+    --status-partial: #F59A00;
+    --status-lost:    #F03A4A;
+    --status-pending: #4C6A8E;
 
-    --status-live-bg:    rgba(0,   212, 106, 0.14);
-    --status-won-bg:     rgba(0,   212, 106, 0.14);
-    --status-partial-bg: rgba(240, 165,   0, 0.14);
-    --status-lost-bg:    rgba(255,  71,  87, 0.14);
+    --status-live-bg:    rgba(0,   212, 106, 0.15);
+    --status-won-bg:     rgba(0,   212, 106, 0.15);
+    --status-partial-bg: rgba(245, 154,   0, 0.14);
+    --status-lost-bg:    rgba(240,  58,  74, 0.13);
   }
 }
 
@@ -162,6 +164,7 @@
   /* Gold accent */
   --color-gold:        var(--gold);
   --color-gold-bright: var(--gold-bright);
+  --color-gold-dim:    var(--gold-dim);
   --color-gold-muted:  var(--gold-muted);
   --color-gold-border: var(--gold-border);
 
@@ -178,7 +181,7 @@
   --color-status-partial-bg: var(--status-partial-bg);
   --color-status-lost-bg:    var(--status-lost-bg);
 
-  /* Extra text size: 10px — not in Tailwind defaults */
+  /* Extra text size: 10px */
   --text-2xs: 0.625rem;
   --text-2xs--line-height: 0.875rem;
 
@@ -189,14 +192,15 @@
   --animate-score-pop:     score-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   --animate-shimmer:       shimmer 1.6s linear infinite;
   --animate-slide-up-fade: slide-up-fade 0.25s ease-out;
-  --animate-glow-breathe:  glow-breathe 3s ease-in-out infinite;
-  --animate-enter-up: enter-up 0.2s ease-out;
+  --animate-glow-breathe:  glow-breathe 2.8s ease-in-out infinite;
+  --animate-enter-up:      enter-up 0.2s ease-out;
+  --animate-gold-pulse:    gold-pulse 2.5s ease-in-out infinite;
 }
 
 /* ─── Keyframes ──────────────────────────────────────────────── */
 @keyframes live-pulse {
   0%, 100% { opacity: 1;    transform: scale(1);    }
-  50%       { opacity: 0.4; transform: scale(0.82); }
+  50%       { opacity: 0.4; transform: scale(0.80); }
 }
 
 @keyframes fade-in {
@@ -225,8 +229,13 @@
 }
 
 @keyframes glow-breathe {
-  0%, 100% { opacity: 0.6; }
+  0%, 100% { opacity: 0.55; }
   50%       { opacity: 1;   }
+}
+
+@keyframes gold-pulse {
+  0%, 100% { text-shadow: 0 0 0px rgba(240,168,12,0); }
+  50%       { text-shadow: 0 0 16px rgba(240,168,12,0.55); }
 }
 
 @keyframes enter-up {
@@ -243,7 +252,7 @@
 
   html, body {
     height: 100%;
-    overscroll-behavior: none;       /* prevent bounce on iOS */
+    overscroll-behavior: none;
   }
 
   body {
@@ -254,7 +263,6 @@
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 
-  /* Numbers always render at the same width */
   .tabular { font-variant-numeric: tabular-nums; }
 }
 
@@ -272,22 +280,30 @@
   .scrollbar-none::-webkit-scrollbar { display: none; }
 
   /* ── Elevation shadows ── */
-  .shadow-card      { box-shadow: var(--shadow-card); }
-  .shadow-raised    { box-shadow: var(--shadow-raised); }
-  .shadow-live      { box-shadow: var(--shadow-glow-live); }
-  .shadow-gold      { box-shadow: var(--shadow-glow-gold); }
-  .shadow-primary-glow { box-shadow: var(--shadow-glow-primary); }
+  .shadow-card          { box-shadow: var(--shadow-card); }
+  .shadow-raised        { box-shadow: var(--shadow-raised); }
+  .shadow-live          { box-shadow: var(--shadow-glow-live); }
+  .shadow-gold          { box-shadow: var(--shadow-glow-gold); }
+  .shadow-primary-glow  { box-shadow: var(--shadow-glow-primary); }
 
   /* ── Stadium atmosphere backgrounds ── */
   .bg-stadium-glow {
-    background: radial-gradient(ellipse at 50% 0%, rgba(232,160,32,0.06) 0%, transparent 65%);
+    background: radial-gradient(ellipse at 50% 0%, rgba(240,168,12,0.08) 0%, transparent 60%);
   }
 
   .bg-live-atmosphere {
-    background: radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.05) 0%, transparent 60%);
+    background: radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.07) 0%, transparent 58%);
   }
 
-  /* ── Gold shimmer gradient utility ── */
+  /* ── Championship atmosphere — used on home hero ── */
+  .bg-championship-atmosphere {
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(240,168,12,0.14) 0%, transparent 50%),
+      radial-gradient(ellipse at 10% 80%,  rgba(136,117,255,0.07) 0%, transparent 45%),
+      radial-gradient(ellipse at 90% 80%,  rgba(136,117,255,0.06) 0%, transparent 45%);
+  }
+
+  /* ── Gold shimmer gradient ── */
   .gold-shimmer {
     background: linear-gradient(
       90deg,
@@ -298,32 +314,55 @@
     background-size: 200% auto;
   }
 
-  /* ── Glow animations ── */
-  .animate-glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
+  /* ── Gold text gradient ── */
+  .text-gold-gradient {
+    background: linear-gradient(135deg, var(--gold-bright) 0%, var(--gold) 60%, var(--gold-dim) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
 
-  /* ── Hero atmospheric background ── */
+  /* ── Glow animations ── */
+  .animate-glow-breathe { animation: glow-breathe 2.8s ease-in-out infinite; }
+  .animate-gold-pulse   { animation: gold-pulse   2.5s ease-in-out infinite; }
+  .animate-enter-up     { animation: var(--animate-enter-up); }
+
+  /* ── Hero atmospheric backgrounds ── */
   .bg-hero-atmosphere {
     background:
-      radial-gradient(ellipse at 50% -5%, rgba(232,160,32,0.10) 0%, transparent 52%),
-      radial-gradient(ellipse at 15% 70%, rgba(124,111,255,0.06) 0%, transparent 45%),
-      radial-gradient(ellipse at 85% 70%, rgba(124,111,255,0.05) 0%, transparent 45%);
+      radial-gradient(ellipse at 50% -5%, rgba(240,168,12,0.12) 0%, transparent 50%),
+      radial-gradient(ellipse at 15% 70%, rgba(136,117,255,0.07) 0%, transparent 45%),
+      radial-gradient(ellipse at 85% 70%, rgba(136,117,255,0.06) 0%, transparent 45%);
   }
 
   .bg-live-hero-atmosphere {
     background:
-      radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.13) 0%, transparent 55%),
-      radial-gradient(ellipse at 50% 100%, rgba(0,212,106,0.05) 0%, transparent 40%);
+      radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.16) 0%, transparent 52%),
+      radial-gradient(ellipse at 50% 100%, rgba(0,212,106,0.06) 0%, transparent 40%);
   }
 
-  /* ── Gradient fade overlays ── */
+  /* ── Gradient fade overlay ── */
   .fade-to-background-b {
     background: linear-gradient(to bottom, transparent, var(--background));
   }
 
-  /* ── Live score glow (inline style helper class) ── */
+  /* ── Live score glow ── */
   .live-score-glow {
-    filter: drop-shadow(0 0 12px rgba(0, 212, 106, 0.45));
+    filter: drop-shadow(0 0 14px rgba(0, 212, 106, 0.55));
   }
 
-  .animate-enter-up { animation: var(--animate-enter-up); }
+  /* ── Card glass — subtle top sheen for premium feel ── */
+  .card-sheen {
+    background-image: linear-gradient(
+      180deg,
+      rgba(255,255,255,0.035) 0%,
+      transparent 60%
+    );
+  }
+
+  /* ── Gradient borders ── */
+  .border-gold-glow {
+    border-color: transparent;
+    box-shadow: 0 0 0 1px rgba(240,168,12,0.45), var(--shadow-glow-gold);
+  }
 }

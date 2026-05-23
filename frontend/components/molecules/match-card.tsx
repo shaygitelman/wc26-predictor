@@ -24,16 +24,19 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
     <Link
       href={`/matches/${match.id}`}
       className={cn(
-        'relative block rounded-xl border overflow-hidden transition-all duration-200',
+        'relative block rounded-2xl border overflow-hidden transition-all duration-200',
         'active:scale-[0.98]',
         isLive
-          ? 'bg-card border-status-live/25 shadow-live'
+          ? 'bg-card border-status-live/30 shadow-live'
           : needsPick
-            ? 'bg-card border-primary/20 hover:border-primary/40 hover:shadow-primary-glow'
-            : 'bg-card border-border/50 hover:border-border hover:shadow-card',
+            ? 'bg-card border-primary/25 hover:border-primary/50 hover:shadow-primary-glow'
+            : 'bg-card border-border hover:border-border/80 hover:shadow-raised',
         className,
       )}
     >
+      {/* ── Card top sheen — subtle premium gloss ── */}
+      <div className="absolute inset-x-0 top-0 h-24 card-sheen pointer-events-none" />
+
       {/* ── Live atmosphere tint ── */}
       {isLive && (
         <div className="absolute inset-0 bg-live-atmosphere pointer-events-none" />
@@ -41,9 +44,11 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
 
       {/* ── Top accent strip ── */}
       {isLive ? (
-        <div className="h-[3px] bg-gradient-to-r from-transparent via-status-live to-transparent" />
+        <div className="h-[4px] bg-gradient-to-r from-transparent via-status-live to-transparent" />
       ) : needsPick ? (
-        <div className="h-[2px] bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+        <div className="h-[3px] bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+      ) : isFinished ? (
+        <div className="h-[2px] bg-gradient-to-r from-transparent via-border to-transparent" />
       ) : null}
 
       {/* ── Round + Status header ── */}
@@ -58,32 +63,32 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
         {/* Home team */}
         <div className="flex flex-col items-center gap-2 flex-1">
           <TeamFlag team={match.homeTeam} size="xl" />
-          <span className="text-xs font-bold text-foreground text-center leading-tight line-clamp-2 max-w-[84px]">
+          <span className="text-[13px] font-bold text-foreground text-center leading-tight line-clamp-2 max-w-[84px]">
             {match.homeTeam.name}
           </span>
         </div>
 
         {/* Score / time */}
-        <div className="flex flex-col items-center justify-center gap-1 min-w-[80px] flex-shrink-0">
+        <div className="flex flex-col items-center justify-center gap-1 min-w-[88px] flex-shrink-0">
           {isLive || isFinished ? (
             <>
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-baseline gap-2">
                 <span className={cn(
-                  'font-black tabular leading-none tracking-tight',
+                  'font-black tabular leading-none tracking-tighter',
                   isLive
-                    ? 'text-[3.25rem] text-status-live'
-                    : 'text-[2.75rem] text-foreground',
+                    ? 'text-[3.5rem] text-status-live live-score-glow'
+                    : 'text-[3rem] text-gold-gradient',
                 )}>
                   {match.homeScore ?? 0}
                 </span>
-                <span className="text-xl font-thin text-muted-foreground/25 leading-none">
+                <span className="text-2xl font-thin text-muted-foreground/20 leading-none">
                   :
                 </span>
                 <span className={cn(
-                  'font-black tabular leading-none tracking-tight',
+                  'font-black tabular leading-none tracking-tighter',
                   isLive
-                    ? 'text-[3.25rem] text-status-live'
-                    : 'text-[2.75rem] text-foreground',
+                    ? 'text-[3.5rem] text-status-live live-score-glow'
+                    : 'text-[3rem] text-gold-gradient',
                 )}>
                   {match.awayScore ?? 0}
                 </span>
@@ -96,11 +101,11 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
               )}
             </>
           ) : (
-            <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[1.5rem] font-black tabular leading-none text-foreground">
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[1.625rem] font-black tabular leading-none text-foreground">
                 {formatKickoffTime(match.scheduledAt)}
               </span>
-              <span className="text-2xs text-muted-foreground/60 font-semibold tracking-widest uppercase">
+              <span className="text-2xs text-muted-foreground/55 font-bold tracking-[0.14em] uppercase">
                 kick off
               </span>
             </div>
@@ -110,15 +115,15 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
         {/* Away team */}
         <div className="flex flex-col items-center gap-2 flex-1">
           <TeamFlag team={match.awayTeam} size="xl" />
-          <span className="text-xs font-bold text-foreground text-center leading-tight line-clamp-2 max-w-[84px]">
+          <span className="text-[13px] font-bold text-foreground text-center leading-tight line-clamp-2 max-w-[84px]">
             {match.awayTeam.name}
           </span>
         </div>
       </div>
 
       {/* ── Footer ── */}
-      <div className="relative flex items-center justify-between px-4 py-2.5 border-t border-border/40">
-        <span className="text-2xs text-muted-foreground/55 truncate max-w-[150px]">
+      <div className="relative flex items-center justify-between px-4 py-2.5 border-t border-border/50">
+        <span className="text-2xs text-muted-foreground/50 truncate max-w-[150px]">
           {[match.venue, match.city].filter(Boolean).join(' · ')}
         </span>
 
@@ -135,7 +140,7 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
             </span>
           </span>
         ) : match.status === 'scheduled' ? (
-          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tracking-wide shadow-[0_0_10px_rgba(124,111,255,0.25)]">
+          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tracking-wide shadow-[0_2px_14px_rgba(136,117,255,0.40)]">
             Predict →
           </span>
         ) : null}

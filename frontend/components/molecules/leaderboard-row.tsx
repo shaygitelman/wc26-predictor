@@ -12,24 +12,28 @@ interface LeaderboardRowProps {
 }
 
 const PODIUM: Record<number, {
-  card: string
+  card:     string
   rankText: string
-  medal: string
+  medal:    string
+  pts:      string
 }> = {
   1: {
-    card:     'bg-gold-muted border-gold-border shadow-gold',
-    rankText: 'text-gold font-black',
+    card:     'bg-gradient-to-r from-gold-muted/80 to-gold-muted/30 border-gold-border shadow-gold',
+    rankText: 'text-gold font-black text-base',
     medal:    '🥇',
+    pts:      'text-gold',
   },
   2: {
-    card:     'bg-card border-border',
-    rankText: 'text-foreground font-black',
+    card:     'bg-card border-border/80',
+    rankText: 'text-foreground/90 font-black text-base',
     medal:    '🥈',
+    pts:      'text-foreground',
   },
   3: {
-    card:     'bg-card border-border',
-    rankText: 'text-status-partial font-black',
+    card:     'bg-card border-border/80',
+    rankText: 'text-status-partial font-black text-base',
     medal:    '🥉',
+    pts:      'text-status-partial',
   },
 }
 
@@ -42,14 +46,13 @@ export function LeaderboardRow({
   isCurrentUser = false,
   className,
 }: LeaderboardRowProps) {
-  // rank=null means the member has show_stats disabled — don't apply podium treatment
   const podium = rank !== null ? PODIUM[rank] : undefined
 
   return (
     <div className={cn(
-      'flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors',
+      'flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-colors',
       isCurrentUser
-        ? 'bg-primary-muted border-primary/25 shadow-primary-glow'
+        ? 'bg-primary-muted border-primary/30 shadow-primary-glow'
         : podium
           ? podium.card
           : 'bg-card border-border',
@@ -58,10 +61,12 @@ export function LeaderboardRow({
 
       {/* Rank */}
       <span className={cn(
-        'w-7 text-center text-sm tabular flex-shrink-0',
+        'w-8 text-center tabular flex-shrink-0',
         rank === null
-          ? 'text-muted-foreground/35 font-semibold'
-          : podium ? podium.rankText : 'text-muted-foreground font-semibold',
+          ? 'text-muted-foreground/30 text-sm font-semibold'
+          : podium
+            ? podium.rankText
+            : 'text-muted-foreground text-sm font-bold',
       )}>
         {rank === null ? '—' : podium ? podium.medal : `#${rank}`}
       </span>
@@ -76,25 +81,24 @@ export function LeaderboardRow({
       )}>
         {username}
         {isCurrentUser && (
-          <span className="ml-1.5 text-xs font-normal text-primary/60">(you)</span>
+          <span className="ml-1.5 text-xs font-normal text-primary/55">(you)</span>
         )}
       </span>
 
       {/* Points */}
-      <span className={cn(
-        'text-[15px] font-black tabular flex-shrink-0',
-        points === null
-          ? 'text-muted-foreground/35'
-          : rank === 1 ? 'text-gold' : 'text-foreground',
-      )}>
-        {points === null
-          ? '—'
-          : points.toLocaleString()
-        }
+      <div className="flex items-baseline gap-1 flex-shrink-0">
+        <span className={cn(
+          'text-[17px] font-black tabular',
+          points === null
+            ? 'text-muted-foreground/30'
+            : podium ? podium.pts : isCurrentUser ? 'text-primary' : 'text-foreground',
+        )}>
+          {points === null ? '—' : points.toLocaleString()}
+        </span>
         {points !== null && (
-          <span className="text-xs font-medium text-muted-foreground ml-1">pts</span>
+          <span className="text-[11px] font-semibold text-muted-foreground/60">pts</span>
         )}
-      </span>
+      </div>
     </div>
   )
 }

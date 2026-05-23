@@ -46,7 +46,7 @@ export default async function ProfilePage() {
             size="xl"
           />
           <div className="text-center">
-            <p className="text-[20px] font-extrabold text-foreground">{user?.username ?? '—'}</p>
+            <p className="text-[22px] font-black text-foreground">{user?.username ?? '—'}</p>
             {user?.bio ? (
               <p className="text-sm text-muted-foreground mt-0.5 max-w-[240px] leading-snug">
                 {user.bio}
@@ -68,8 +68,8 @@ export default async function ProfilePage() {
 
         {/* ── Stats row ─────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-2">
-          <StatCell label="Points"    value={s ? s.totalPoints.toString()    : '—'} accent />
-          <StatCell label="Rank"      value={s ? `#${s.globalRank}`          : '—'} />
+          <StatCell label="Points"    value={s ? s.totalPoints.toString()    : '—'} variant="primary" />
+          <StatCell label="Rank"      value={s ? `#${s.globalRank}`          : '—'} variant="gold" />
           <StatCell label="Exact"     value={s ? s.exactScores.toString()    : '—'} />
           <StatCell label="Predicted" value={s ? `${s.totalPredictions}/104` : '—'} />
         </div>
@@ -83,7 +83,7 @@ export default async function ProfilePage() {
         {/* ── Prediction history entry ──────────────────────── */}
         <Link
           href="/profile/history"
-          className="flex items-center gap-4 bg-card rounded-xl border border-border px-4 py-4 hover:border-primary/30 transition-colors"
+          className="flex items-center gap-4 bg-card rounded-2xl border border-border px-4 py-4 hover:border-primary/30 transition-colors shadow-card"
         >
           <div className="flex-1">
             <p className="font-bold text-[15px] text-foreground">Prediction History</p>
@@ -98,10 +98,10 @@ export default async function ProfilePage() {
 
         {/* ── Settings ──────────────────────────────────────── */}
         <section>
-          <p className="text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground mb-3">
+          <p className="text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/80 mb-3">
             Settings
           </p>
-          <div className="bg-card rounded-xl border border-border divide-y divide-border">
+          <div className="bg-card rounded-2xl border border-border divide-y divide-border shadow-card">
             <Link
               href="/profile/edit"
               className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-surface-elevated transition-colors text-left"
@@ -139,16 +139,18 @@ export default async function ProfilePage() {
   )
 }
 
-function StatCell({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function StatCell({ label, value, variant }: { label: string; value: string; variant?: 'primary' | 'gold' }) {
   return (
-    <div className="flex flex-col items-center gap-1 bg-card rounded-xl border border-border py-3 px-1">
+    <div className="flex flex-col items-center gap-1 bg-card rounded-xl border border-border/70 py-3.5 px-1">
       <span className={[
-        'text-base font-extrabold tabular leading-none',
-        accent ? 'text-primary' : 'text-foreground',
+        'text-lg font-black tabular leading-none',
+        variant === 'gold'    ? 'text-gold-gradient' :
+        variant === 'primary' ? 'text-primary'       :
+        'text-foreground',
       ].join(' ')}>
         {value}
       </span>
-      <span className="text-2xs text-muted-foreground font-medium text-center leading-tight">
+      <span className="text-2xs text-muted-foreground/80 font-medium text-center leading-tight">
         {label}
       </span>
     </div>

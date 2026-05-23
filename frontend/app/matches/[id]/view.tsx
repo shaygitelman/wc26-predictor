@@ -81,7 +81,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
                     <div className="flex items-baseline gap-2">
                       <span className={cn(
                         'font-black tabular leading-none',
-                        isLive ? 'text-[5rem] text-status-live' : 'text-[4.5rem] text-foreground',
+                        isLive ? 'text-[5rem] text-status-live' : 'text-[4.5rem] text-gold-gradient',
                       )}>
                         {match.homeScore ?? 0}
                       </span>
@@ -90,7 +90,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
                       </span>
                       <span className={cn(
                         'font-black tabular leading-none',
-                        isLive ? 'text-[5rem] text-status-live' : 'text-[4.5rem] text-foreground',
+                        isLive ? 'text-[5rem] text-status-live' : 'text-[4.5rem] text-gold-gradient',
                       )}>
                         {match.awayScore ?? 0}
                       </span>
@@ -181,7 +181,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
         />
 
         <section className="pt-3">
-          <p className="text-2xs font-bold tracking-[0.15em] uppercase text-muted-foreground/45 mb-3 px-1">
+          <p className="text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/50 mb-3 px-1">
             Match Info
           </p>
           <div className="divide-y divide-border/35">
@@ -197,7 +197,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
         </section>
 
         <section className="pb-2">
-          <p className="text-2xs font-bold tracking-[0.15em] uppercase text-muted-foreground/45 mb-3 px-1">
+          <p className="text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/50 mb-3 px-1">
             Scoring
           </p>
           {(() => {
@@ -313,7 +313,7 @@ function InlinePredictionHero({
             ? 'bg-status-won text-white shadow-[0_0_36px_rgba(0,212,106,0.45)] scale-[1.02]'
             : status === 'error'
             ? 'bg-status-lost/20 text-status-lost border border-status-lost/30'
-            : 'bg-primary text-primary-foreground shadow-[0_0_24px_rgba(124,111,255,0.35)] hover:shadow-[0_0_36px_rgba(124,111,255,0.5)]',
+            : 'bg-primary text-primary-foreground shadow-[0_0_24px_rgba(136,117,255,0.4)] hover:shadow-[0_0_36px_rgba(136,117,255,0.55)]',
           status === 'saving' && 'opacity-70 cursor-wait',
         )}
       >
@@ -560,7 +560,7 @@ function PredictionStrip({
               'flex-shrink-0 px-4 py-2.5 rounded-xl',
               'bg-primary text-primary-foreground',
               'text-[13px] font-black tracking-tight',
-              'shadow-[0_0_12px_rgba(124,111,255,0.3)]',
+              'shadow-[0_0_12px_rgba(136,117,255,0.35)]',
             )}>
               Edit →
             </span>

@@ -93,16 +93,16 @@ export default async function HomePage() {
           </div>
           <div className="flex items-center gap-4 flex-shrink-0">
             <div className="text-center">
-              <p className="text-base font-extrabold text-primary tabular">
+              <p className="text-lg font-black text-gold-gradient tabular leading-none">
                 {s ? `#${s.globalRank}` : '—'}
               </p>
-              <p className="text-2xs text-muted-foreground">rank</p>
+              <p className="text-2xs text-muted-foreground mt-0.5">rank</p>
             </div>
             <div className="text-center">
-              <p className="text-base font-extrabold text-foreground tabular">
+              <p className="text-lg font-black text-primary tabular leading-none">
                 {s ? s.totalPoints : '—'}
               </p>
-              <p className="text-2xs text-muted-foreground">pts</p>
+              <p className="text-2xs text-muted-foreground mt-0.5">pts</p>
             </div>
             <ChevronRight className="size-4 text-muted-foreground" />
           </div>
@@ -115,16 +115,16 @@ export default async function HomePage() {
         {liveMatches.length > 0 && (
           <section className="relative">
             {/* Green ambient glow behind the section */}
-            <div className="absolute -inset-3 rounded-3xl bg-live-atmosphere pointer-events-none" />
+            <div className="absolute -inset-4 rounded-3xl bg-live-atmosphere pointer-events-none" />
             <div className="relative">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2.5">
                   <LiveDot size="md" />
-                  <span className="text-xs font-bold tracking-[0.08em] uppercase text-status-live">
+                  <span className="text-[11px] font-black tracking-[0.14em] uppercase text-status-live">
                     Live Now
                   </span>
                 </div>
-                <span className="text-2xs font-semibold text-status-live/70">
+                <span className="text-2xs font-bold text-status-live/70">
                   {liveMatches.length} {liveMatches.length === 1 ? 'match' : 'matches'}
                 </span>
               </div>
@@ -223,7 +223,7 @@ async function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId
             </div>
             {userRank != null && (
               <div className="text-right flex-shrink-0">
-                <p className={cn('text-sm font-bold tabular', userRank <= 3 ? 'text-primary' : 'text-foreground')}>
+                <p className={cn('text-sm font-black tabular', userRank <= 3 ? 'text-gold-gradient' : 'text-foreground')}>
                   #{userRank}
                 </p>
                 <p className="text-xs text-muted-foreground">

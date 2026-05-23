@@ -10,9 +10,9 @@ interface SectionHeaderProps {
 }
 
 const ACCENT_STYLES = {
-  live:    { dot: 'bg-status-live', title: 'text-status-live' },
-  primary: { dot: 'bg-primary',     title: 'text-primary'     },
-  gold:    { dot: 'bg-gold',        title: 'text-gold'        },
+  live:    { bar: 'bg-status-live', title: 'text-status-live' },
+  primary: { bar: 'bg-primary',     title: 'text-primary'     },
+  gold:    { bar: 'bg-gold',        title: 'text-gold'        },
 }
 
 export function SectionHeader({
@@ -26,11 +26,13 @@ export function SectionHeader({
 
   return (
     <div className={cn('flex items-center justify-between mb-3', className)}>
-      <div className="flex items-center gap-2">
-        {a && <span className={cn('size-1.5 rounded-full flex-shrink-0', a.dot)} />}
+      <div className="flex items-center gap-2.5">
+        {a && (
+          <span className={cn('w-[3px] h-3.5 rounded-full flex-shrink-0', a.bar)} />
+        )}
         <h2 className={cn(
-          'text-xs font-bold tracking-[0.1em] uppercase',
-          a ? a.title : 'text-muted-foreground',
+          'text-[11px] font-black tracking-[0.14em] uppercase',
+          a ? a.title : 'text-muted-foreground/90',
         )}>
           {title}
         </h2>

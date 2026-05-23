@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Lock, Users, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Lock, Users, Sparkles, ChevronDown, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { League } from '@/types/league'
-import type { LeagueMemberPrediction, MemberPick } from '@/types/league'
+import type { LeagueMemberPrediction } from '@/types/league'
+
+const DEBUG = process.env.NODE_ENV === 'development'
 
 interface Props {
   matchId:     string
@@ -14,56 +16,126 @@ interface Props {
 // ─── Main card ────────────────────────────────────────────────
 
 export function LeaguePicksCard({ matchId, matchStatus }: Props) {
-  const [league,  setLeague]  = useState<League | null>(null)
-  const [members, setMembers] = useState<LeagueMemberPrediction[]>([])
-  const [status,  setStatus]  = useState<'loading' | 'ready' | 'none' | 'error'>('loading')
+  const [leagues,        setLeagues]        = useState<League[]>([])
+  const [selectedId,     setSelectedId]     = useState<string | null>(null)
+  const [members,        setMembers]        = useState<LeagueMemberPrediction[]>([])
+  const [pageStatus,     setPageStatus]     = useState<'loading' | 'ready' | 'none' | 'error'>('loading')
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [membersError,   setMembersError]   = useState(false)
 
   const revealed = matchStatus !== 'scheduled'
 
+  // ── Step 1: load ALL league memberships ──────────────────
   useEffect(() => {
     let cancelled = false
 
+    console.log('[LeaguePicksCard] mounting — matchId:', matchId)
+
     fetch('/api/leagues', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(async (leagues: League[]) => {
-        if (cancelled) return
-        if (!Array.isArray(leagues) || !leagues.length) { setStatus('none'); return }
-
-        const first = leagues[0]
-        setLeague(first)
-
-        const res = await fetch(
-          `/api/leagues/${first.id}/matches/${matchId}/predictions`,
-          { cache: 'no-store' },
-        )
-        if (!res.ok) throw new Error('Failed')
-        const data: LeagueMemberPrediction[] = await res.json()
-        if (cancelled) return
-        setMembers(data)
-        setStatus('ready')
+      .then(r => {
+        console.log('[LeaguePicksCard] /api/leagues HTTP', r.status)
+        return r.json()
       })
-      .catch(() => { if (!cancelled) setStatus('error') })
+      .then((data: League[]) => {
+        if (cancelled) return
+        const list = Array.isArray(data) ? data : []
+        console.log(
+          '[LeaguePicksCard] leagues loaded — count:', list.length,
+          '— ids:', list.map(l => `"${l.name}"(${l.id.slice(0, 6)})`),
+        )
+
+        if (list.length === 0) {
+          console.log('[LeaguePicksCard] no leagues → hiding card')
+          setPageStatus('none')
+          return
+        }
+
+        setLeagues(list)
+        setSelectedId(list[0].id)
+        setPageStatus('ready')
+      })
+      .catch(err => {
+        console.error('[LeaguePicksCard] league fetch failed:', err)
+        if (!cancelled) setPageStatus('error')
+      })
 
     return () => { cancelled = true }
   }, [matchId])
 
-  if (status === 'none' || status === 'error') return null
-  if (status === 'loading' || !league)         return <PicksSkeleton />
+  // ── Step 2: load picks whenever the selected league changes ─
+  useEffect(() => {
+    if (!selectedId) return
+
+    let cancelled = false
+    setMembersLoading(true)
+    setMembersError(false)
+
+    console.log('[LeaguePicksCard] loading picks — leagueId:', selectedId, 'matchId:', matchId)
+
+    fetch(`/api/leagues/${selectedId}/matches/${matchId}/predictions`, { cache: 'no-store' })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json() as Promise<LeagueMemberPrediction[]>
+      })
+      .then(data => {
+        if (cancelled) return
+        console.log('[LeaguePicksCard] picks loaded — leagueId:', selectedId, 'count:', data.length)
+        setMembers(data)
+        setMembersLoading(false)
+      })
+      .catch(err => {
+        console.error('[LeaguePicksCard] picks failed — leagueId:', selectedId, err)
+        if (!cancelled) { setMembersError(true); setMembersLoading(false) }
+      })
+
+    return () => { cancelled = true }
+  }, [selectedId, matchId])
+
+  // ── Early exits ───────────────────────────────────────────
+  if (pageStatus === 'loading') return <PicksSkeleton />
+  if (pageStatus === 'none')    return null
+  if (pageStatus === 'error')   return null
+
+  const selectedLeague = leagues.find(l => l.id === selectedId)
+  if (!selectedLeague) return null
+
+  // ── TEMPORARY render-time diagnostic — remove after fix ──
+  console.log(
+    '[LeaguePicksCard] RENDER — leagues.length:', leagues.length,
+    '— selectedId:', selectedId,
+    '— tabsVisible:', leagues.length > 1,
+  )
 
   const pickCount = members.filter(m => m.prediction !== null).length
 
-  return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden animate-fade-in shadow-card">
-      <div className="divide-y divide-border/50">
+  const handleSelectLeague = (id: string) => {
+    if (id === selectedId) return
+    console.log('[LeaguePicksCard] switch — from:', selectedId, '→ to:', id)
+    setSelectedId(id)
+    setMembers([])
+  }
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-4 py-3.5">
-          <div className="flex items-center gap-2">
-            <Users className="size-[15px] text-muted-foreground flex-shrink-0" strokeWidth={1.75} />
-            <span className="text-[13px] font-bold text-foreground tracking-[-0.01em]">
-              {league.name}
-            </span>
-          </div>
+  return (
+    // NOTE: no overflow-hidden here — that class was killing the tab strip's
+    // horizontal scroll on iOS Safari. Rounded corners handled via inner radius.
+    <div className="bg-card rounded-2xl border border-border animate-fade-in shadow-card">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-border/50">
+        <div className="flex items-center gap-2 min-w-0">
+          <Users className="size-[15px] text-muted-foreground flex-shrink-0" strokeWidth={1.75} />
+          <span className="text-[13px] font-bold text-foreground tracking-[-0.01em] truncate">
+            {selectedLeague.name}
+          </span>
+          <span className="text-[11px] text-muted-foreground/50 font-medium flex-shrink-0">
+            · {selectedLeague.memberCount}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* ── TEMPORARY DEBUG BADGE — always visible, remove after fix ── */}
+          <span style={{ background: 'orange', color: 'black', fontSize: 10, fontWeight: 900, padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
+            {leagues.length}L sel={selectedId?.slice(0,4) ?? 'nil'} tabs={(leagues.length > 1).toString()}
+          </span>
           {revealed ? (
             <div className="flex items-center gap-1.5 px-2 py-[3px] rounded-full bg-primary/10 border border-primary/20">
               <Sparkles className="size-3 text-primary/80 flex-shrink-0" strokeWidth={2} />
@@ -76,19 +148,45 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
             </div>
           )}
         </div>
+      </div>
 
-        {/* ── Reveal banner ── */}
-        {revealed && (
-          <div className="px-4 py-2.5 bg-primary/[0.05] border-b border-primary/10">
-            <p className="text-[11px] text-primary/70 text-center font-semibold">
-              League picks are now visible — see how your predictions compare
-            </p>
+      {/* ── League switcher — shown whenever user belongs to 2+ leagues ─
+           Uses a NATIVE horizontal scroll without overflow-hidden ancestor
+           so iOS Safari doesn't kill touch scrolling.               ── */}
+      {leagues.length > 1 && (
+        <LeagueTabs
+          leagues={leagues}
+          selectedId={selectedId}
+          onSelect={handleSelectLeague}
+        />
+      )}
+
+      {/* ── Reveal banner ── */}
+      {revealed && (
+        <div className="px-4 py-2.5 bg-primary/[0.05] border-b border-primary/10">
+          <p className="text-[11px] text-primary/70 text-center font-semibold">
+            League picks are now visible — see how your predictions compare
+          </p>
+        </div>
+      )}
+
+      {/* ── Member rows ── */}
+      <div>
+        {membersLoading ? (
+          <MembersLoadingSkeleton />
+        ) : membersError ? (
+          <RetryRow onRetry={() => {
+            setMembersError(false)
+            const id = selectedId
+            setSelectedId(null)
+            setTimeout(() => setSelectedId(id), 0)
+          }} />
+        ) : members.length === 0 ? (
+          <div className="py-6 text-center">
+            <p className="text-[12px] text-muted-foreground/50">No members yet</p>
           </div>
-        )}
-
-        {/* ── Member rows ── */}
-        <div>
-          {members.map((member, i) => (
+        ) : (
+          members.map((member, i) => (
             <MemberRow
               key={member.userId}
               member={member}
@@ -96,18 +194,100 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
               matchStatus={matchStatus}
               index={i}
             />
-          ))}
-        </div>
-
-        {/* ── Footer ── */}
-        {!revealed && (
-          <div className="px-4 py-3">
-            <p className="text-[11px] text-muted-foreground/50 text-center">
-              {pickCount} of {members.length} predicted · all picks hidden until kickoff
-            </p>
-          </div>
+          ))
         )}
       </div>
+
+      {/* ── Footer ── */}
+      {!revealed && !membersLoading && members.length > 0 && (
+        <div className="px-4 py-3 border-t border-border/35">
+          <p className="text-[11px] text-muted-foreground/50 text-center">
+            {pickCount} of {members.length} predicted · all picks hidden until kickoff
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── League tabs strip ────────────────────────────────────────
+//
+// Extracted into its own component so the scroll container is a
+// direct child of the card, never nested inside overflow-hidden.
+
+function LeagueTabs({
+  leagues,
+  selectedId,
+  onSelect,
+}: {
+  leagues:    League[]
+  selectedId: string | null
+  onSelect:   (id: string) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Scroll the active chip into view when selection changes
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+    const active = container.querySelector('[data-active="true"]') as HTMLElement | null
+    if (!active) return
+    active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [selectedId])
+
+  return (
+    <div
+      ref={scrollRef}
+      // ── TEMPORARY FORCED DEBUG STYLES — remove after fix ──
+      // Red bg + yellow border + minHeight make this impossible to miss.
+      // If you cannot see this block the component is not mounted at all.
+      style={{
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
+        scrollbarWidth: 'none' as React.CSSProperties['scrollbarWidth'],
+        background: 'rgba(220,0,0,0.18)',
+        border: '2px solid yellow',
+        minHeight: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        paddingLeft: 16,
+        paddingRight: 16,
+      }}
+    >
+      {/* visible state dump */}
+      <span style={{ color: 'yellow', fontSize: 10, fontWeight: 900, whiteSpace: 'nowrap', flexShrink: 0 }}>
+        [{leagues.length} leagues]
+      </span>
+      {leagues.map(league => {
+        const isActive = league.id === selectedId
+        return (
+          <button
+            key={league.id}
+            data-active={isActive}
+            onClick={() => onSelect(league.id)}
+            className={cn(
+              // Fixed height + flex-shrink-0 guarantees chips never collapse
+              'h-8 flex-shrink-0 flex items-center gap-1.5',
+              'px-3.5 rounded-full text-[12px] font-bold whitespace-nowrap',
+              'transition-all duration-150 active:scale-[0.95]',
+              // Tap target: min-width so short names are still easy to tap on mobile
+              'min-w-[52px] justify-center',
+              isActive
+                ? 'bg-primary text-primary-foreground shadow-[0_0_12px_rgba(136,117,255,0.4)]'
+                : 'bg-card text-muted-foreground border border-border hover:text-foreground hover:border-border/80',
+            )}
+          >
+            <span className="truncate max-w-[120px]">{league.name}</span>
+            <span className={cn(
+              'text-[10px] font-semibold tabular-nums flex-shrink-0',
+              isActive ? 'text-primary-foreground/60' : 'text-muted-foreground/45',
+            )}>
+              {league.memberCount}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -136,15 +316,12 @@ function MemberRow({
       )}
       style={delay ? { animationDelay: delay, animationFillMode: 'backwards' } : undefined}
     >
-      {/* Rank */}
       <span className="text-[11px] font-bold text-muted-foreground/45 w-4 text-center flex-shrink-0 tabular-nums">
         {member.rank ?? '—'}
       </span>
 
-      {/* Avatar */}
       <UserAvatar username={member.username} avatarId={member.avatarId} size={28} />
 
-      {/* Name + points */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className={cn(
@@ -164,7 +341,6 @@ function MemberRow({
         </span>
       </div>
 
-      {/* Pick chip */}
       <PickChip
         prediction={member.prediction}
         isCurrentUser={member.isCurrentUser}
@@ -229,6 +405,18 @@ function PickChip({
   )
 }
 
+// ─── Retry row ────────────────────────────────────────────────
+
+function RetryRow({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex items-center justify-center py-6">
+      <button onClick={onRetry} className="text-xs font-bold text-primary">
+        Failed to load — tap to retry
+      </button>
+    </div>
+  )
+}
+
 // ─── User avatar ──────────────────────────────────────────────
 
 const AVATAR_COLORS = [
@@ -240,15 +428,7 @@ const AVATAR_COLORS = [
   'bg-cyan-500/20 text-cyan-400',
 ]
 
-function UserAvatar({
-  username,
-  avatarId,
-  size,
-}: {
-  username: string
-  avatarId?: string | null
-  size:     number
-}) {
+function UserAvatar({ username, avatarId, size }: { username: string; avatarId?: string | null; size: number }) {
   const colorIdx = username.charCodeAt(0) % AVATAR_COLORS.length
   const letter   = username[0]?.toUpperCase() ?? '?'
 
@@ -265,10 +445,7 @@ function UserAvatar({
 
   return (
     <div
-      className={cn(
-        'rounded-full flex items-center justify-center flex-shrink-0 font-black',
-        AVATAR_COLORS[colorIdx],
-      )}
+      className={cn('rounded-full flex items-center justify-center flex-shrink-0 font-black', AVATAR_COLORS[colorIdx])}
       style={{ width: size, height: size, fontSize: size * 0.45 }}
     >
       {letter}
@@ -276,11 +453,11 @@ function UserAvatar({
   )
 }
 
-// ─── Skeleton ─────────────────────────────────────────────────
+// ─── Skeletons ────────────────────────────────────────────────
 
 function PicksSkeleton() {
   return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden">
+    <div className="bg-card rounded-2xl border border-border">
       <div className="animate-pulse divide-y divide-border/50">
         <div className="flex items-center justify-between px-4 py-3.5">
           <div className="flex items-center gap-2">
@@ -301,6 +478,24 @@ function PicksSkeleton() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function MembersLoadingSkeleton() {
+  return (
+    <div className="animate-pulse divide-y divide-border/35">
+      {[0, 1, 2].map(i => (
+        <div key={i} className="flex items-center gap-3 px-4 py-3">
+          <div className="w-4 h-3 rounded-full bg-surface-elevated" />
+          <div className="size-7 rounded-full bg-surface-elevated" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-24 rounded-full bg-surface-elevated" />
+            <div className="h-2.5 w-14 rounded-full bg-surface-elevated" />
+          </div>
+          <div className="h-6 w-14 rounded-lg bg-surface-elevated" />
+        </div>
+      ))}
     </div>
   )
 }

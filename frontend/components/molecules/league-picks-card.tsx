@@ -1,12 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Lock, Users, Sparkles, ChevronDown, Check } from 'lucide-react'
+import { Lock, Users, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { League } from '@/types/league'
 import type { LeagueMemberPrediction } from '@/types/league'
-
-const DEBUG = process.env.NODE_ENV === 'development'
 
 interface Props {
   matchId:     string
@@ -29,23 +27,13 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
   useEffect(() => {
     let cancelled = false
 
-    console.log('[LeaguePicksCard] mounting — matchId:', matchId)
-
     fetch('/api/leagues', { cache: 'no-store' })
-      .then(r => {
-        console.log('[LeaguePicksCard] /api/leagues HTTP', r.status)
-        return r.json()
-      })
+      .then(r => r.json())
       .then((data: League[]) => {
         if (cancelled) return
         const list = Array.isArray(data) ? data : []
-        console.log(
-          '[LeaguePicksCard] leagues loaded — count:', list.length,
-          '— ids:', list.map(l => `"${l.name}"(${l.id.slice(0, 6)})`),
-        )
 
         if (list.length === 0) {
-          console.log('[LeaguePicksCard] no leagues → hiding card')
           setPageStatus('none')
           return
         }
@@ -54,8 +42,7 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
         setSelectedId(list[0].id)
         setPageStatus('ready')
       })
-      .catch(err => {
-        console.error('[LeaguePicksCard] league fetch failed:', err)
+      .catch(() => {
         if (!cancelled) setPageStatus('error')
       })
 
@@ -70,8 +57,6 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
     setMembersLoading(true)
     setMembersError(false)
 
-    console.log('[LeaguePicksCard] loading picks — leagueId:', selectedId, 'matchId:', matchId)
-
     fetch(`/api/leagues/${selectedId}/matches/${matchId}/predictions`, { cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -79,12 +64,10 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
       })
       .then(data => {
         if (cancelled) return
-        console.log('[LeaguePicksCard] picks loaded — leagueId:', selectedId, 'count:', data.length)
         setMembers(data)
         setMembersLoading(false)
       })
-      .catch(err => {
-        console.error('[LeaguePicksCard] picks failed — leagueId:', selectedId, err)
+      .catch(() => {
         if (!cancelled) { setMembersError(true); setMembersLoading(false) }
       })
 
@@ -99,18 +82,10 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
   const selectedLeague = leagues.find(l => l.id === selectedId)
   if (!selectedLeague) return null
 
-  // ── TEMPORARY render-time diagnostic — remove after fix ──
-  console.log(
-    '[LeaguePicksCard] RENDER — leagues.length:', leagues.length,
-    '— selectedId:', selectedId,
-    '— tabsVisible:', leagues.length > 1,
-  )
-
   const pickCount = members.filter(m => m.prediction !== null).length
 
   const handleSelectLeague = (id: string) => {
     if (id === selectedId) return
-    console.log('[LeaguePicksCard] switch — from:', selectedId, '→ to:', id)
     setSelectedId(id)
     setMembers([])
   }
@@ -132,10 +107,6 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* ── TEMPORARY DEBUG BADGE — always visible, remove after fix ── */}
-          <span style={{ background: 'orange', color: 'black', fontSize: 10, fontWeight: 900, padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
-            {leagues.length}L sel={selectedId?.slice(0,4) ?? 'nil'} tabs={(leagues.length > 1).toString()}
-          </span>
           {revealed ? (
             <div className="flex items-center gap-1.5 px-2 py-[3px] rounded-full bg-primary/10 border border-primary/20">
               <Sparkles className="size-3 text-primary/80 flex-shrink-0" strokeWidth={2} />
@@ -238,27 +209,20 @@ function LeagueTabs({
   return (
     <div
       ref={scrollRef}
-      // ── TEMPORARY FORCED DEBUG STYLES — remove after fix ──
-      // Red bg + yellow border + minHeight make this impossible to miss.
-      // If you cannot see this block the component is not mounted at all.
+      className="border-b border-border/50"
       style={{
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
         scrollbarWidth: 'none' as React.CSSProperties['scrollbarWidth'],
-        background: 'rgba(220,0,0,0.18)',
-        border: '2px solid yellow',
-        minHeight: 60,
         display: 'flex',
         alignItems: 'center',
         gap: 8,
         paddingLeft: 16,
         paddingRight: 16,
+        paddingTop: 10,
+        paddingBottom: 10,
       }}
     >
-      {/* visible state dump */}
-      <span style={{ color: 'yellow', fontSize: 10, fontWeight: 900, whiteSpace: 'nowrap', flexShrink: 0 }}>
-        [{leagues.length} leagues]
-      </span>
       {leagues.map(league => {
         const isActive = league.id === selectedId
         return (

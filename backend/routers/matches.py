@@ -1,10 +1,11 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from models.match import Match
+from models.player import Player
 from schemas.match import MatchOut
 from services.squad_availability import get_squad_availability
 from services.match_stats import get_match_statistics
@@ -88,3 +89,166 @@ async def get_match_stats(match_id: str, db: AsyncSession = Depends(get_db)) -> 
             detail="Match statistics not available for this fixture",
         )
     return stats.to_dict()
+
+
+# ─── Insights data endpoints ──────────────────────────────────────────
+
+
+async def _get_team_form(match_id: str, side: str, db: AsyncSession) -> list[dict]:
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    team_code = match.home_team_code if side == "home" else match.away_team_code
+
+    q = (
+        select(Match)
+        .where(
+            and_(
+                Match.status == "finished",
+                or_(
+                    Match.home_team_code == team_code,
+                    Match.away_team_code == team_code,
+                ),
+                Match.id != match_id,
+            )
+        )
+        .order_by(Match.scheduled_at.desc())
+        .limit(5)
+    )
+    result = await db.execute(q)
+    finished = result.scalars().all()
+
+    form = []
+    for m in finished:
+        if m.home_score is None or m.away_score is None:
+            continue
+        is_home_side = m.home_team_code == team_code
+        goals_for = m.home_score if is_home_side else m.away_score
+        goals_agt = m.away_score if is_home_side else m.home_score
+        r = "W" if goals_for > goals_agt else ("L" if goals_for < goals_agt else "D")
+        form.append({
+            "result":   r,
+            "goalsFor": goals_for,
+            "goalsAgt": goals_agt,
+            "opponent": m.away_team_name if is_home_side else m.home_team_name,
+            "date":     m.scheduled_at.isoformat(),
+        })
+
+    return form
+
+
+@router.get("/{match_id}/form/home")
+async def get_match_form_home(match_id: str, db: AsyncSession = Depends(get_db)) -> list:
+    return await _get_team_form(match_id, "home", db)
+
+
+@router.get("/{match_id}/form/away")
+async def get_match_form_away(match_id: str, db: AsyncSession = Depends(get_db)) -> list:
+    return await _get_team_form(match_id, "away", db)
+
+
+@router.get("/{match_id}/h2h")
+async def get_match_h2h(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    home_code = match.home_team_code
+    away_code = match.away_team_code
+
+    q = (
+        select(Match)
+        .where(
+            and_(
+                Match.status == "finished",
+                or_(
+                    and_(Match.home_team_code == home_code, Match.away_team_code == away_code),
+                    and_(Match.home_team_code == away_code, Match.away_team_code == home_code),
+                ),
+                Match.id != match_id,
+            )
+        )
+        .order_by(Match.scheduled_at.desc())
+    )
+    result = await db.execute(q)
+    h2h_matches = result.scalars().all()
+
+    home_wins = 0
+    away_wins = 0
+    draws = 0
+    last_meeting = None
+
+    for m in h2h_matches:
+        if m.home_score is None or m.away_score is None:
+            continue
+        # Normalise scores to the perspective of the requested match's home team
+        if m.home_team_code == home_code:
+            h_goals, a_goals = m.home_score, m.away_score
+        else:
+            h_goals, a_goals = m.away_score, m.home_score
+
+        if h_goals > a_goals:
+            home_wins += 1
+        elif h_goals < a_goals:
+            away_wins += 1
+        else:
+            draws += 1
+
+        if last_meeting is None:
+            last_meeting = {
+                "date":         m.scheduled_at.isoformat(),
+                "homeGoals":    h_goals,
+                "awayGoals":    a_goals,
+                "homeTeamName": match.home_team_name,
+                "awayTeamName": match.away_team_name,
+            }
+
+    return {
+        "homeWins":     home_wins,
+        "awayWins":     away_wins,
+        "draws":        draws,
+        "totalMatches": home_wins + away_wins + draws,
+        "lastMeeting":  last_meeting,
+    }
+
+
+async def _get_match_players(match_id: str, side: str, db: AsyncSession) -> list[dict]:
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    if side == "home":
+        team_id   = match.home_team_code.lower()
+        team_name = match.home_team_name
+        team_code = match.home_team_code
+    else:
+        team_id   = match.away_team_code.lower()
+        team_name = match.away_team_name
+        team_code = match.away_team_code
+
+    q = select(Player).where(Player.team_id == team_id).order_by(Player.shirt_number)
+    result = await db.execute(q)
+    players = result.scalars().all()
+
+    return [
+        {
+            "name":          p.name,
+            "teamShortCode": team_code,
+            "teamName":      team_name,
+            "position":      p.position,
+            "goals":         0,
+            "assists":       0,
+        }
+        for p in players
+    ]
+
+
+@router.get("/{match_id}/players/home")
+async def get_match_players_home(match_id: str, db: AsyncSession = Depends(get_db)) -> list:
+    return await _get_match_players(match_id, "home", db)
+
+
+@router.get("/{match_id}/players/away")
+async def get_match_players_away(match_id: str, db: AsyncSession = Depends(get_db)) -> list:
+    return await _get_match_players(match_id, "away", db)

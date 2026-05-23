@@ -198,6 +198,14 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
   const safeKeyPlayers: InsightBullet[]  = Array.isArray(keyPlayers)  ? keyPlayers  : []
   const safeHeadToHead: InsightBullet[]  = Array.isArray(headToHead)  ? headToHead  : []
 
+  const hasAnyContent =
+    safeForm.home.length > 0 || safeForm.away.length > 0 ||
+    safeTactical.length > 0 ||
+    safeKeyPlayers.length > 0 ||
+    safeHeadToHead.length > 0 ||
+    !!coachingHint ||
+    !!(narrative?.headline && narrative?.body)
+
   const safeEdge       = edge       ?? FALLBACK_EDGE
   const safeUpsetAlert = upsetAlert ?? false
   const safeEdgeNote   = insights.edgeNote ?? ''
@@ -243,14 +251,31 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
         {/* ── Debug overlay (only when DEBUG_AI_INSIGHTS=true) ── */}
         {insights._debug && <InsightsDebugOverlay debug={insights._debug} />}
 
-        {/* ── Sparse data notice ── */}
-        {safeConfidence === 'low' && (
+        {/* ── Sparse data notice — only shown when some content exists ── */}
+        {safeConfidence === 'low' && hasAnyContent && (
           <div className="mx-4 my-1 px-3 py-2 rounded-lg bg-amber-500/[0.07] border border-amber-500/20 flex items-start gap-2">
             <TriangleAlert className="size-3 text-amber-500/70 flex-shrink-0 mt-[2px]" strokeWidth={2} />
             <p className="text-[10.5px] text-amber-500/70 leading-snug">
               Limited match data — insights reflect a smaller sample and confidence will increase as more matches are played.
             </p>
           </div>
+        )}
+
+        {/* ── Pre-tournament notice — when no section has any content ── */}
+        {!hasAnyContent && (
+          <section className="px-4 py-7 flex flex-col items-center gap-3 text-center border-b border-border/50">
+            <div className="size-10 rounded-full bg-surface-elevated flex items-center justify-center">
+              <Clock className="size-5 text-muted-foreground/40" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-foreground/70 mb-1">
+                Analysis Coming Soon
+              </p>
+              <p className="text-[12px] text-muted-foreground leading-relaxed max-w-[240px] mx-auto">
+                Tactical insights and form data will appear here as World Cup matches are played.
+              </p>
+            </div>
+          </section>
         )}
 
         {/* ── Dynamic sections ── */}

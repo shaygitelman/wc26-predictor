@@ -32,10 +32,15 @@ export interface RealPlayerStat {
 }
 
 // From /matches/:id/stats/home and /stats/away
+// Fields are optional: API-Football may not return all stat types for every fixture.
 export interface RealTeamStats {
-  avgCorners:    number   // corners earned per match
-  avgPossession: number   // 0–100
-  avgShots:      number   // total shots per match
+  avgCorners?:    number   // corners earned per match
+  avgPossession?: number   // 0–100
+  avgShots?:      number   // total shots per match
+  fixtureCoverage?: number // how many fixtures were sampled
+  source?:        string
+  fetchedAt?:     string
+  verified?:      boolean
 }
 
 // From /matches/:id/injuries or /teams/:id/injuries

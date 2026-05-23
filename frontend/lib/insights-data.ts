@@ -54,9 +54,10 @@ function isValidPlayerStats(data: unknown): data is RealPlayerStat[] {
 function isValidTeamStats(data: unknown): data is RealTeamStats {
   if (typeof data !== 'object' || data === null) return false
   const d = data as Record<string, unknown>
+  // Accept partial stats — at least one numeric field must be present
   return (
-    typeof d.avgCorners    === 'number' &&
-    typeof d.avgPossession === 'number' &&
+    typeof d.avgCorners    === 'number' ||
+    typeof d.avgPossession === 'number' ||
     typeof d.avgShots      === 'number'
   )
 }

@@ -86,11 +86,11 @@ export async function GET(_req: Request, { params }: Params) {
     const dataProvenance: DataProvenance = {
       verified:     facts.dataConfidence !== 'insufficient',
       source:       [
-        raw.homeForm  ? 'backend:/matches/{id}/form/home'   : null,
-        raw.awayForm  ? 'backend:/matches/{id}/form/away'   : null,
-        raw.h2h       ? 'backend:/matches/{id}/h2h'         : null,
-        raw.homeStats ? 'backend:/matches/{id}/stats/home'  : null,
-        raw.awayStats ? 'backend:/matches/{id}/stats/away'  : null,
+        raw.homeForm  ? 'api-football:/fixtures?team=home&last=10' : null,
+        raw.awayForm  ? 'api-football:/fixtures?team=away&last=10' : null,
+        raw.h2h       ? 'api-football:/fixtures/headtohead'        : null,
+        raw.homeStats ? 'api-football:/fixtures/statistics (home avg)' : null,
+        raw.awayStats ? 'api-football:/fixtures/statistics (away avg)' : null,
       ].filter(Boolean).join(', ') || 'none',
       fetchedAt:    raw.fetchedAt,
       confidence:   facts.dataConfidence === 'high'   ? 'verified'

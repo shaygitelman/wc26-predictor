@@ -9,6 +9,7 @@ from models.player import Player
 from schemas.match import MatchOut
 from services.squad_availability import get_squad_availability
 from services.match_stats import get_match_statistics
+from services.team_form import get_team_form, get_h2h
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -92,24 +93,28 @@ async def get_match_stats(match_id: str, db: AsyncSession = Depends(get_db)) -> 
 
 
 # ─── Insights data endpoints ──────────────────────────────────────────
+#
+# Form and H2H data come from API-Football (real historical internationals
+# across ALL competitions — qualifiers, friendlies, Nations League, etc.).
+# Falls back to local DB when API-Football is unavailable.
+#
+# Stats/home and stats/away return per-team averages (corners, possession,
+# shots) derived from the same API-Football fixture history.
 
 
-async def _get_team_form(match_id: str, side: str, db: AsyncSession) -> list[dict]:
+async def _local_team_form(match_id: str, side: str, db: AsyncSession) -> list[dict]:
+    """Local DB fallback — returns form from finished WC26 matches only."""
     match = await db.get(Match, match_id)
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
 
     team_code = match.home_team_code if side == "home" else match.away_team_code
-
     q = (
         select(Match)
         .where(
             and_(
                 Match.status == "finished",
-                or_(
-                    Match.home_team_code == team_code,
-                    Match.away_team_code == team_code,
-                ),
+                or_(Match.home_team_code == team_code, Match.away_team_code == team_code),
                 Match.id != match_id,
             )
         )
@@ -134,18 +139,34 @@ async def _get_team_form(match_id: str, side: str, db: AsyncSession) -> list[dic
             "opponent": m.away_team_name if is_home_side else m.home_team_name,
             "date":     m.scheduled_at.isoformat(),
         })
-
     return form
 
 
 @router.get("/{match_id}/form/home")
 async def get_match_form_home(match_id: str, db: AsyncSession = Depends(get_db)) -> list:
-    return await _get_team_form(match_id, "home", db)
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    form_result = await get_team_form(match.home_team_code, db)
+    if form_result is not None:
+        return form_result.form
+
+    # API-Football unavailable — fall back to local WC26 DB
+    return await _local_team_form(match_id, "home", db)
 
 
 @router.get("/{match_id}/form/away")
 async def get_match_form_away(match_id: str, db: AsyncSession = Depends(get_db)) -> list:
-    return await _get_team_form(match_id, "away", db)
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    form_result = await get_team_form(match.away_team_code, db)
+    if form_result is not None:
+        return form_result.form
+
+    return await _local_team_form(match_id, "away", db)
 
 
 @router.get("/{match_id}/h2h")
@@ -154,17 +175,25 @@ async def get_match_h2h(match_id: str, db: AsyncSession = Depends(get_db)) -> di
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
 
-    home_code = match.home_team_code
-    away_code = match.away_team_code
+    h2h = await get_h2h(match.home_team_code, match.away_team_code, db)
+    if h2h is not None:
+        return h2h
 
+    # Local DB fallback (only WC26 finished matches)
     q = (
         select(Match)
         .where(
             and_(
                 Match.status == "finished",
                 or_(
-                    and_(Match.home_team_code == home_code, Match.away_team_code == away_code),
-                    and_(Match.home_team_code == away_code, Match.away_team_code == home_code),
+                    and_(
+                        Match.home_team_code == match.home_team_code,
+                        Match.away_team_code == match.away_team_code,
+                    ),
+                    and_(
+                        Match.home_team_code == match.away_team_code,
+                        Match.away_team_code == match.home_team_code,
+                    ),
                 ),
                 Match.id != match_id,
             )
@@ -182,8 +211,7 @@ async def get_match_h2h(match_id: str, db: AsyncSession = Depends(get_db)) -> di
     for m in h2h_matches:
         if m.home_score is None or m.away_score is None:
             continue
-        # Normalise scores to the perspective of the requested match's home team
-        if m.home_team_code == home_code:
+        if m.home_team_code == match.home_team_code:
             h_goals, a_goals = m.home_score, m.away_score
         else:
             h_goals, a_goals = m.away_score, m.home_score
@@ -210,6 +238,72 @@ async def get_match_h2h(match_id: str, db: AsyncSession = Depends(get_db)) -> di
         "draws":        draws,
         "totalMatches": home_wins + away_wins + draws,
         "lastMeeting":  last_meeting,
+    }
+
+
+@router.get("/{match_id}/stats/home")
+async def get_match_stats_home(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Returns per-team averages (corners, possession, shots) derived from
+    the last 5 real international fixtures for the home team via API-Football.
+    Returns 501 when data is unavailable.
+    """
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    form_result = await get_team_form(match.home_team_code, db)
+    if form_result is None or (
+        form_result.avg_corners is None
+        and form_result.avg_possession is None
+        and form_result.avg_shots is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Team statistics not available",
+        )
+
+    return {
+        "avgCorners":    form_result.avg_corners,
+        "avgPossession": form_result.avg_possession,
+        "avgShots":      form_result.avg_shots,
+        "fixtureCoverage": form_result.fixture_count,
+        "source":        form_result.source,
+        "fetchedAt":     form_result.fetched_at,
+        "verified":      True,
+    }
+
+
+@router.get("/{match_id}/stats/away")
+async def get_match_stats_away(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Returns per-team averages (corners, possession, shots) derived from
+    the last 5 real international fixtures for the away team via API-Football.
+    Returns 501 when data is unavailable.
+    """
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    form_result = await get_team_form(match.away_team_code, db)
+    if form_result is None or (
+        form_result.avg_corners is None
+        and form_result.avg_possession is None
+        and form_result.avg_shots is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Team statistics not available",
+        )
+
+    return {
+        "avgCorners":    form_result.avg_corners,
+        "avgPossession": form_result.avg_possession,
+        "avgShots":      form_result.avg_shots,
+        "fixtureCoverage": form_result.fixture_count,
+        "source":        form_result.source,
+        "fetchedAt":     form_result.fetched_at,
+        "verified":      True,
     }
 
 

@@ -165,8 +165,6 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
       {/* ── Body ─────────────────────────────────────────── */}
       <div className="flex flex-col gap-5 px-4 pt-1 pb-8">
 
-        <LeaguePicksCard matchId={match.id} matchStatus={match.status} />
-
         <MatchInsightsCard
           matchId={match.id}
           homeTeam={{ name: match.homeTeam.name, shortCode: match.homeTeam.shortCode }}
@@ -179,6 +177,8 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
           awayTeam={{ name: match.awayTeam.name, shortCode: match.awayTeam.shortCode }}
           round={match.round}
         />
+
+        <LeaguePicksCard matchId={match.id} matchStatus={match.status} />
 
         <section className="pt-3">
           <p className="text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/50 mb-3 px-1">

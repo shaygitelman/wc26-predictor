@@ -82,6 +82,39 @@ export interface ApiMatchStats {
   away:       ApiTeamStats
 }
 
+// ─── Historical form & stats ───────────────────────────────────────
+// Derived from the last 5 real internationals via API-Football.
+// Fully independent of whether the WC26 match itself has been played.
+
+export interface TeamFormEntry {
+  result:      'W' | 'D' | 'L'
+  goalsFor:    number
+  goalsAgt:    number
+  opponent:    string
+  date:        string
+  competition?: string
+}
+
+export type HistoricalConfidence = 'verified' | 'partial' | 'none'
+
+export interface TeamHistoricalStats {
+  code:             string
+  form:             TeamFormEntry[]
+  // Derived from form
+  avgGoalsScored:   number | null
+  avgGoalsConceded: number | null
+  cleanSheets:      number | null  // count out of form.length
+  btts:             number | null  // both teams scored
+  // From /stats/{side} (per-match averages from real fixtures)
+  avgPossession:    number | null
+  avgShots:         number | null
+  avgCorners:       number | null
+  // Provenance
+  fixtureCoverage:  number
+  confidence:       HistoricalConfidence
+  fetchedAt:        string
+}
+
 export type ContextType =
   | 'rivalry'
   | 'must-win'
@@ -127,6 +160,12 @@ export interface MatchFacts {
   statsFallbackUsed: boolean          // true if any stat value was estimated/synthetic
 
   squadFallbackUsed: boolean          // true if any squad entry was estimated/synthetic
+
+  // Historical form & team statistics — from API-Football historical fixtures.
+  // Present for all confirmed matches regardless of tournament status.
+  historicalHome?:       TeamHistoricalStats
+  historicalAway?:       TeamHistoricalStats
+  historicalConfidence?: HistoricalConfidence
 
   // Unified provenance envelope — always present
   provenance: DataProvenance

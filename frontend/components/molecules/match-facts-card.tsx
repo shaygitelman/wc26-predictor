@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { BarChart3, ChevronDown, ChevronUp, Flame, Trophy, AlertTriangle, ShieldAlert, ShieldCheck, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, PlayerStatus } from '@/types/match-facts'
+import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, PlayerStatus, TeamHistoricalStats, TeamFormEntry } from '@/types/match-facts'
 
 // ─── Props ───────────────────────────────────────────────────
 
@@ -188,9 +188,14 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
                   <ShieldCheck className="size-[9px]" strokeWidth={2.5} />
                   Live Match Data
                 </span>
+              ) : (facts.historicalHome || facts.historicalAway) ? (
+                <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-gold/10 text-gold border-gold/20 flex items-center gap-1">
+                  <Activity className="size-[9px]" strokeWidth={2.5} />
+                  Historical
+                </span>
               ) : (
                 <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-muted/20 text-muted-foreground/50 border-border/50">
-                  No live data
+                  No data
                 </span>
               )}
             </div>
@@ -202,9 +207,7 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
 
           {statsOpen && (
             <div className="px-4 pb-4">
-              {facts.statsConfidence !== 'verified' || facts.stats.length === 0 ? (
-                <StatsNoDataFallback matchStatus={facts.statsConfidence} />
-              ) : (
+              {facts.statsConfidence === 'verified' && facts.stats.length > 0 ? (
                 <>
                   <StatsTable
                     stats={facts.stats}
@@ -218,6 +221,15 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
                     </p>
                   )}
                 </>
+              ) : (facts.historicalHome || facts.historicalAway) ? (
+                <HistoricalStatsDisplay
+                  home={facts.historicalHome ?? null}
+                  away={facts.historicalAway ?? null}
+                  homeTeam={homeTeam}
+                  awayTeam={awayTeam}
+                />
+              ) : (
+                <StatsNoDataFallback matchStatus={facts.statsConfidence} />
               )}
             </div>
           )}
@@ -358,6 +370,140 @@ function StatsNoDataFallback({ matchStatus }: { matchStatus?: string }) {
       <p className="text-[11px] text-muted-foreground/40 pl-1 leading-snug">
         Statistics will appear once live match data is available from API-Football.
       </p>
+    </div>
+  )
+}
+
+// ─── Historical form bubbles ──────────────────────────────────
+
+function FormBubbles({ form }: { form: TeamFormEntry[] }) {
+  const recent = form.slice(-5)
+  if (recent.length === 0) return null
+  return (
+    <div className="flex items-center gap-1.5">
+      {recent.map((entry, i) => (
+        <div
+          key={i}
+          title={`${entry.result} vs ${entry.opponent}`}
+          className={cn(
+            'size-[22px] rounded-full flex items-center justify-center text-[9px] font-black',
+            entry.result === 'W' ? 'bg-status-won/20 text-status-won'
+            : entry.result === 'D' ? 'bg-gold/20 text-gold'
+            : 'bg-status-lost/20 text-status-lost',
+          )}
+        >
+          {entry.result}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Historical stats display ─────────────────────────────────
+
+function HistoricalStatsDisplay({
+  home,
+  away,
+  homeTeam,
+  awayTeam,
+}: {
+  home:     TeamHistoricalStats | null
+  away:     TeamHistoricalStats | null
+  homeTeam: { name: string; shortCode: string }
+  awayTeam: { name: string; shortCode: string }
+}) {
+  const showForm = (home?.form?.length ?? 0) > 0 || (away?.form?.length ?? 0) > 0
+
+  type HistRow = { label: string; h: number | null; a: number | null; unit: string; hib: boolean; fmt: 'integer' | 'decimal' }
+  const rows: HistRow[] = ([
+    { label: 'Goals/Game',    h: home?.avgGoalsScored   ?? null, a: away?.avgGoalsScored   ?? null, unit: '',  hib: true,  fmt: 'decimal'  },
+    { label: 'Conceded/Game', h: home?.avgGoalsConceded ?? null, a: away?.avgGoalsConceded ?? null, unit: '',  hib: false, fmt: 'decimal'  },
+    { label: 'Clean Sheets',  h: home?.cleanSheets      ?? null, a: away?.cleanSheets      ?? null, unit: '',  hib: true,  fmt: 'integer'  },
+    { label: 'Possession',    h: home?.avgPossession    ?? null, a: away?.avgPossession    ?? null, unit: '%', hib: true,  fmt: 'integer'  },
+    { label: 'Shots/Game',    h: home?.avgShots         ?? null, a: away?.avgShots         ?? null, unit: '',  hib: true,  fmt: 'decimal'  },
+    { label: 'Corners/Game',  h: home?.avgCorners       ?? null, a: away?.avgCorners       ?? null, unit: '',  hib: true,  fmt: 'decimal'  },
+  ] as HistRow[]).filter(r => r.h !== null || r.a !== null)
+
+  const fetchedAt = home?.fetchedAt ?? away?.fetchedAt
+
+  return (
+    <div className="flex flex-col gap-3">
+
+      {/* Recent form bubbles */}
+      {showForm && (
+        <div className="rounded-xl border border-border/50 overflow-hidden">
+          <div className="grid grid-cols-[64px_1fr] bg-surface-elevated border-b border-border/50 px-3 py-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Form</span>
+            <span className="text-[10px] text-muted-foreground/40 text-right">Last 5 matches</span>
+          </div>
+          {home && (home.form?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-3 px-3 py-2.5 border-b border-border/40 last:border-0">
+              <span className="text-[10px] font-black uppercase tracking-wider text-foreground w-8 flex-shrink-0">
+                {homeTeam.shortCode}
+              </span>
+              <FormBubbles form={home.form} />
+            </div>
+          )}
+          {away && (away.form?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-foreground w-8 flex-shrink-0">
+                {awayTeam.shortCode}
+              </span>
+              <FormBubbles form={away.form} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Averages comparison table */}
+      {rows.length > 0 && (
+        <div className="rounded-xl border border-border/50 overflow-hidden">
+          <div className="grid grid-cols-[1fr_64px_64px] bg-surface-elevated border-b border-border/50">
+            <div className="px-3 py-2" />
+            <div className="py-2 text-center text-[10px] font-black uppercase tracking-wider text-muted-foreground border-l border-border/50">
+              {homeTeam.shortCode}
+            </div>
+            <div className="py-2 text-center text-[10px] font-black uppercase tracking-wider text-muted-foreground border-l border-border/50">
+              {awayTeam.shortCode}
+            </div>
+          </div>
+          {rows.map((row, i) => {
+            const homeWins = row.h !== null && row.a !== null
+              ? (row.hib ? row.h >= row.a : row.h <= row.a)
+              : false
+            const awayWins = row.h !== null && row.a !== null
+              ? (row.hib ? row.a > row.h : row.a < row.h)
+              : false
+            const fmtVal = (v: number | null) =>
+              v === null ? '—' : (row.fmt === 'decimal' ? v.toFixed(1) : String(v)) + row.unit
+
+            return (
+              <div key={i} className="grid grid-cols-[1fr_64px_64px] border-b border-border/40 last:border-0">
+                <div className="px-3 py-2.5 text-[12px] text-muted-foreground">{row.label}</div>
+                <div className={cn(
+                  'py-2.5 text-center text-[13px] font-bold tabular-nums border-l border-border/40',
+                  homeWins ? 'text-foreground' : 'text-muted-foreground/50',
+                )}>
+                  {fmtVal(row.h)}
+                </div>
+                <div className={cn(
+                  'py-2.5 text-center text-[13px] font-bold tabular-nums border-l border-border/40',
+                  awayWins ? 'text-foreground' : 'text-muted-foreground/50',
+                )}>
+                  {fmtVal(row.a)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {fetchedAt && (
+        <p className="text-[9.5px] text-muted-foreground/35 text-right">
+          <Activity className="size-[9px] inline mr-0.5 -mt-px" strokeWidth={2} />
+          API-Football · Historical · {new Date(fetchedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+      )}
     </div>
   )
 }

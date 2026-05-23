@@ -31,6 +31,7 @@ import type {
   MatchFacts, MatchContext, StatRow,
   PlayerStatus, TeamSquadStatus,
   ApiMatchStats, StatsDataSource, StatsConfidence,
+  TeamFormEntry, TeamHistoricalStats, HistoricalConfidence,
 } from '@/types/match-facts'
 
 // ─── Player entry invariant ───────────────────────────────────────
@@ -243,6 +244,82 @@ async function fetchMatchStats(matchId: string): Promise<StatsFetchResult> {
   }
 }
 
+// ─── Historical team stats ────────────────────────────────────────
+// Uses the same team_form.py pipeline as AI Insights.
+// Returns null per team when unavailable — nothing is fabricated.
+
+async function safeHistFetch<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    return await res.json() as T
+  } catch {
+    return null
+  }
+}
+
+function buildHistoricalStats(
+  code:  string,
+  form:  TeamFormEntry[],
+  stats: { avgCorners?: number; avgPossession?: number; avgShots?: number; fixtureCoverage?: number; fetchedAt?: string } | null,
+): TeamHistoricalStats {
+  const n = form.length
+  const avgGoalsScored   = n ? form.reduce((s, f) => s + f.goalsFor, 0) / n : null
+  const avgGoalsConceded = n ? form.reduce((s, f) => s + f.goalsAgt, 0) / n : null
+
+  return {
+    code,
+    form,
+    avgGoalsScored:   avgGoalsScored   !== null ? Math.round(avgGoalsScored   * 100) / 100 : null,
+    avgGoalsConceded: avgGoalsConceded !== null ? Math.round(avgGoalsConceded * 100) / 100 : null,
+    cleanSheets:      n ? form.filter(f => f.goalsAgt === 0).length : null,
+    btts:             n ? form.filter(f => f.goalsFor > 0 && f.goalsAgt > 0).length : null,
+    avgPossession:    stats?.avgPossession  ?? null,
+    avgShots:         stats?.avgShots       ?? null,
+    avgCorners:       stats?.avgCorners     ?? null,
+    fixtureCoverage:  stats?.fixtureCoverage ?? n,
+    confidence:       n >= 3 ? 'verified' : n > 0 ? 'partial' : 'none',
+    fetchedAt:        stats?.fetchedAt ?? new Date().toISOString(),
+  }
+}
+
+interface HistoricalResult {
+  home:       TeamHistoricalStats | null
+  away:       TeamHistoricalStats | null
+  confidence: HistoricalConfidence
+}
+
+async function fetchHistoricalStats(
+  matchId:  string,
+  homeCode: string,
+  awayCode: string,
+): Promise<HistoricalResult> {
+  const base = `${API_BASE}/matches/${matchId}`
+
+  type StatsShape = { avgCorners?: number; avgPossession?: number; avgShots?: number; fixtureCoverage?: number; fetchedAt?: string }
+
+  const [homeForm, awayForm, homeStats, awayStats] = await Promise.all([
+    safeHistFetch<TeamFormEntry[]>(`${base}/form/home`),
+    safeHistFetch<TeamFormEntry[]>(`${base}/form/away`),
+    safeHistFetch<StatsShape>(`${base}/stats/home`),
+    safeHistFetch<StatsShape>(`${base}/stats/away`),
+  ])
+
+  const isValidForm = (f: unknown): f is TeamFormEntry[] =>
+    Array.isArray(f) && f.length > 0 &&
+    (f as TeamFormEntry[]).every(e => e.result === 'W' || e.result === 'D' || e.result === 'L')
+
+  const homeHist = isValidForm(homeForm) ? buildHistoricalStats(homeCode, homeForm, homeStats ?? null) : null
+  const awayHist = isValidForm(awayForm) ? buildHistoricalStats(awayCode, awayForm, awayStats ?? null) : null
+
+  const confidence: HistoricalConfidence =
+    homeHist && awayHist ? 'verified'
+    : homeHist || awayHist ? 'partial'
+    : 'none'
+
+  return { home: homeHist, away: awayHist, confidence }
+}
+
 // ─── Route ────────────────────────────────────────────────────────
 
 interface Params { params: Promise<{ id: string }> }
@@ -292,10 +369,11 @@ export async function GET(_req: Request, { params }: Params) {
   }
 
   try {
-    // ── Squad news + match stats: fetch in parallel ─────────────
-    const [squadResult, statsResult] = await Promise.all([
+    // ── Squad news + match stats + historical: fetch in parallel ─
+    const [squadResult, statsResult, historicalResult] = await Promise.all([
       fetchSquadNews(id, match.homeTeam.shortCode, match.awayTeam.shortCode),
       fetchMatchStats(id),
+      fetchHistoricalStats(id, match.homeTeam.shortCode, match.awayTeam.shortCode),
     ])
     const t1 = Date.now()
 
@@ -303,7 +381,9 @@ export async function GET(_req: Request, { params }: Params) {
       `[MatchFacts] ${id} — fetched in ${t1 - t0}ms | ` +
       `squad: source=${squadResult.dataSource} confidence=${squadResult.confidence} ` +
       `home_log=${squadResult.logs.home.validationResult} away_log=${squadResult.logs.away.validationResult} | ` +
-      `stats: source=${statsResult.source} confidence=${statsResult.confidence} rows=${statsResult.rows.length}`,
+      `stats: source=${statsResult.source} confidence=${statsResult.confidence} rows=${statsResult.rows.length} | ` +
+      `historical: confidence=${historicalResult.confidence} ` +
+      `home_form=${historicalResult.home?.form.length ?? 0} away_form=${historicalResult.away?.form.length ?? 0}`,
     )
 
     // ── Context: deterministic/factual only ─────────────────────
@@ -324,6 +404,7 @@ export async function GET(_req: Request, { params }: Params) {
 
     const statsVerified = statsResult.confidence === 'verified'
     const squadVerified = squadResult.confidence === 'verified'
+    const histVerified  = historicalResult.confidence !== 'none'
     const now           = new Date().toISOString()
 
     const facts: MatchFacts = {
@@ -341,11 +422,17 @@ export async function GET(_req: Request, { params }: Params) {
       statsFetchedAt:    statsResult.fetchedAt,
       statsFixtureId:    statsResult.fixtureId,
       statsFallbackUsed: false,
-      provenance: statsVerified || squadVerified
+      historicalHome:       historicalResult.home  ?? undefined,
+      historicalAway:       historicalResult.away  ?? undefined,
+      historicalConfidence: historicalResult.confidence,
+      provenance: statsVerified || squadVerified || histVerified
         ? realProvenance(
-            [statsVerified ? 'api-football:/fixtures/statistics' : null, squadVerified ? `backend:/squad` : null]
-              .filter(Boolean).join(', '),
-            statsResult.fetchedAt ?? squadResult.fetchedAt ?? now,
+            [
+              statsVerified ? 'api-football:/fixtures/statistics' : null,
+              squadVerified ? 'backend:/squad' : null,
+              histVerified  ? 'api-football:/fixtures?last=5' : null,
+            ].filter(Boolean).join(', '),
+            statsResult.fetchedAt ?? squadResult.fetchedAt ?? historicalResult.home?.fetchedAt ?? now,
           )
         : noProvenance('no-real-data-available'),
       context,

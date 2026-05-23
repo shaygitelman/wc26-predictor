@@ -1,6 +1,8 @@
+import type { DataProvenance } from './provenance'
+
 export type FormResult      = 'W' | 'D' | 'L'
 export type ConfidenceLevel = 'low' | 'medium' | 'high'
-export type EdgeTeam        = 'home' | 'away' | 'draw'
+export type EdgeTeam        = 'home' | 'away' | 'draw' | 'none'
 
 export type MatchPersonality =
   | 'explosive'          // High-scoring, attack vs attack
@@ -99,6 +101,9 @@ export interface MatchInsights {
 
   sectionOrder: SectionKey[]   // Dynamic per-match render order
 
-  // Optional debug payload — only present when DEBUG_AI_INSIGHTS=true
+  // Provenance — always present; confidence='none' means no real data was available
+  dataProvenance?: DataProvenance
+
+  // Optional debug payload — only present when DEBUG_AI_INSIGHTS=true or DEBUG_DATA_PROVENANCE=true
   _debug?: InsightsDebugInfo
 }

@@ -1,3 +1,5 @@
+import type { DataProvenance } from './provenance'
+
 export type AvailabilityStatus = 'injured' | 'suspended' | 'doubtful'
 
 export type SquadDataSource = 'api-verified' | 'none'
@@ -122,6 +124,12 @@ export interface MatchFacts {
   statsConfidence: StatsConfidence    // 'verified' when from real API, 'none' otherwise
   statsFetchedAt?: string             // ISO 8601 timestamp of the API fetch
   statsFixtureId?: string             // API-Football fixture ID that sourced the stats
+  statsFallbackUsed: boolean          // true if any stat value was estimated/synthetic
+
+  squadFallbackUsed: boolean          // true if any squad entry was estimated/synthetic
+
+  // Unified provenance envelope — always present
+  provenance: DataProvenance
 
   context: MatchContext[]
 }

@@ -7,6 +7,7 @@ import {
   ChevronRight, ArrowUp, LayoutGrid, Clock, WifiOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { assertVerified } from '@/lib/provenance'
 import { FormBubble } from '@/components/atoms/form-bubble'
 import type {
   MatchInsights, InsightBullet, ConfidenceLevel, FormResult,
@@ -130,7 +131,7 @@ const VALID_PERSONALITIES = new Set<string>([
 const VALID_CONFIDENCES = new Set<string>(['low', 'medium', 'high'])
 
 const FALLBACK_EDGE: MatchInsights['edge'] = {
-  team: 'draw', teamName: 'Either Side', strength: 'slight',
+  team: 'none', teamName: 'No Data', strength: 'slight',
 }
 
 // ─── Main component ──────────────────────────────────────────
@@ -189,7 +190,7 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
   const safeConfidence: ConfidenceLevel =
     VALID_CONFIDENCES.has(confidence as string)
       ? (confidence as ConfidenceLevel)
-      : 'medium'
+      : 'low'
 
   const safeForm = { home: form?.home ?? [], away: form?.away ?? [] }
 
@@ -205,6 +206,17 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
     Array.isArray(sectionOrder) && sectionOrder.length > 0
       ? sectionOrder
       : DEFAULT_SECTION_ORDER
+
+  // ── Runtime invariant: tactical insights must have a verified provenance ──
+  // Tactical texts claim specific measured values — if they reach the screen
+  // without a verified data source, it is a data-integrity violation.
+  if (safeTactical.length > 0 && insights.dataProvenance) {
+    assertVerified(insights.dataProvenance, {
+      renderPath: 'MatchInsightsCard > TacticalSection',
+      matchId,
+      field: 'tactical',
+    })
+  }
 
   return (
     <div className="bg-card rounded-2xl border border-border overflow-hidden animate-fade-in shadow-card">
@@ -574,6 +586,27 @@ function ConfidenceChip({ confidence }: { confidence: ConfidenceLevel }) {
 }
 
 function EdgeBanner({ edge, edgeNote }: { edge: MatchInsights['edge']; edgeNote?: string }) {
+  // team:'none' means no real form data exists — render an honest no-data state
+  if (edge.team === 'none') {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className={cn(
+          'flex items-center justify-center gap-2 py-3 rounded-xl',
+          'bg-muted/40 border border-border',
+        )}>
+          <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
+            No verified edge data
+          </span>
+        </div>
+        {edgeNote && (
+          <p className="text-[12px] text-muted-foreground leading-snug text-center italic px-2">
+            {edgeNote}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   const label =
     edge.team === 'draw'
       ? 'Very Balanced Matchup'

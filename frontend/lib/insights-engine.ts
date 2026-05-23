@@ -351,7 +351,11 @@ function derivePersonality(
   away:       TeamFacts,
   isKnockout: boolean,
 ): MatchPersonality {
-  if (isKnockout) return 'tactical-battle'
+  const hasData = home.results.length > 0 || away.results.length > 0
+
+  // Only apply the knockout label when we have real form data to back it up.
+  // Without data the label would be a synthetic assertion — fall through to 'balanced'.
+  if (isKnockout && hasData) return 'tactical-battle'
 
   const hAvg = home.avgGoalsScored
   const aAvg = away.avgGoalsScored
@@ -404,7 +408,7 @@ function buildEdge(
 
   if (!hasForm) {
     return {
-      edge:       { team: 'draw', teamName: 'Either Side', strength: 'slight' },
+      edge:       { team: 'none', teamName: 'No Data', strength: 'slight' },
       confidence: 'low',
       upsetAlert: false,
       edgeNote:   'Insufficient match data to assess a statistical edge — analysis will update as the tournament progresses.',
@@ -535,7 +539,7 @@ export function runInsightsEngine(facts: InsightsFacts): MatchInsights {
       coachingHint:     null,
       keyPlayers:       [],
       headToHead:       [],
-      edge:             { team: 'draw', teamName: 'Either Side', strength: 'slight' },
+      edge:             { team: 'none', teamName: 'No Data', strength: 'slight' },
       confidence:       'low',
       upsetAlert:       false,
       edgeNote:         'Analysis becomes available once both teams are confirmed.',

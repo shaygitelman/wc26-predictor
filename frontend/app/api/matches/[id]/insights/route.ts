@@ -3,9 +3,11 @@ import { normalizeInsightsFacts }  from '@/lib/insights-normalizer'
 import { runInsightsEngine }       from '@/lib/insights-engine'
 import { enrichInsightsWithGroq }  from '@/lib/groq-insights'
 import type { Match } from '@/types/match'
+import type { DataProvenance } from '@/types/provenance'
 
-const API_BASE   = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-const DEBUG_MODE = process.env.DEBUG_AI_INSIGHTS === 'true'
+const API_BASE         = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const DEBUG_MODE       = process.env.DEBUG_AI_INSIGHTS === 'true'
+const DEBUG_PROVENANCE = process.env.DEBUG_DATA_PROVENANCE === 'true'
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -79,18 +81,50 @@ export async function GET(_req: Request, { params }: Params) {
     const groqFallback =
       enriched.tactical.length === 0 && insights.tactical.length === 0
 
+    // ── Provenance envelope ──────────────────────────────────────
+    // Reflects which real data sources were available for this pipeline run.
+    const dataProvenance: DataProvenance = {
+      verified:     facts.dataConfidence !== 'insufficient',
+      source:       [
+        raw.homeForm  ? 'backend:/matches/{id}/form/home'   : null,
+        raw.awayForm  ? 'backend:/matches/{id}/form/away'   : null,
+        raw.h2h       ? 'backend:/matches/{id}/h2h'         : null,
+        raw.homeStats ? 'backend:/matches/{id}/stats/home'  : null,
+        raw.awayStats ? 'backend:/matches/{id}/stats/away'  : null,
+      ].filter(Boolean).join(', ') || 'none',
+      fetchedAt:    raw.fetchedAt,
+      confidence:   facts.dataConfidence === 'high'   ? 'verified'
+                  : facts.dataConfidence === 'medium'  ? 'partial'
+                  : facts.dataConfidence === 'low'     ? 'partial'
+                  : 'none',
+      fallbackUsed: false,
+    }
+
     const payload = {
       ...enriched,
-      ...(DEBUG_MODE && {
+      dataProvenance,
+      ...(DEBUG_MODE || DEBUG_PROVENANCE ? {
         _debug: {
           rawFactsCount,
-          groqLatencyMs: groqMs,
+          groqLatencyMs:      groqMs,
           groqFallback,
-          insightCount:  enriched.tactical.length,
-          confidence:    enriched.confidence,
-          apiBaseUsed:   API_BASE,
+          insightCount:       enriched.tactical.length,
+          confidence:         enriched.confidence,
+          apiBaseUsed:        API_BASE,
+          // DEBUG_DATA_PROVENANCE extras
+          ...(DEBUG_PROVENANCE && {
+            sourceEndpoints:  dataProvenance.source,
+            fixtureId:        raw.matchId,
+            verificationStatus: dataProvenance.confidence,
+            cacheLayer:       'no-store',
+            fetchedAt:        dataProvenance.fetchedAt,
+            fallbackActivationAttempts: 0,
+            homeFormSamples:  raw.homeForm?.length ?? 0,
+            awayFormSamples:  raw.awayForm?.length ?? 0,
+            h2hAvailable:     !!raw.h2h,
+          }),
         },
-      }),
+      } : {}),
     }
 
     console.log(`[Insights] ${id} — done in ${Date.now() - t0}ms`)

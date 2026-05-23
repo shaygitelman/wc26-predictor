@@ -25,6 +25,7 @@
  */
 
 import { fetchSquadNews } from '@/lib/squad-news'
+import { realProvenance, noProvenance } from '@/types/provenance'
 import type { Match, Team, Round } from '@/types/match'
 import type {
   MatchFacts, MatchContext, StatRow,
@@ -273,16 +274,19 @@ export async function GET(_req: Request, { params }: Params) {
   ) {
     console.log(`[MatchFacts] ${id} — one or both teams TBD, returning pending placeholder`)
     const pending: MatchFacts = {
-      matchId:         id,
-      generatedAt:     new Date().toISOString(),
-      pendingData:     true,
-      squad:           { home: { injured: [], suspended: [], doubtful: [] }, away: { injured: [], suspended: [], doubtful: [] } },
-      squadSource:     'none',
-      squadConfidence: 'none',
-      stats:           [],
-      statsSource:     'none',
-      statsConfidence: 'none',
-      context:         [],
+      matchId:           id,
+      generatedAt:       new Date().toISOString(),
+      pendingData:       true,
+      squad:             { home: { injured: [], suspended: [], doubtful: [] }, away: { injured: [], suspended: [], doubtful: [] } },
+      squadSource:       'none',
+      squadConfidence:   'none',
+      squadFallbackUsed: false,
+      stats:             [],
+      statsSource:       'none',
+      statsConfidence:   'none',
+      statsFallbackUsed: false,
+      provenance:        noProvenance('pending'),
+      context:           [],
     }
     return Response.json(pending, { headers: { 'Cache-Control': 'no-store' } })
   }
@@ -318,19 +322,32 @@ export async function GET(_req: Request, { params }: Params) {
       `stats rows=${statsResult.rows.length} verified=${statsResult.confidence === 'verified'}`,
     )
 
+    const statsVerified = statsResult.confidence === 'verified'
+    const squadVerified = squadResult.confidence === 'verified'
+    const now           = new Date().toISOString()
+
     const facts: MatchFacts = {
-      matchId:         id,
-      generatedAt:     new Date().toISOString(),
-      squad:           { home: homeSquad, away: awaySquad },
-      squadSource:     squadResult.dataSource,
-      squadConfidence: squadResult.confidence,
-      squadFetchedAt:  squadResult.fetchedAt,
-      squadLogs:       squadResult.logs,
-      stats:           statsResult.rows,
-      statsSource:     statsResult.source,
-      statsConfidence: statsResult.confidence,
-      statsFetchedAt:  statsResult.fetchedAt,
-      statsFixtureId:  statsResult.fixtureId,
+      matchId:           id,
+      generatedAt:       now,
+      squad:             { home: homeSquad, away: awaySquad },
+      squadSource:       squadResult.dataSource,
+      squadConfidence:   squadResult.confidence,
+      squadFetchedAt:    squadResult.fetchedAt,
+      squadFallbackUsed: false,
+      squadLogs:         squadResult.logs,
+      stats:             statsResult.rows,
+      statsSource:       statsResult.source,
+      statsConfidence:   statsResult.confidence,
+      statsFetchedAt:    statsResult.fetchedAt,
+      statsFixtureId:    statsResult.fixtureId,
+      statsFallbackUsed: false,
+      provenance: statsVerified || squadVerified
+        ? realProvenance(
+            [statsVerified ? 'api-football:/fixtures/statistics' : null, squadVerified ? `backend:/squad` : null]
+              .filter(Boolean).join(', '),
+            statsResult.fetchedAt ?? squadResult.fetchedAt ?? now,
+          )
+        : noProvenance('no-real-data-available'),
       context,
     }
 

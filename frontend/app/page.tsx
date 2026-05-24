@@ -98,8 +98,7 @@ export default async function HomePage() {
               </p>
               <p className="text-2xs text-muted-foreground mt-0.5">pts</p>
             </div>
-            <span className="text-2xs font-black text-status-live bg-status-live/20 rounded px-1 py-0.5">v2</span>
-            <ChevronRight className="size-4 text-muted-foreground" />
+<ChevronRight className="size-4 text-muted-foreground" />
           </div>
         </Link>
 

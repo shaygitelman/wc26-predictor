@@ -114,7 +114,6 @@ export default function TournamentPage() {
     setSaveState('saving'); setSaveError('')
     try {
       const payload = { winnerId: winnerId ?? null, topScorerId: scorerId ?? null }
-      console.log('[tournament] saving picks:', payload)
       const res = await fetch('/api/tournament/picks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -125,7 +124,6 @@ export default function TournamentPage() {
         console.error('[tournament] save failed %d:', res.status, data)
         throw new Error(data?.detail ?? data?.error ?? `Save failed (${res.status})`)
       }
-      console.log('[tournament] save success:', data)
       setWinnerId(data.winnerId ?? undefined)
       setScorerId(data.topScorerId ?? undefined)
       setIsLocked(data.isLocked)

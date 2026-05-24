@@ -247,7 +247,7 @@ export default function TournamentPage() {
                   type="text"
                   value={searchQuery}
                   onChange={e => handleSearchChange(e.target.value)}
-                  placeholder="Search all 1600+ players…"
+                  placeholder="Search all players…"
                   className="w-full bg-surface-elevated border border-border rounded-xl pl-10 pr-10 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50"
                 />
                 {searchQuery && (

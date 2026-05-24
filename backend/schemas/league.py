@@ -94,3 +94,10 @@ class MemberPredictionOut(BaseModel):
     totalPoints:   Optional[int] = None
     isCurrentUser: bool
     prediction:    Optional[MemberPick] = None
+
+
+class LeaguePreview(BaseModel):
+    name:            str
+    memberCount:     int
+    creatorUsername: str
+    inviteCode:      str

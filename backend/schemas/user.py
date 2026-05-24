@@ -82,6 +82,16 @@ class UserStatsOut(BaseModel):
     totalPredictions:   int
 
 
+class LeaderboardEntry(BaseModel):
+    rank:        int
+    userId:      str
+    username:    str
+    avatarId:    str | None
+    avatarUrl:   str | None
+    totalPoints: int
+    isMe:        bool
+
+
 class PrivacySettingsOut(BaseModel):
     hidePicksUntilKickoff: bool
     profilePublic:         bool

@@ -13,7 +13,7 @@ from models.match import Match
 from models.prediction import Prediction
 from models.user import User
 from schemas.league import (
-    LeagueCreate, LeagueJoin, LeagueOut, LeagueStandingOut,
+    LeagueCreate, LeagueJoin, LeagueOut, LeaguePreview, LeagueStandingOut,
     MemberPick, MemberPredictionOut,
 )
 
@@ -91,6 +91,29 @@ async def join_league(
         select(func.count()).where(LeagueMember.league_id == league.id)
     )
     return LeagueOut.from_orm(league, member_count=count or 0)
+
+
+@router.get("/preview/{invite_code}", response_model=LeaguePreview)
+async def preview_league(
+    invite_code: str,
+    db: AsyncSession = Depends(get_db),
+) -> LeaguePreview:
+    """Public endpoint — no auth required. Returns basic info so guests can preview before joining."""
+    code = invite_code.strip().upper()
+    league = await db.scalar(select(League).where(League.invite_code == code))
+    if not league:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid invite code")
+
+    count = await db.scalar(select(func.count()).where(LeagueMember.league_id == league.id))
+    creator = await db.get(User, league.created_by)
+    creator_username = creator.username if creator else "Unknown"
+
+    return LeaguePreview(
+        name            = league.name,
+        memberCount     = count or 0,
+        creatorUsername = creator_username,
+        inviteCode      = league.invite_code,
+    )
 
 
 @router.get("/{league_id}", response_model=LeagueOut)

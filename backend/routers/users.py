@@ -9,7 +9,7 @@ from core.database import get_db
 from dependencies.auth import get_current_user
 from models.prediction import Prediction
 from models.user import User
-from schemas.user import PrivacySettingsIn, PrivacySettingsOut, UserProfileOut, UserStatsOut, UserUpdateIn
+from schemas.user import LeaderboardEntry, PrivacySettingsIn, PrivacySettingsOut, UserProfileOut, UserStatsOut, UserUpdateIn
 
 logger = logging.getLogger(__name__)
 
@@ -123,3 +123,29 @@ async def my_stats(
         correctPredictions = user.correct_predictions,
         totalPredictions   = pred_count or 0,
     )
+
+
+@router.get("/leaderboard", response_model=list[LeaderboardEntry])
+async def leaderboard(
+    user: User         = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+) -> list[LeaderboardEntry]:
+    users = (
+        await db.execute(
+            select(User)
+            .order_by(User.total_points.desc(), User.created_at.asc())
+        )
+    ).scalars().all()
+
+    return [
+        LeaderboardEntry(
+            rank        = i + 1,
+            userId      = u.id,
+            username    = u.username,
+            avatarId    = u.avatar_id,
+            avatarUrl   = u.avatar_url,
+            totalPoints = u.total_points,
+            isMe        = u.id == user.id,
+        )
+        for i, u in enumerate(users)
+    ]

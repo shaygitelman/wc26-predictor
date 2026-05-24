@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useGoogleLogin } from '@react-oauth/google'
 import type { AuthUser } from '@/types/auth'
 
@@ -11,6 +11,8 @@ export default function LoginPage() {
   const [state,  setState]  = useState<State>('idle')
   const [errMsg, setErrMsg] = useState('')
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const next = searchParams.get('next') ?? '/'
 
   async function handleGoogleSuccess(accessToken: string) {
     setState('loading')
@@ -31,7 +33,7 @@ export default function LoginPage() {
       const { user }: { user: AuthUser } = await res.json()
       void user
 
-      router.push('/')
+      router.push(next)
       router.refresh()
     } catch (err) {
       setState('error')

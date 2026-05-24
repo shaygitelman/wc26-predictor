@@ -2,6 +2,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from models.match import Match
+from core.wc2026_config import CODE_TO_GROUP
 
 
 class TeamOut(BaseModel):
@@ -49,7 +50,7 @@ class MatchOut(BaseModel):
             venue       = m.venue,
             city        = m.city,
             round       = m.round,
-            group       = m.group_name,
+            group       = m.group_name or CODE_TO_GROUP.get(m.home_team_code) or CODE_TO_GROUP.get(m.away_team_code),
             status      = m.status,
             homeScore   = m.home_score,
             awayScore   = m.away_score,

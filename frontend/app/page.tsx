@@ -98,12 +98,6 @@ export default async function HomePage() {
               </p>
               <p className="text-2xs text-muted-foreground mt-0.5">pts</p>
             </div>
-            <div className="text-center">
-              <p className="text-lg font-black text-foreground tabular leading-none">
-                {s ? s.totalPredictions : '—'}
-              </p>
-              <p className="text-2xs text-muted-foreground mt-0.5">picks</p>
-            </div>
             <ChevronRight className="size-4 text-muted-foreground" />
           </div>
         </Link>

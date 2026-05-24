@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { ChevronRight, TrendingUp } from 'lucide-react'
 import { ContextHeader } from '@/components/layout/context-header'
@@ -153,10 +154,28 @@ export default async function HomePage() {
         )}
 
         {/* ── My Leagues ─────────────────────────────────────── */}
-        <MyLeaguesSection leagues={leagues} userId={user?.id} />
+        <Suspense fallback={<MyLeaguesFallback />}>
+          <MyLeaguesSection leagues={leagues} userId={user?.id} />
+        </Suspense>
 
       </div>
     </div>
+  )
+}
+
+function MyLeaguesFallback() {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <div className="h-3 w-24 rounded bg-surface-elevated animate-pulse" />
+        <div className="h-3 w-12 rounded bg-surface-elevated animate-pulse" />
+      </div>
+      <div className="flex flex-col gap-2">
+        {[0, 1].map(i => (
+          <div key={i} className="h-[60px] bg-card rounded-2xl border border-border animate-pulse" />
+        ))}
+      </div>
+    </section>
   )
 }
 

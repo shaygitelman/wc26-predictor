@@ -143,45 +143,45 @@ export const MOCK_USER: User = {
 }
 
 export const MOCK_STATS: UserStats = {
-  totalPoints:        312,
-  globalRank:         142,
-  totalUsers:        4821,
-  totalPredictions:    18,
-  correctPredictions:  12,
-  exactScores:          3,
-  rankChange:         +12,
+  totalPoints:         5,   // p1(3) + p3(1) + p4(1) = 5 from scored matches
+  globalRank:          1,
+  totalUsers:          1,
+  totalPredictions:    6,
+  correctPredictions:  3,   // p1(exact) + p3(outcome) + p4(outcome)
+  exactScores:         1,   // p1 only
+  rankChange:          0,
 }
 
 // ─── User's predictions ───────────────────────────────────────
 export const MOCK_PREDICTIONS: Prediction[] = [
   {
-    id: 'p1', userId: 'user-1', matchId: 'm1',   // GER 2-1 ESP → exact
+    id: 'p1', userId: 'user-1', matchId: 'm1',   // GER 2-1 ESP → exact (group: 3pts)
     predictedHome: 2, predictedAway: 1,
-    pointsEarned: 7, outcome: 'exact',
+    pointsEarned: 3, outcome: 'exact',
     lockedAt: dt('2026-05-13T17:55:00Z'), createdAt: dt('2026-05-12T10:00:00Z'),
   },
   {
-    id: 'p2', userId: 'user-1', matchId: 'm2',   // POR 1-1 NED → wrong
+    id: 'p2', userId: 'user-1', matchId: 'm2',   // POR 1-1 NED → wrong (predicted 1-0 home win, actual draw)
     predictedHome: 1, predictedAway: 0,
     pointsEarned: 0, outcome: 'wrong',
     lockedAt: dt('2026-05-13T20:55:00Z'), createdAt: dt('2026-05-12T11:00:00Z'),
   },
   {
-    id: 'p3', userId: 'user-1', matchId: 'm3',   // URU 0-2 COL → outcome
+    id: 'p3', userId: 'user-1', matchId: 'm3',   // URU 0-2 COL → outcome (away win correct, diff mismatch: group 1pt)
     predictedHome: 0, predictedAway: 1,
-    pointsEarned: 2, outcome: 'outcome',
+    pointsEarned: 1, outcome: 'outcome',
     lockedAt: dt('2026-05-14T19:55:00Z'), createdAt: dt('2026-05-13T09:00:00Z'),
   },
   {
-    id: 'p4', userId: 'user-1', matchId: 'm4',   // SEN 3-1 ECU → outcome
+    id: 'p4', userId: 'user-1', matchId: 'm4',   // SEN 3-1 ECU → outcome (home win correct, diff mismatch: group 1pt)
     predictedHome: 2, predictedAway: 0,
-    pointsEarned: 2, outcome: 'outcome',
+    pointsEarned: 1, outcome: 'outcome',
     lockedAt: dt('2026-05-14T16:55:00Z'), createdAt: dt('2026-05-13T14:00:00Z'),
   },
   {
-    id: 'p5', userId: 'user-1', matchId: 'm5',   // MAR 2-2 JPN → difference
+    id: 'p5', userId: 'user-1', matchId: 'm5',   // MAR 2-2 JPN → wrong (predicted 2-1 home win, actual draw: 0pts)
     predictedHome: 2, predictedAway: 1,
-    pointsEarned: 4, outcome: 'difference',
+    pointsEarned: 0, outcome: 'wrong',
     lockedAt: dt('2026-05-15T18:55:00Z'), createdAt: dt('2026-05-14T20:00:00Z'),
   },
   {

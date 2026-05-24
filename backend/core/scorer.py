@@ -5,6 +5,9 @@ Single transaction: score predictions → recompute user totals →
 sync league_members.total_points → re-rank every affected league.
 All updates are bulk SQL — no per-row round trips.
 """
+import logging
+from datetime import datetime, timezone
+
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +16,8 @@ from models.league import LeagueMember
 from models.match import Match
 from models.prediction import Prediction
 from models.user import User
+
+log = logging.getLogger(__name__)
 
 
 async def score_match(
@@ -24,6 +29,27 @@ async def score_match(
     match = await db.get(Match, match_id)
     if not match:
         raise ValueError(f"Match {match_id} not found")
+
+    # ── Idempotency guard ─────────────────────────────────────────
+    # If the match was already scored with the same result, return early.
+    # If it was scored with a different result, allow the re-score (admin
+    # correction path) but log a warning so it's visible in production logs.
+    if match.status == "finished":
+        if match.home_score == home_score and match.away_score == away_score:
+            log.info(
+                "[Scorer] SKIP match=%s — already finished %d-%d (same score)",
+                match_id, home_score, away_score,
+            )
+            return match
+        log.warning(
+            "[Scorer] RE-SCORE match=%s — was %s-%s, now %d-%d (admin correction)",
+            match_id, match.home_score, match.away_score, home_score, away_score,
+        )
+
+    log.info(
+        "[Scorer] START match=%s round=%s score=%d-%d",
+        match_id, match.round, home_score, away_score,
+    )
 
     # ── 1. Finalise match ─────────────────────────────────────────
     match.home_score = home_score
@@ -41,6 +67,7 @@ async def score_match(
         await db.refresh(match)
         return match
 
+    now_utc = datetime.now(timezone.utc)
     affected_user_ids: list[str] = []
     for pred in predictions:
         outcome, points = compute_outcome(
@@ -50,6 +77,8 @@ async def score_match(
         )
         pred.outcome = outcome
         pred.points_earned = points
+        if pred.locked_at is None:
+            pred.locked_at = now_utc
         affected_user_ids.append(pred.user_id)
 
     affected_user_ids = list(set(affected_user_ids))
@@ -105,11 +134,18 @@ async def score_match(
         .distinct()
         .where(LeagueMember.user_id.in_(affected_user_ids))
     )
-    for (league_id,) in league_ids_result.all():
+    affected_league_ids = [lid for (lid,) in league_ids_result.all()]
+    for league_id in affected_league_ids:
         await _rerank_league(league_id, db)
 
     await db.commit()
     await db.refresh(match)
+
+    log.info(
+        "[Scorer] DONE match=%s — scored %d predictions across %d users, "
+        "re-ranked %d leagues",
+        match_id, len(predictions), len(affected_user_ids), len(affected_league_ids),
+    )
     return match
 
 

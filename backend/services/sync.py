@@ -8,6 +8,7 @@ Typical call order:
     3. sync_groups()   — infer group letters from round-1 fixture pairs
     4. sync_players()  — populate players per team (slow; rate-limited)
 """
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.match import Match
+
+log = logging.getLogger(__name__)
 from models.player import Player
 from models.sync_log import SyncLog
 from models.team import Team
@@ -584,9 +587,19 @@ class SyncService:
                 # Award points when a match just finished
                 if fx.status == "finished" and prev_status != "finished":
                     if fx.home_score is not None and fx.away_score is not None:
+                        log.info(
+                            "[Sync/live] AUTO-SCORE match=%s external=%s %d-%d "
+                            "(transitioned %s → finished)",
+                            match.id, fx.external_id,
+                            fx.home_score, fx.away_score, prev_status,
+                        )
                         try:
                             await do_score(match.id, fx.home_score, fx.away_score, db)
                         except Exception as score_exc:
+                            log.error(
+                                "[Sync/live] SCORE-FAIL match=%s: %s",
+                                match.id, score_exc,
+                            )
                             errors.append(f"scoring {fx.external_id}: {score_exc}")
 
             except Exception as exc:
@@ -618,41 +631,57 @@ class SyncService:
         }
 
     async def _start_log(self, entity_type: str, db: AsyncSession) -> SyncLog:
-        log = SyncLog(
+        log.info("[Sync] START provider=%s entity=%s", self.provider.provider_key, entity_type)
+        entry = SyncLog(
             id          = str(uuid.uuid4()),
             provider    = self.provider.provider_key,
             entity_type = entity_type,
             status      = "running",
             started_at  = datetime.now(timezone.utc),
         )
-        db.add(log)
+        db.add(entry)
         await db.flush()
-        return log
+        return entry
 
     async def _fail_log(
-        self, log: SyncLog, error: str, db: AsyncSession
+        self, entry: SyncLog, error: str, db: AsyncSession
     ) -> SyncResult:
-        log.status        = "error"
-        log.error_message = error
-        log.finished_at   = datetime.now(timezone.utc)
+        log.error(
+            "[Sync] FAIL provider=%s entity=%s error=%s",
+            self.provider.provider_key, entry.entity_type, error,
+        )
+        entry.status        = "error"
+        entry.error_message = error
+        entry.finished_at   = datetime.now(timezone.utc)
         await db.commit()
-        return SyncResult(status="error", entity_type=log.entity_type, errors=[error])
+        return SyncResult(status="error", entity_type=entry.entity_type, errors=[error])
 
     async def _finish_log(
         self,
-        log: SyncLog,
+        entry: SyncLog,
         count: int,
         errors_str: Optional[str],
         db: AsyncSession,
     ) -> SyncResult:
-        log.status           = "partial" if errors_str else "success"
-        log.records_affected = count
-        log.error_message    = errors_str
-        log.finished_at      = datetime.now(timezone.utc)
+        status = "partial" if errors_str else "success"
+        if status == "partial":
+            log.warning(
+                "[Sync] PARTIAL provider=%s entity=%s records=%d errors: %s",
+                self.provider.provider_key, entry.entity_type, count, errors_str,
+            )
+        else:
+            log.info(
+                "[Sync] OK provider=%s entity=%s records=%d",
+                self.provider.provider_key, entry.entity_type, count,
+            )
+        entry.status           = status
+        entry.records_affected = count
+        entry.error_message    = errors_str
+        entry.finished_at      = datetime.now(timezone.utc)
         await db.commit()
         return SyncResult(
-            status           = log.status,
-            entity_type      = log.entity_type,
+            status           = status,
+            entity_type      = entry.entity_type,
             records_affected = count,
             errors           = errors_str.split("\n") if errors_str else [],
         )

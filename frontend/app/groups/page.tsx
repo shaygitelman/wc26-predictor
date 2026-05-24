@@ -3,13 +3,13 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { cn, formatKickoffTime } from '@/lib/utils'
+import { ContextHeader } from '@/components/layout/context-header'
+import type { ApiGroupStandings, ApiTeamStanding, ApiBracketEntry, ApiBracketSlot, ApiGroupFixture } from '@/types/standings'
 
 function hqFlag(url: string | null | undefined): string | null {
   if (!url) return null
   return url.includes('flagcdn.com') ? url.replace(/\/w\d+\//, '/w80/') : url
 }
-import { ContextHeader } from '@/components/layout/context-header'
-import type { ApiGroupStandings, ApiTeamStanding, ApiBracketEntry } from '@/types/standings'
 
 const ROUNDS: { key: string; label: string }[] = [
   { key: 'r32',   label: 'Round of 32'    },
@@ -316,7 +316,7 @@ function StandingsRow({
   )
 }
 
-function GroupFixtureRow({ match }: { match: import('@/types/standings').ApiGroupFixture }) {
+function GroupFixtureRow({ match }: { match: ApiGroupFixture }) {
   const isFinished  = match.status === 'finished'
   const isLive      = match.status === 'live'
   const eitherTbd   = match.homeCode === 'TBD' || match.awayCode === 'TBD'
@@ -504,7 +504,7 @@ function BracketTeamRow({
   slot,
   isFinished,
 }: {
-  slot:       import('@/types/standings').ApiBracketSlot
+  slot:       ApiBracketSlot
   isFinished: boolean
 }) {
   const hasTeam = !!slot.name && !!slot.code
@@ -517,7 +517,7 @@ function BracketTeamRow({
     )}>
       {slot.flagUrl ? (
         <Image
-          src={slot.flagUrl}
+          src={hqFlag(slot.flagUrl)!}
           alt={slot.code ?? ''}
           width={22}
           height={15}

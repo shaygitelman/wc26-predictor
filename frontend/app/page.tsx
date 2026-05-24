@@ -9,6 +9,7 @@ import { MatchCard } from '@/components/molecules/match-card'
 import { SectionHeader } from '@/components/molecules/section-header'
 import { TournamentPicksCard } from '@/components/molecules/tournament-picks-card'
 import { LeagueCard } from '@/components/molecules/league-card'
+import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { apiGet, apiGetCached } from '@/lib/api-server'
 import type { User, UserStats } from '@/types/user'
 import type { Match, TeamDetail } from '@/types/match'
@@ -23,7 +24,7 @@ export default async function HomePage() {
   ] = await Promise.allSettled([
     apiGet<User>('/users/me'),
     apiGet<UserStats>('/users/me/stats'),
-    apiGetCached<Match[]>('/matches', 60, { auth: false }),
+    apiGetCached<Match[]>('/matches', 30, { auth: false }),
     apiGet<League[]>('/leagues/me'),
     apiGetCached<TeamDetail[]>('/teams', 300, { auth: false }),
     apiGet<TournamentPick>('/tournament/picks/me'),
@@ -71,6 +72,7 @@ export default async function HomePage() {
         }
       />
 
+      <LiveRefresh active={liveMatches.length > 0} />
       <div className="flex flex-col gap-6 p-4">
 
         {/* ── Profile strip ──────────────────────────────────── */}

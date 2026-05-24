@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from dependencies.auth import get_current_user
+from models.prediction import Prediction
 from models.user import User
 from schemas.user import PrivacySettingsIn, PrivacySettingsOut, UserProfileOut, UserStatsOut, UserUpdateIn
 
@@ -107,17 +109,17 @@ async def my_stats(
     user: User         = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),
 ) -> UserStatsOut:
-    rank = await db.scalar(
-        select(func.count()).where(User.total_points > user.total_points)
-    ) or 0
-
-    total_users = await db.scalar(select(func.count(User.id))) or 1
+    rank, total_users, pred_count = await asyncio.gather(
+        db.scalar(select(func.count()).where(User.total_points > user.total_points)),
+        db.scalar(select(func.count(User.id))),
+        db.scalar(select(func.count(Prediction.id)).where(Prediction.user_id == user.id)),
+    )
 
     return UserStatsOut(
         totalPoints        = user.total_points,
-        globalRank         = rank + 1,
-        totalUsers         = total_users,
+        globalRank         = (rank or 0) + 1,
+        totalUsers         = total_users or 1,
         exactScores        = user.exact_scores,
         correctPredictions = user.correct_predictions,
-        totalPredictions   = user.total_predictions,
+        totalPredictions   = pred_count or 0,
     )

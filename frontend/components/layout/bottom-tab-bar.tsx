@@ -2,14 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Calendar, Trophy, Medal, User } from 'lucide-react'
+import { Home, Calendar, Trophy, BookOpen, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const TABS = [
   { href: '/',            label: 'Home',     Icon: Home     },
   { href: '/matches',     label: 'Matches',  Icon: Calendar },
   { href: '/leagues',     label: 'Leagues',  Icon: Trophy   },
-  { href: '/leaderboard', label: 'Rankings', Icon: Medal    },
+  { href: '/rules',       label: 'Rules',    Icon: BookOpen },
   { href: '/profile',     label: 'Profile',  Icon: User     },
 ] as const
 

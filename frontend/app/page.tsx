@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { ChevronRight, TrendingUp } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { ThemeToggle } from '@/components/atoms/theme-toggle'
 import { UserAvatar } from '@/components/atoms/user-avatar'
@@ -8,6 +7,7 @@ import { LiveDot } from '@/components/atoms/live-dot'
 import { MatchCard } from '@/components/molecules/match-card'
 import { SectionHeader } from '@/components/molecules/section-header'
 import { TournamentPicksCard } from '@/components/molecules/tournament-picks-card'
+import { LeagueCard } from '@/components/molecules/league-card'
 import { apiGet, apiGetCached } from '@/lib/api-server'
 import type { User, UserStats } from '@/types/user'
 import type { Match, TeamDetail } from '@/types/match'
@@ -196,32 +196,13 @@ async function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId
       <SectionHeader title="My Leagues" href="/leagues" />
       <div className="flex flex-col gap-2">
         {leaguePreviews.map(({ league, userPoints, leaderUsername, leaderPoints }) => (
-          <Link
+          <LeagueCard
             key={league.id}
-            href={`/leagues/${league.id}`}
-            className="flex items-center gap-3 bg-card rounded-2xl border border-border px-4 py-3.5 hover:border-primary/30 transition-all shadow-card"
-          >
-            <div className="size-10 rounded-xl bg-primary-muted flex items-center justify-center flex-shrink-0">
-              <span className="text-sm font-black text-primary">
-                {league.name.slice(0, 2).toUpperCase()}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm text-foreground truncate">{league.name}</p>
-              {leaderUsername && (
-                <p className="text-xs text-muted-foreground truncate">
-                  Leader: {leaderUsername}{leaderPoints != null ? ` · ${leaderPoints} pts` : ''}
-                </p>
-              )}
-            </div>
-            {userPoints != null && (
-              <div className="text-right flex-shrink-0">
-                <p className="text-sm font-black tabular text-primary">{userPoints}</p>
-                <p className="text-xs text-muted-foreground">pts</p>
-              </div>
-            )}
-            <ChevronRight className="size-4 text-muted-foreground flex-shrink-0" />
-          </Link>
+            league={league}
+            userPoints={userPoints ?? undefined}
+            leaderUsername={leaderUsername ?? undefined}
+            leaderPoints={leaderPoints ?? undefined}
+          />
         ))}
       </div>
     </section>

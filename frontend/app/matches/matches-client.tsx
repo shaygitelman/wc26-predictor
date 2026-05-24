@@ -27,13 +27,15 @@ function ilDateKey(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-CA', { timeZone: IL_TZ })
 }
 
-function applyFilter(matches: Match[], filter: FilterValue): Match[] {
+function applyFilter(matches: Match[], filter: FilterValue, group: string | null): Match[] {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: IL_TZ })
+  let result = matches
   switch (filter) {
-    case 'today':    return matches.filter(m => ilDateKey(m.scheduledAt) === today || m.status === 'live')
-    case 'finished': return matches.filter(m => m.status === 'finished')
-    default:         return matches
+    case 'today':    result = result.filter(m => ilDateKey(m.scheduledAt) === today || m.status === 'live'); break
+    case 'finished': result = result.filter(m => m.status === 'finished'); break
   }
+  if (group) result = result.filter(m => m.group === group)
+  return result
 }
 
 function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: string; matches: Match[] }> {
@@ -108,6 +110,38 @@ function SegmentedFilter({
   )
 }
 
+// ─── Group filter row ─────────────────────────────────────────
+
+function GroupFilter({
+  groups,
+  active,
+  onChange,
+}: {
+  groups:   string[]
+  active:   string | null
+  onChange: (g: string | null) => void
+}) {
+  if (groups.length === 0) return null
+  return (
+    <div className="flex gap-1.5 px-4 py-2.5 border-b border-border/60 overflow-x-auto scrollbar-none bg-background/97">
+      {groups.map(g => (
+        <button
+          key={g}
+          onClick={() => onChange(active === g ? null : g)}
+          className={cn(
+            'flex-shrink-0 w-9 h-9 rounded-lg text-sm font-bold transition-colors duration-150',
+            active === g
+              ? 'bg-primary text-white'
+              : 'bg-surface-elevated text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {g}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Client island ────────────────────────────────────────────
 
 interface MatchesClientProps {
@@ -116,8 +150,9 @@ interface MatchesClientProps {
 }
 
 export function MatchesClient({ initialMatches, initialPredictions }: MatchesClientProps) {
-  const [predictions, setPredictions] = useState<Prediction[]>(initialPredictions)
-  const [filter,      setFilter]      = useState<FilterValue>('all')
+  const [predictions,  setPredictions]  = useState<Prediction[]>(initialPredictions)
+  const [filter,       setFilter]       = useState<FilterValue>('all')
+  const [groupFilter,  setGroupFilter]  = useState<string | null>(null)
 
   // Refresh predictions when the user returns to this tab
   useEffect(() => {
@@ -136,9 +171,18 @@ export function MatchesClient({ initialMatches, initialPredictions }: MatchesCli
     initialMatches.filter(m => m.status === 'scheduled' && !predictions.find(p => p.matchId === m.id)).length,
     [initialMatches, predictions],
   )
+  const availableGroups = useMemo(() => {
+    const seen = new Set<string>()
+    const letters: string[] = []
+    for (const m of initialMatches) {
+      if (m.group && !seen.has(m.group)) { seen.add(m.group); letters.push(m.group) }
+    }
+    return letters.sort()
+  }, [initialMatches])
+
   const groups = useMemo(
-    () => groupByDate(applyFilter(initialMatches, filter)),
-    [initialMatches, filter],
+    () => groupByDate(applyFilter(initialMatches, filter, groupFilter)),
+    [initialMatches, filter, groupFilter],
   )
 
   return (
@@ -156,6 +200,7 @@ export function MatchesClient({ initialMatches, initialPredictions }: MatchesCli
       />
 
       <SegmentedFilter active={filter} liveCount={liveCount} onChange={setFilter} />
+      <GroupFilter groups={availableGroups} active={groupFilter} onChange={setGroupFilter} />
 
       {pendingCount > 0 && filter !== 'finished' && (
         <div className="mx-4 mt-3 flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary/[0.08] border border-primary/20 shadow-primary-glow/5">

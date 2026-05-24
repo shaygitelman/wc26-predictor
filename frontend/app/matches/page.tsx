@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { MatchCard } from '@/components/molecules/match-card'
@@ -120,7 +120,7 @@ export default function MatchesPage() {
   const [error,       setError]       = useState(false)
   const [filter,      setFilter]      = useState<FilterValue>('all')
 
-  function load() {
+  const load = useCallback(() => {
     setLoading(true)
     setError(false)
     Promise.all([
@@ -133,9 +133,9 @@ export default function MatchesPage() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
-  }
+  }, [])
 
-  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [load])
 
   // Refresh predictions when the user returns to this tab
   useEffect(() => {

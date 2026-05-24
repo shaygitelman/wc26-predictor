@@ -191,7 +191,6 @@ async function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId
     const leader    = standings[0]
     return {
       league,
-      userRank:       me?.rank,
       userPoints:     me?.totalPoints,
       leaderUsername: leader?.username,
       leaderPoints:   leader?.totalPoints,
@@ -202,7 +201,7 @@ async function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId
     <section>
       <SectionHeader title="My Leagues" href="/leagues" />
       <div className="flex flex-col gap-2">
-        {leaguePreviews.map(({ league, userRank, userPoints, leaderUsername, leaderPoints }) => (
+        {leaguePreviews.map(({ league, userPoints, leaderUsername, leaderPoints }) => (
           <Link
             key={league.id}
             href={`/leagues/${league.id}`}
@@ -221,14 +220,10 @@ async function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId
                 </p>
               )}
             </div>
-            {userRank != null && (
+            {userPoints != null && (
               <div className="text-right flex-shrink-0">
-                <p className={cn('text-sm font-black tabular', userRank <= 3 ? 'text-gold-gradient' : 'text-foreground')}>
-                  #{userRank}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {userPoints != null ? `${userPoints} pts` : '—'}
-                </p>
+                <p className="text-sm font-black tabular text-primary">{userPoints}</p>
+                <p className="text-xs text-muted-foreground">pts</p>
               </div>
             )}
             <ChevronRight className="size-4 text-muted-foreground flex-shrink-0" />

@@ -157,16 +157,11 @@ function StatCell({ label, value, variant }: { label: string; value: string; var
   )
 }
 
-function SettingRow({ label, danger }: { label: string; danger?: boolean }) {
+function SettingRow({ label }: { label: string }) {
   return (
     <button className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-surface-elevated transition-colors text-left">
-      <span className={[
-        'text-[15px] font-medium',
-        danger ? 'text-status-lost' : 'text-foreground',
-      ].join(' ')}>
-        {label}
-      </span>
-      {!danger && <span className="text-muted-foreground text-lg leading-none">›</span>}
+      <span className="text-[15px] font-medium text-foreground">{label}</span>
+      <span className="text-muted-foreground text-lg leading-none">›</span>
     </button>
   )
 }

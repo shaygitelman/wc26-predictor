@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { cn, formatKickoffTime } from '@/lib/utils'
+
+function hqFlag(url: string | null | undefined): string | null {
+  if (!url) return null
+  return url.includes('flagcdn.com') ? url.replace(/\/w\d+\//, '/w80/') : url
+}
 import { ContextHeader } from '@/components/layout/context-header'
 import type { ApiGroupStandings, ApiTeamStanding, ApiBracketEntry } from '@/types/standings'
 
@@ -270,10 +275,11 @@ function StandingsRow({
           <span className="w-5 h-3.5 rounded-sm bg-surface-elevated border border-border/60 flex-shrink-0" />
         ) : team.flagUrl ? (
           <Image
-            src={team.flagUrl}
+            src={hqFlag(team.flagUrl)!}
             alt={team.shortCode}
             width={20}
             height={14}
+            sizes="20px"
             className="rounded-sm object-cover flex-shrink-0"
           />
         ) : (
@@ -324,8 +330,8 @@ function GroupFixtureRow({ match }: { match: import('@/types/standings').ApiGrou
       {/* Home */}
       <div className="flex items-center gap-1.5 flex-1 min-w-0">
         {match.homeFlag ? (
-          <Image src={match.homeFlag} alt={match.homeCode} width={18} height={12}
-            className="rounded-sm object-cover flex-shrink-0" />
+          <Image src={hqFlag(match.homeFlag)!} alt={match.homeCode} width={18} height={12}
+            sizes="18px" className="rounded-sm object-cover flex-shrink-0" />
         ) : (
           <span className="w-[18px] h-3 rounded-sm bg-surface-elevated border border-border/40 flex-shrink-0" />
         )}
@@ -359,8 +365,8 @@ function GroupFixtureRow({ match }: { match: import('@/types/standings').ApiGrou
           {match.awayCode === 'TBD' ? 'TBD' : match.awayName}
         </span>
         {match.awayFlag ? (
-          <Image src={match.awayFlag} alt={match.awayCode} width={18} height={12}
-            className="rounded-sm object-cover flex-shrink-0" />
+          <Image src={hqFlag(match.awayFlag)!} alt={match.awayCode} width={18} height={12}
+            sizes="18px" className="rounded-sm object-cover flex-shrink-0" />
         ) : (
           <span className="w-[18px] h-3 rounded-sm bg-surface-elevated border border-border/40 flex-shrink-0" />
         )}

@@ -12,6 +12,7 @@ import { PredictionSheet } from '@/components/molecules/prediction-sheet'
 import { MatchInsightsCard } from '@/components/molecules/match-insights-card'
 import { MatchFactsCard } from '@/components/molecules/match-facts-card'
 import { LeaguePicksCard } from '@/components/molecules/league-picks-card'
+import { GroupStandingsCard } from '@/components/molecules/group-standings-card'
 import { ROUND_POINTS } from '@/lib/constants'
 import { ROUND_LABELS } from '@/types/match'
 import type { Match } from '@/types/match'
@@ -164,6 +165,16 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
 
       {/* ── Body ─────────────────────────────────────────── */}
       <div className="flex flex-col gap-5 px-4 pt-1 pb-8">
+
+        {match.round === 'group' && match.group && (
+          <GroupStandingsCard
+            matchId={match.id}
+            homeCode={match.homeTeam.shortCode}
+            awayCode={match.awayTeam.shortCode}
+            matchStatus={match.status}
+            group={match.group}
+          />
+        )}
 
         <MatchInsightsCard
           matchId={match.id}

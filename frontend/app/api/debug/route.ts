@@ -19,10 +19,10 @@ export async function GET(req: NextRequest) {
   let jwtResult = 'no token'
   if (token) {
     try {
-      await jwtVerify(new TextEncoder().encode(token) as any, new TextEncoder().encode(secret ?? ''))
+      await jwtVerify(token, new TextEncoder().encode(secret ?? ''))
       jwtResult = 'valid'
-    } catch (e: any) {
-      jwtResult = 'invalid: ' + e.message
+    } catch (e: unknown) {
+      jwtResult = 'invalid: ' + (e instanceof Error ? e.message : String(e))
     }
   }
 

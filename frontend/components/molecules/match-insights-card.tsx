@@ -8,9 +8,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { assertVerified } from '@/lib/provenance'
-import { FormBubble } from '@/components/atoms/form-bubble'
 import type {
-  MatchInsights, InsightBullet, ConfidenceLevel, FormResult,
+  MatchInsights, InsightBullet, ConfidenceLevel,
   TacticalInsight, TacticalCategory, NarrativeInsight,
   MatchPersonality, SectionKey, InsightDataPoint, InsightsDebugInfo,
 } from '@/types/insights'
@@ -159,9 +158,9 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
 
   // ── Defensive normalization ────────────────────────────────
   const {
-    form, tactical, narrative, coachingHint, keyPlayers, headToHead,
+    tactical, narrative, coachingHint, keyPlayers, headToHead,
     edge, confidence, upsetAlert, personality, personalityLabel,
-    volatility, sectionOrder, generatedAt, formSampleSize,
+    volatility, sectionOrder, generatedAt,
   } = insights
 
   const missingFields = [
@@ -192,14 +191,11 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
       ? (confidence as ConfidenceLevel)
       : 'low'
 
-  const safeForm = { home: form?.home ?? [], away: form?.away ?? [] }
-
   const safeTactical: TacticalInsight[]  = Array.isArray(tactical)    ? tactical    : []
   const safeKeyPlayers: InsightBullet[]  = Array.isArray(keyPlayers)  ? keyPlayers  : []
   const safeHeadToHead: InsightBullet[]  = Array.isArray(headToHead)  ? headToHead  : []
 
   const hasAnyContent =
-    safeForm.home.length > 0 || safeForm.away.length > 0 ||
     safeTactical.length > 0 ||
     safeKeyPlayers.length > 0 ||
     safeHeadToHead.length > 0 ||
@@ -282,22 +278,7 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
         {safeSectionOrder.map(key => {
           switch (key) {
             case 'form':
-              return (safeForm.home.length > 0 || safeForm.away.length > 0) ? (
-                <section key="form" className="px-4 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <SectionLabel>Recent Form</SectionLabel>
-                    {formSampleSize && (
-                      <span className="text-[9px] font-semibold text-muted-foreground/45 tracking-[0.04em]">
-                        Last {Math.max(formSampleSize.home, formSampleSize.away)} matches
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <FormRow code={homeTeam.shortCode} form={safeForm.home} />
-                    <FormRow code={awayTeam.shortCode} form={safeForm.away} />
-                  </div>
-                </section>
-              ) : null
+              return null
 
             case 'tactical':
               return safeTactical.length > 0 ? (
@@ -410,20 +391,6 @@ function DataFreshness({ generatedAt }: { generatedAt: string }) {
     <div className="flex items-center gap-1">
       <span className="size-[5px] rounded-full bg-status-won/60 animate-pulse flex-shrink-0" />
       <span className="text-[9.5px] font-medium text-muted-foreground/50">{label}</span>
-    </div>
-  )
-}
-
-function FormRow({ code, form }: { code: string; form: FormResult[] }) {
-  const safe = Array.isArray(form) ? form : []
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="w-9 text-[11px] font-black uppercase tracking-wider text-muted-foreground flex-shrink-0 text-right">
-        {code}
-      </span>
-      <div className="flex items-center gap-1.5">
-        {safe.map((r, i) => <FormBubble key={i} result={r} />)}
-      </div>
     </div>
   )
 }

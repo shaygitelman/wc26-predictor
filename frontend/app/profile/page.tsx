@@ -109,7 +109,6 @@ export default async function ProfilePage() {
               <span className="text-[15px] font-medium text-foreground">Edit Profile</span>
               <span className="text-muted-foreground text-lg leading-none">›</span>
             </Link>
-            <SettingRow label="Notifications" />
             <Link
               href="/profile/privacy"
               className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-surface-elevated transition-colors text-left"
@@ -154,14 +153,5 @@ function StatCell({ label, value, variant }: { label: string; value: string; var
         {label}
       </span>
     </div>
-  )
-}
-
-function SettingRow({ label }: { label: string }) {
-  return (
-    <button className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-surface-elevated transition-colors text-left">
-      <span className="text-[15px] font-medium text-foreground">{label}</span>
-      <span className="text-muted-foreground text-lg leading-none">›</span>
-    </button>
   )
 }

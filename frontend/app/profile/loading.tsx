@@ -20,7 +20,7 @@ export default function ProfileLoading() {
         </div>
         {/* Settings rows */}
         <div className="bg-card rounded-2xl border border-border divide-y divide-border">
-          {[0,1,2,3].map(i => (
+          {[0,1,2].map(i => (
             <div key={i} className="h-[52px] animate-pulse" />
           ))}
         </div>

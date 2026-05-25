@@ -120,6 +120,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           <ChevronRight className="size-5" strokeWidth={2.5} />
         </button>
         <p className="text-2xs text-muted-foreground/50 mt-3">2 quick picks · takes under a minute</p>
+        <p className="text-2xs text-muted-foreground/40 mt-1">You can change your picks anytime before the tournament starts.</p>
       </div>
     </div>
   )
@@ -225,6 +226,7 @@ function WinnerStep({
             </>
           ) : 'Pick a team to continue'}
         </button>
+        <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">You can edit this pick before the tournament lock date.</p>
       </div>
     </div>
   )
@@ -376,11 +378,12 @@ function ScorerStep({
             hover:opacity-90 active:scale-[0.98] transition-all"
         >
           {submitting ? (
-            <><Loader2 className="size-4 animate-spin" /> Locking in picks…</>
+            <><Loader2 className="size-4 animate-spin" /> Saving picks…</>
           ) : selected ? (
-            <>{selected.name} — Lock In My Picks</>
+            <>{selected.name} — Save My Picks</>
           ) : 'Pick a player to continue'}
         </button>
+        <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">You can edit this pick before the tournament lock date.</p>
       </div>
     </div>
   )
@@ -461,11 +464,14 @@ function CelebrationStep({
 
         <div>
           <p className="text-xs font-black tracking-[0.25em] uppercase text-primary/70 mb-2">
-            Your picks are locked in
+            Your picks are saved
           </p>
           <h1 className="text-3xl font-black text-foreground leading-tight">
             Let the tournament<br />begin!
           </h1>
+          <p className="text-xs text-muted-foreground/60 mt-2">
+            You can update your picks anytime before the tournament starts.
+          </p>
         </div>
 
         {/* Picks summary card */}

@@ -1,8 +1,9 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import type { AuthUser } from '@/types/auth'
+import { AUTH_ROUTES } from '@/lib/constants'
 
 interface AuthContextValue {
   user:      AuthUser | null
@@ -20,6 +21,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,      setUser]      = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router   = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -28,6 +30,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false))
   }, [])
+
+  // Onboarding gate: redirect first-time users before they see the app
+  useEffect(() => {
+    if (isLoading) return
+    if (!user) return
+    if (user.onboardingCompleted) return
+    if (AUTH_ROUTES.some(r => pathname.startsWith(r))) return
+    router.replace('/onboarding')
+  }, [user, isLoading, pathname, router])
 
   const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' })

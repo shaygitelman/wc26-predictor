@@ -528,7 +528,7 @@ function CelebrationStep({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
-  const { user, isLoading } = useAuth()
+  const { user, isLoading, refreshUser } = useAuth()
   const router = useRouter()
 
   const [step,       setStep]       = useState(0)
@@ -576,10 +576,12 @@ export default function OnboardingPage() {
     }
   }, [winner, scorer])
 
-  const handleEnter = useCallback(() => {
+  const handleEnter = useCallback(async () => {
+    // Re-fetch auth state so the gate sees onboardingCompleted: true
+    // before the navigation fires, preventing a redirect loop.
+    await refreshUser()
     router.push('/')
-    router.refresh()
-  }, [router])
+  }, [refreshUser, router])
 
   // Guard: if not authenticated, don't render
   if (isLoading || !user) return null

@@ -6,15 +6,17 @@ import type { AuthUser } from '@/types/auth'
 import { AUTH_ROUTES } from '@/lib/constants'
 
 interface AuthContextValue {
-  user:      AuthUser | null
-  isLoading: boolean
-  logout:    () => Promise<void>
+  user:        AuthUser | null
+  isLoading:   boolean
+  logout:      () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue>({
-  user:      null,
-  isLoading: true,
-  logout:    async () => {},
+  user:        null,
+  isLoading:   true,
+  logout:      async () => {},
+  refreshUser: async () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -40,6 +42,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.replace('/onboarding')
   }, [user, isLoading, pathname, router])
 
+  const refreshUser = useCallback(async () => {
+    const data = await fetch('/api/auth/me').then(r => r.ok ? r.json() : null).catch(() => null)
+    setUser(data?.user ?? null)
+  }, [])
+
   const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
     setUser(null)
@@ -48,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router])
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

@@ -9,11 +9,12 @@ class GoogleAuthRequest(BaseModel):
 
 
 class UserOut(BaseModel):
-    id:         str
-    email:      str
-    username:   str
-    name:       str | None
-    avatar_url: str | None
+    id:                   str
+    email:                str
+    username:             str
+    name:                 str | None
+    avatar_url:           str | None
+    onboarding_completed: bool = False
 
     model_config = {"from_attributes": True}
 

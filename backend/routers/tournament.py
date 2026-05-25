@@ -2,10 +2,13 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.security import create_access_token
+from core.wc2026_config import GROUPS
 from dependencies.auth import get_current_user
 from models.player import Player
 from models.team import Team
@@ -16,6 +19,58 @@ from schemas.tournament import ScorerOut, TournamentPickOut, TournamentPickUpdat
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tournament", tags=["tournament"])
+
+
+class TeamOut(BaseModel):
+    code:    str
+    name:    str
+    flagUrl: str | None
+    group:   str
+
+
+class OnboardingCompleteResponse(BaseModel):
+    access_token: str
+
+
+@router.get("/teams", response_model=list[TeamOut])
+async def list_teams() -> list[TeamOut]:
+    """All 48 WC2026 teams from config. No auth required."""
+    teams = [
+        TeamOut(code=code, name=name, flagUrl=flag_url, group=group)
+        for group, entries in GROUPS.items()
+        for code, name, flag_url in entries
+    ]
+    return sorted(teams, key=lambda t: (t.group, t.name))
+
+
+@router.post("/onboarding/complete", response_model=OnboardingCompleteResponse)
+async def complete_onboarding(
+    body: TournamentPickUpdate,
+    user: User = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+) -> OnboardingCompleteResponse:
+    """Save tournament picks, mark onboarding done, return a refreshed JWT."""
+    pick = await _get_or_create_pick(user.id, db)
+
+    pick.winner_team_code = body.winner_team_code or None
+    pick.top_scorer_id    = body.top_scorer_id    or None
+    if pick.winner_team_code or pick.top_scorer_id:
+        pick.submitted_at = datetime.now(timezone.utc)
+
+    user.onboarding_completed = True
+    db.add(user)
+    await db.commit()
+
+    new_token = create_access_token({
+        "sub":                  user.id,
+        "email":                user.email,
+        "username":             user.username,
+        "name":                 user.name,
+        "picture":              user.avatar_url,
+        "onboarding_completed": True,
+    })
+    log.info("onboarding complete for user %s", user.id)
+    return OnboardingCompleteResponse(access_token=new_token)
 
 
 async def _load_scorer(pick: TournamentPick, db: AsyncSession) -> ScorerOut | None:

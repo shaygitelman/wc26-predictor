@@ -366,3 +366,14 @@
     box-shadow: 0 0 0 1px rgba(240,168,12,0.45), var(--shadow-glow-gold);
   }
 }
+
+@keyframes confettiFall {
+  0%   { transform: translateY(-20px) rotate(0deg);    opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg);  opacity: 0; }
+}
+
+@keyframes confettiSway {
+  0%, 100% { margin-left: 0; }
+  25%       { margin-left: 12px; }
+  75%       { margin-left: -12px; }
+}

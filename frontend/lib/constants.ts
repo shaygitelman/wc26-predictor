@@ -15,4 +15,4 @@ export const TOURNAMENT_BONUS = {
   TOP_SCORER: 12,
 } as const
 
-export const AUTH_ROUTES = ['/login', '/register']
+export const AUTH_ROUTES = ['/login', '/register', '/onboarding']

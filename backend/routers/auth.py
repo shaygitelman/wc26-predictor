@@ -68,11 +68,12 @@ async def google_auth(
     # Include name + picture so the session JWT is self-contained
     # (Next.js proxy/middleware can read user info without a DB round-trip)
     token = create_access_token({
-        "sub":     user.id,
-        "email":   user.email,
-        "username": user.username,
-        "name":    user.name,
-        "picture": user.avatar_url,
+        "sub":                  user.id,
+        "email":                user.email,
+        "username":             user.username,
+        "name":                 user.name,
+        "picture":              user.avatar_url,
+        "onboarding_completed": user.onboarding_completed,
     })
 
     return AuthResponse(user=UserOut.model_validate(user), access_token=token)

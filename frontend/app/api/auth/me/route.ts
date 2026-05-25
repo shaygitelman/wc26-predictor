@@ -16,11 +16,12 @@ export async function GET() {
 
   return Response.json({
     user: {
-      sub:      payload.sub,
-      email:    payload.email,
-      username: payload.username,
-      name:     payload.name,
-      picture:  payload.picture,
+      sub:                 payload.sub,
+      email:               payload.email,
+      username:            payload.username,
+      name:                payload.name,
+      picture:             payload.picture,
+      onboardingCompleted: payload.onboarding_completed ?? false,
     },
   })
 }

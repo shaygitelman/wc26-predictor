@@ -11,10 +11,18 @@ import type { League } from '@/types/league'
 type SheetMode   = 'create' | 'join' | null
 type SheetStatus = 'idle' | 'loading' | 'success' | 'error'
 
+function sortLeagues(list: League[]): League[] {
+  return [...list].sort((a, b) => {
+    if (a.isDefault && !b.isDefault) return -1
+    if (!a.isDefault && b.isDefault) return 1
+    return 0
+  })
+}
+
 export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) {
   const router = useRouter()
 
-  const [leagues, setLeagues] = useState<League[]>(initialLeagues)
+  const [leagues, setLeagues] = useState<League[]>(sortLeagues(initialLeagues))
   const [sheet,   setSheet]   = useState<SheetMode>(null)
 
   // Create sheet state
@@ -56,7 +64,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail ?? data?.error ?? 'Failed to create league')
       const newLeague: League = data
-      setLeagues(prev => [newLeague, ...prev])
+      setLeagues(prev => sortLeagues([newLeague, ...prev]))
       setCreateStatus('success')
       setTimeout(() => { closeSheet(); router.push(`/leagues/${newLeague.id}`) }, 600)
     } catch (err) {
@@ -82,7 +90,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
         throw new Error(data?.detail ?? data?.error ?? 'Failed to join league')
       }
       const joined: League = data
-      setLeagues(prev => prev.some(l => l.id === joined.id) ? prev : [joined, ...prev])
+      setLeagues(prev => prev.some(l => l.id === joined.id) ? prev : sortLeagues([joined, ...prev]))
       setJoinStatus('success')
       setTimeout(() => { closeSheet(); router.push(`/leagues/${joined.id}`) }, 600)
     } catch (err) {

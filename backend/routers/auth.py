@@ -1,3 +1,4 @@
+import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,8 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import create_access_token
+from models.league import League, LeagueMember
 from models.user import User
 from schemas.auth import AuthResponse, GoogleAuthRequest, UserOut
+
+log = logging.getLogger(__name__)
+
+_DEFAULT_LEAGUE_ID = '00000000-0000-0000-0000-000000000001'
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -54,6 +60,20 @@ async def google_auth(
             avatar_url=payload.avatar_url,
         )
         db.add(user)
+        await db.flush()  # get user.id before creating league membership
+
+        # Auto-join the global default league
+        try:
+            already = await db.scalar(
+                select(LeagueMember).where(
+                    LeagueMember.league_id == _DEFAULT_LEAGUE_ID,
+                    LeagueMember.user_id   == user.id,
+                )
+            )
+            if not already:
+                db.add(LeagueMember(league_id=_DEFAULT_LEAGUE_ID, user_id=user.id, total_points=0))
+        except Exception as exc:
+            log.warning("Could not auto-join default league for new user: %s", exc)
     else:
         # ── Returning user — refresh mutable fields ───────────────
         if payload.name:

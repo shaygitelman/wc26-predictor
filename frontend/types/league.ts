@@ -2,9 +2,11 @@ export interface League {
   id: string
   name: string
   inviteCode: string
-  createdBy: string
+  createdBy: string | null
   memberCount: number
   createdAt: string
+  isDefault?: boolean
+  isSystem?: boolean
 }
 
 export interface LeagueStanding {

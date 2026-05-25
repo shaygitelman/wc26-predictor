@@ -20,6 +20,8 @@ class LeagueOut(BaseModel):
     createdBy:   Optional[str] = None
     memberCount: int
     createdAt:   str
+    isDefault:   bool = False
+    isSystem:    bool = False
 
     @classmethod
     def from_orm(cls, league: League, member_count: int) -> "LeagueOut":
@@ -30,6 +32,8 @@ class LeagueOut(BaseModel):
             createdBy   = league.created_by,
             memberCount = member_count,
             createdAt   = league.created_at.isoformat(),
+            isDefault   = league.is_default,
+            isSystem    = league.is_system,
         )
 
 

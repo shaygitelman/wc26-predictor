@@ -40,7 +40,7 @@ async def my_leagues(
         .join(LeagueMember,   LeagueMember.league_id   == League.id)
         .where(UserMembership.user_id == user.id)
         .group_by(League.id)
-        .order_by(League.created_at.desc())
+        .order_by(League.is_default.desc(), League.created_at.desc())
     )
     return [LeagueOut.from_orm(league, count) for league, count in result.all()]
 
@@ -243,6 +243,8 @@ async def delete_league(
     league = await db.get(League, league_id)
     if not league:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="League not found")
+    if league.is_system:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="The global league cannot be deleted")
     if league.created_by != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the league owner can delete it")
     await db.delete(league)
@@ -258,6 +260,8 @@ async def leave_league(
     league = await db.get(League, league_id)
     if not league:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="League not found")
+    if league.is_default:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot leave the global league")
     if league.created_by == user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { League } from '@/types/league'
 
@@ -22,23 +22,40 @@ export function LeagueCard({
     ? `Leader: ${leaderUsername}${leaderPoints != null ? ` · ${leaderPoints} pts` : ''}`
     : `${league.memberCount} members`
 
+  const isDefault = league.isDefault
+
   return (
     <Link
       href={`/leagues/${league.id}`}
       className={cn(
-        'flex items-center gap-3 bg-card rounded-2xl border border-border px-4 py-3.5',
-        'hover:border-primary/30 active:scale-[0.985] transition-all shadow-card',
+        'flex items-center gap-3 rounded-2xl border px-4 py-3.5',
+        'hover:border-primary/30 active:scale-[0.985] transition-all',
+        isDefault
+          ? 'bg-primary/[0.06] border-primary/25 shadow-none'
+          : 'bg-card border-border shadow-card',
         className,
       )}
     >
-      <div className="size-10 rounded-xl bg-primary-muted flex items-center justify-center flex-shrink-0">
-        <span className="text-sm font-black text-primary">
-          {league.name.slice(0, 2).toUpperCase()}
-        </span>
+      <div className={cn(
+        'size-10 rounded-xl flex items-center justify-center flex-shrink-0',
+        isDefault ? 'bg-primary/15' : 'bg-primary-muted',
+      )}>
+        {isDefault
+          ? <Globe className="size-5 text-primary" strokeWidth={1.75} />
+          : <span className="text-sm font-black text-primary">{league.name.slice(0, 2).toUpperCase()}</span>
+        }
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-foreground truncate">{league.name}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="font-semibold text-sm text-foreground truncate">{league.name}</p>
+          {isDefault && (
+            <span className="flex-shrink-0 text-[9px] font-black tracking-[0.08em] uppercase
+              px-1.5 py-0.5 rounded-full bg-primary/15 text-primary leading-none">
+              Official
+            </span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
       </div>
 

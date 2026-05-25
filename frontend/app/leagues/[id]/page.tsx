@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, notFound, useRouter } from 'next/navigation'
-import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X, QrCode, Link2 } from 'lucide-react'
+import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X, QrCode, Link2, Globe } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { ContextHeader } from '@/components/layout/context-header'
 import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
@@ -305,8 +305,9 @@ export default function LeagueDetailPage() {
 
   if (notFound404 || !league) return notFound()
 
-  const leader  = standings[0]
-  const isOwner = !!user && league.createdBy === user.sub
+  const leader    = standings[0]
+  const isOwner   = !!user && league.createdBy === user.sub
+  const isDefault = !!league.isDefault
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
@@ -314,29 +315,42 @@ export default function LeagueDetailPage() {
         title={league.name}
         back="/leagues"
         actions={
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleShare}
-              className="flex items-center justify-center size-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              aria-label="Share league"
-            >
-              <Share2 className="size-4" strokeWidth={1.75} />
-            </button>
-            <SettingsMenu
-              isOwner={isOwner}
-              onDelete={() => setModal('delete')}
-              onLeave={() => setModal('leave')}
-            />
-          </div>
+          isDefault ? undefined : (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleShare}
+                className="flex items-center justify-center size-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                aria-label="Share league"
+              >
+                <Share2 className="size-4" strokeWidth={1.75} />
+              </button>
+              <SettingsMenu
+                isOwner={isOwner}
+                onDelete={() => setModal('delete')}
+                onLeave={() => setModal('leave')}
+              />
+            </div>
+          )
         }
       />
 
       <div className="flex flex-col gap-4 p-4">
 
         {/* ── League info card ──────────────────────────────── */}
-        <div className="bg-card rounded-2xl border border-border p-4 flex items-center justify-between">
+        <div className={`rounded-2xl border p-4 flex items-center justify-between ${
+          isDefault ? 'bg-primary/[0.06] border-primary/25' : 'bg-card border-border'
+        }`}>
           <div>
-            <h2 className="text-[17px] font-bold text-foreground">{league.name}</h2>
+            <div className="flex items-center gap-2 mb-0.5">
+              {isDefault && <Globe className="size-4 text-primary flex-shrink-0" strokeWidth={1.75} />}
+              <h2 className="text-[17px] font-bold text-foreground">{league.name}</h2>
+              {isDefault && (
+                <span className="text-[9px] font-black tracking-[0.08em] uppercase
+                  px-1.5 py-0.5 rounded-full bg-primary/15 text-primary leading-none flex-shrink-0">
+                  Official
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1.5 text-muted-foreground mt-0.5">
               <Users className="size-3.5" />
               <span className="text-sm">{league.memberCount} member{league.memberCount !== 1 ? 's' : ''}</span>
@@ -353,57 +367,69 @@ export default function LeagueDetailPage() {
           )}
         </div>
 
-        {/* ── Invite card ────────────────────────────────────── */}
-        <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] overflow-hidden">
-          <div className="px-4 pt-4 pb-3">
-            <p className="text-xs font-bold tracking-[0.1em] uppercase text-primary/70 mb-1">
-              Invite Friends
-            </p>
+        {/* ── Invite card (private leagues) / Info banner (default league) ── */}
+        {isDefault ? (
+          <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] px-4 py-3.5 flex items-start gap-3">
+            <Globe className="size-4 text-primary flex-shrink-0 mt-0.5" strokeWidth={1.75} />
+            <div>
+              <p className="text-sm font-bold text-foreground">Global league — everyone&apos;s here</p>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+                Every MatchPoint26 player is automatically a member. Use this as the official app-wide leaderboard.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] overflow-hidden">
+            <div className="px-4 pt-4 pb-3">
+              <p className="text-xs font-bold tracking-[0.1em] uppercase text-primary/70 mb-1">
+                Invite Friends
+              </p>
 
-            {/* URL preview row */}
-            <div className="flex items-center gap-2 mb-3">
-              <Link2 className="size-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-xs text-muted-foreground font-mono truncate">
-                matchpoint26.vercel.app/join/<span className="text-primary font-bold">{league.inviteCode}</span>
-              </span>
+              {/* URL preview row */}
+              <div className="flex items-center gap-2 mb-3">
+                <Link2 className="size-3.5 text-muted-foreground flex-shrink-0" />
+                <span className="text-xs text-muted-foreground font-mono truncate">
+                  matchpoint26.vercel.app/join/<span className="text-primary font-bold">{league.inviteCode}</span>
+                </span>
+              </div>
+
+              {/* Primary — Share League */}
+              <button
+                onClick={handleShare}
+                className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-bold
+                  flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all duration-150 mb-2"
+              >
+                <Share2 className="size-4" strokeWidth={2} />
+                Share League
+              </button>
+
+              {/* Secondary — Copy Link */}
+              <button
+                onClick={copyLink}
+                className={`w-full h-10 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200
+                  ${copyState === 'copied'
+                    ? 'bg-emerald-600/20 border border-emerald-500/40 text-emerald-400'
+                    : 'bg-surface-elevated border border-border text-foreground hover:border-primary/40 hover:text-primary'
+                  }`}
+              >
+                {copyState === 'copied'
+                  ? <><Check className="size-3.5" strokeWidth={2.5} /> Copied!</>
+                  : <><Copy className="size-3.5" /> Copy Link</>
+                }
+              </button>
             </div>
 
-            {/* Primary — Share League */}
+            {/* QR code toggle row */}
             <button
-              onClick={handleShare}
-              className="w-full h-11 rounded-xl bg-primary text-primary-foreground text-sm font-bold
-                flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all duration-150 mb-2"
+              onClick={() => setShowQR(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 border-t border-primary/10
+                text-2xs font-semibold text-muted-foreground hover:text-primary transition-colors"
             >
-              <Share2 className="size-4" strokeWidth={2} />
-              Share League
-            </button>
-
-            {/* Secondary — Copy Link */}
-            <button
-              onClick={copyLink}
-              className={`w-full h-10 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 transition-all duration-200
-                ${copyState === 'copied'
-                  ? 'bg-emerald-600/20 border border-emerald-500/40 text-emerald-400'
-                  : 'bg-surface-elevated border border-border text-foreground hover:border-primary/40 hover:text-primary'
-                }`}
-            >
-              {copyState === 'copied'
-                ? <><Check className="size-3.5" strokeWidth={2.5} /> Copied!</>
-                : <><Copy className="size-3.5" /> Copy Link</>
-              }
+              <QrCode className="size-3" />
+              Show QR Code
             </button>
           </div>
-
-          {/* QR code toggle row */}
-          <button
-            onClick={() => setShowQR(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-2.5 border-t border-primary/10
-              text-2xs font-semibold text-muted-foreground hover:text-primary transition-colors"
-          >
-            <QrCode className="size-3" />
-            Show QR Code
-          </button>
-        </div>
+        )}
 
         {/* ── Standings ─────────────────────────────────────── */}
         <div>
@@ -434,12 +460,12 @@ export default function LeagueDetailPage() {
       </div>
 
       {/* ── QR modal ─────────────────────────────────────────── */}
-      {showQR && (
+      {!isDefault && showQR && (
         <QRModal url={inviteUrl} leagueName={league.name} onClose={() => setShowQR(false)} />
       )}
 
       {/* ── Confirm modals ────────────────────────────────────── */}
-      {modal === 'delete' && (
+      {!isDefault && modal === 'delete' && (
         <ConfirmModal
           title="Delete League?"
           body={`"${league.name}" will be permanently deleted. All members will lose access and this cannot be undone.`}
@@ -450,7 +476,7 @@ export default function LeagueDetailPage() {
           onCancel={() => setModal(null)}
         />
       )}
-      {modal === 'leave' && (
+      {!isDefault && modal === 'leave' && (
         <ConfirmModal
           title="Leave League?"
           body={`You will be removed from "${league.name}" and lose your standing. You can rejoin with the invite link.`}

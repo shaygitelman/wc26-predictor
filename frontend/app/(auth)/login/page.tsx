@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useGoogleLogin } from '@react-oauth/google'
-import type { AuthUser } from '@/types/auth'
 
 type State = 'idle' | 'loading' | 'error'
 
@@ -30,10 +29,9 @@ export default function LoginPage() {
         throw new Error(data.error ?? 'Sign-in failed')
       }
 
-      const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
+      await res.json()
 
-      // Send new users straight to onboarding; returning users go to their intended destination
-      router.push(user.onboarding_completed === false ? '/onboarding' : next)
+      router.push(next)
       router.refresh()
     } catch (err) {
       setState('error')

@@ -249,9 +249,9 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
 
         {/* ── Sparse data notice — only shown when some content exists ── */}
         {safeConfidence === 'low' && hasAnyContent && (
-          <div className="mx-4 my-1 px-3 py-2 rounded-lg bg-amber-500/[0.07] border border-amber-500/20 flex items-start gap-2">
-            <TriangleAlert className="size-3 text-amber-500/70 flex-shrink-0 mt-[2px]" strokeWidth={2} />
-            <p className="text-[10.5px] text-amber-500/70 leading-snug">
+          <div className="mx-4 my-1 px-3 py-2 rounded-lg bg-surface-elevated border border-border flex items-start gap-2">
+            <TriangleAlert className="size-3 text-muted-foreground/60 flex-shrink-0 mt-[2px]" strokeWidth={2} />
+            <p className="text-[10.5px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>
               Limited match data — insights reflect a smaller sample and confidence will increase as more matches are played.
             </p>
           </div>
@@ -329,7 +329,7 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
           {safeUpsetAlert && (
             <div className="flex items-center justify-center gap-1.5 mt-2.5">
               <TriangleAlert className="size-3 text-amber-500 flex-shrink-0" strokeWidth={2} />
-              <span className="text-[11px] font-semibold text-amber-500">
+              <span className="text-[11px] font-semibold" style={{ color: 'var(--muted-foreground)' }}>
                 Potential upset candidate
               </span>
             </div>
@@ -474,13 +474,7 @@ function TacticalSection({ insights }: { insights: TacticalInsight[] }) {
             )}
 
             {/* AI insight text */}
-            <span className={cn(
-              'text-[12.5px] leading-snug block',
-              t.highlight === 'warning'  ? 'text-amber-400/90'
-              : t.highlight === 'positive' ? 'text-foreground/90'
-              : t.highlight === 'negative' ? 'text-status-lost/90'
-              : 'text-foreground/85',
-            )}>
+            <span className="text-[12.5px] leading-snug block" style={{ color: 'var(--foreground)' }}>
               {t.text}
             </span>
 
@@ -510,14 +504,14 @@ function categoryIconColor(category: TacticalCategory): string {
 
 function NarrativeCallout({ narrative }: { narrative: NarrativeInsight }) {
   return (
-    <div className="rounded-xl bg-gold-muted border border-gold-border px-3.5 py-3">
+    <div className="rounded-xl bg-surface-elevated border border-border px-3.5 py-3">
       <div className="flex items-start gap-2.5">
-        <BookOpen className="size-[13px] text-gold flex-shrink-0 mt-[2px]" strokeWidth={1.75} />
+        <BookOpen className="size-[13px] text-muted-foreground flex-shrink-0 mt-[2px]" strokeWidth={1.75} />
         <div>
-          <p className="text-[11px] font-black tracking-[0.03em] text-gold mb-1.5">
+          <p className="text-[11px] font-black tracking-[0.03em] mb-1.5" style={{ color: 'var(--foreground)' }}>
             {narrative.headline}
           </p>
-          <p className="text-[12px] text-foreground/80 leading-relaxed">
+          <p className="text-[12px] leading-relaxed" style={{ color: 'var(--foreground)' }}>
             {narrative.body}
           </p>
         </div>

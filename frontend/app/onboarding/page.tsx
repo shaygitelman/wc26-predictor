@@ -528,7 +528,7 @@ function CelebrationStep({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
-  const { user, isLoading, refreshUser } = useAuth()
+  const { user, isLoading } = useAuth()
   const router = useRouter()
 
   const [step,       setStep]       = useState(0)
@@ -576,12 +576,13 @@ export default function OnboardingPage() {
     }
   }, [winner, scorer])
 
-  const handleEnter = useCallback(async () => {
-    // Re-fetch auth state so the gate sees onboardingCompleted: true
-    // before the navigation fires, preventing a redirect loop.
-    await refreshUser()
-    router.push('/')
-  }, [refreshUser, router])
+  const handleEnter = useCallback(() => {
+    // Full browser navigation — resets the React tree so AuthProvider
+    // re-mounts and reads the fresh JWT cookie (onboarding_completed: true).
+    // This avoids the race where the client-side gate fires with stale
+    // in-memory state before React commits the refreshUser() state update.
+    window.location.replace('/')
+  }, [])
 
   // Guard: if not authenticated, don't render
   if (isLoading || !user) return null

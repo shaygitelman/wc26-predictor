@@ -1,3 +1,4 @@
+import logging
 import secrets
 import string
 
@@ -17,13 +18,54 @@ from schemas.league import (
     MemberPick, MemberPredictionOut,
 )
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/leagues", tags=["leagues"])
 
 _ALPHABET = string.ascii_uppercase + string.digits
 
+# Fixed UUID — matches the Alembic migration seed.
+_DEFAULT_LEAGUE_ID = '00000000-0000-0000-0000-000000000001'
+
 
 def _generate_invite_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(8))
+
+
+async def _ensure_default_membership(user_id: str, user_points: int, db: AsyncSession) -> None:
+    """Idempotently enroll the user in the global default league.
+
+    Called before every /leagues/me response so no user ever misses the
+    global league regardless of migration timing or backfill failures.
+    Safe to call concurrently — the unique constraint prevents duplicate rows.
+    """
+    try:
+        # Short-circuit if already a member
+        already = await db.scalar(
+            select(LeagueMember.id).where(
+                LeagueMember.league_id == _DEFAULT_LEAGUE_ID,
+                LeagueMember.user_id   == user_id,
+            )
+        )
+        if already:
+            return
+
+        # Verify the default league actually exists (migration may be pending)
+        default_league = await db.get(League, _DEFAULT_LEAGUE_ID)
+        if not default_league:
+            log.warning("Default league %s not found — migration may not have run", _DEFAULT_LEAGUE_ID)
+            return
+
+        db.add(LeagueMember(
+            league_id    = _DEFAULT_LEAGUE_ID,
+            user_id      = user_id,
+            total_points = user_points,
+        ))
+        await db.commit()
+        log.info("Auto-joined user %s to the global default league", user_id)
+    except Exception as exc:
+        await db.rollback()
+        log.warning("Could not auto-join user %s to default league: %s", user_id, exc)
 
 
 @router.get("/me", response_model=list[LeagueOut])
@@ -31,6 +73,10 @@ async def my_leagues(
     user: User = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),
 ) -> list[LeagueOut]:
+    # Lazily enroll the user in the global league if the migration backfill
+    # missed them (e.g. user predates the feature, or gen_random_uuid failed).
+    await _ensure_default_membership(user.id, user.total_points, db)
+
     # UserMembership filters leagues the caller belongs to.
     # LeagueMember (unfiltered) counts all members per league.
     UserMembership = aliased(LeagueMember)
@@ -287,4 +333,10 @@ async def _require_member(league_id: str, user_id: str, db: AsyncSession) -> Non
         )
     )
     if not exists:
+        # The global default league is open to every authenticated user — auto-join
+        # instead of rejecting (handles direct URL navigation before /leagues/me runs).
+        if league_id == _DEFAULT_LEAGUE_ID:
+            user = await db.get(User, user_id)
+            await _ensure_default_membership(user_id, user.total_points if user else 0, db)
+            return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this league")

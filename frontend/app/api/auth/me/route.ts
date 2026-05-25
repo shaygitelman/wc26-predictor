@@ -16,12 +16,15 @@ export async function GET() {
 
   return Response.json({
     user: {
-      sub:                 payload.sub,
-      email:               payload.email,
-      username:            payload.username,
-      name:                payload.name,
-      picture:             payload.picture,
-      onboardingCompleted: payload.onboarding_completed ?? false,
+      sub:      payload.sub,
+      email:    payload.email,
+      username: payload.username,
+      name:     payload.name,
+      picture:  payload.picture,
+      // Treat missing claim as true: old tokens that predate onboarding feature
+      // should not force users back through onboarding. Only an explicit `false`
+      // (freshly-issued JWT for a user who hasn't completed it) should block.
+      onboardingCompleted: payload.onboarding_completed !== false,
     },
   })
 }

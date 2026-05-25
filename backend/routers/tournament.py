@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -57,9 +57,20 @@ async def complete_onboarding(
     if pick.winner_team_code or pick.top_scorer_id:
         pick.submitted_at = datetime.now(timezone.utc)
 
-    user.onboarding_completed = True
-    db.add(user)
+    # Use a direct SQL UPDATE for onboarding_completed so the change is written
+    # regardless of ORM session state (the session may have been expired by an
+    # earlier commit inside _get_or_create_pick for first-time users).
+    await db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(onboarding_completed=True)
+    )
     await db.commit()
+
+    # Re-read the user to build a fully current JWT (confirms the DB write worked).
+    await db.refresh(user)
+    if not user.onboarding_completed:
+        log.error("onboarding_completed was not persisted for user %s — possible DB issue", user.id)
 
     new_token = create_access_token({
         "sub":                  user.id,

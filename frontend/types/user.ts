@@ -15,5 +15,6 @@ export interface UserStats {
   exactScores:        number
   correctPredictions: number
   totalPredictions:   number
+  exactScoreAccuracy: number
   rankChange?:        number  // optional, future use
 }

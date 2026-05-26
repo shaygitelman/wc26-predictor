@@ -109,7 +109,7 @@ async def my_stats(
     user: User         = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),
 ) -> UserStatsOut:
-    rank, total_users, pred_count = await asyncio.gather(
+    rank, total_users, pred_count, completed_count = await asyncio.gather(
         db.scalar(select(func.count()).where(
             User.total_points > user.total_points,
             ~User.email.ilike('%@test.wc26'),
@@ -120,7 +120,14 @@ async def my_stats(
             ~User.google_id.ilike('google-test-%'),
         )),
         db.scalar(select(func.count(Prediction.id)).where(Prediction.user_id == user.id)),
+        db.scalar(select(func.count(Prediction.id)).where(
+            Prediction.user_id == user.id,
+            Prediction.outcome.isnot(None),
+        )),
     )
+
+    completed = completed_count or 0
+    exact_pct = round(user.exact_scores / completed * 100) if completed > 0 else 0
 
     return UserStatsOut(
         totalPoints        = user.total_points,
@@ -129,6 +136,7 @@ async def my_stats(
         exactScores        = user.exact_scores,
         correctPredictions = user.correct_predictions,
         totalPredictions   = pred_count or 0,
+        exactScoreAccuracy = exact_pct,
     )
 
 

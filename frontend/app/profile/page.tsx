@@ -73,11 +73,12 @@ export default async function ProfilePage() {
         </div>
 
         {/* ── Stats row ─────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-5 gap-1.5">
           <StatCell label="Points"    value={s ? s.totalPoints.toString()         : '—'} variant="primary" />
           <StatCell label="Exact"     value={s ? s.exactScores.toString()         : '—'} />
           <StatCell label="Correct"   value={s ? s.correctPredictions.toString()  : '—'} />
           <StatCell label="Predicted" value={s ? `${s.totalPredictions}/104`      : '—'} />
+          <StatCell label="Accuracy"  value={s ? `${s.exactScoreAccuracy}%`       : '—'} variant="gold" />
         </div>
 
         {/* ── Tournament picks ──────────────────────────────── */}
@@ -146,16 +147,16 @@ export default async function ProfilePage() {
 
 function StatCell({ label, value, variant }: { label: string; value: string; variant?: 'primary' | 'gold' }) {
   return (
-    <div className="flex flex-col items-center gap-1 bg-card rounded-xl border border-border/70 py-3.5 px-1">
+    <div className="flex flex-col items-center gap-1 bg-card rounded-xl border border-border/70 py-3 px-0.5">
       <span className={[
-        'text-lg font-black tabular leading-none',
+        'text-[15px] font-black tabular leading-none',
         variant === 'gold'    ? 'text-gold-gradient' :
         variant === 'primary' ? 'text-primary'       :
         'text-foreground',
       ].join(' ')}>
         {value}
       </span>
-      <span className="text-2xs text-muted-foreground/80 font-medium text-center leading-tight">
+      <span className="text-[9px] text-muted-foreground/80 font-medium text-center leading-tight">
         {label}
       </span>
     </div>

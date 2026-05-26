@@ -80,6 +80,7 @@ class UserStatsOut(BaseModel):
     exactScores:        int
     correctPredictions: int
     totalPredictions:   int
+    exactScoreAccuracy: int
 
 
 class LeaderboardEntry(BaseModel):

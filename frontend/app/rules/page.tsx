@@ -140,7 +140,11 @@ export default function RulesPage() {
             />
             <RuleRow
               icon={<Lock className="size-4 text-primary flex-shrink-0" />}
-              text='Missing predictions are auto-filled by the "monkey"'
+              text="Missed a match? The app generates a fallback pick shortly after kickoff"
+            />
+            <RuleRow
+              icon={<Zap className="size-4 text-muted-foreground flex-shrink-0" />}
+              text="Auto-picks earn outcome points only — no exact-score bonus"
             />
             <RuleRow
               icon={<Users className="size-4 text-muted-foreground flex-shrink-0" />}

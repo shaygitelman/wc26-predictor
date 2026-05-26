@@ -65,8 +65,8 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
       if (!res.ok) throw new Error(data?.detail ?? data?.error ?? 'Failed to create league')
       const newLeague: League = data
       setLeagues(prev => sortLeagues([newLeague, ...prev]))
-      setCreateStatus('success')
-      setTimeout(() => { closeSheet(); router.push(`/leagues/${newLeague.id}`) }, 600)
+      closeSheet()
+      router.push(`/leagues/${newLeague.id}`)
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Something went wrong')
       setCreateStatus('error')
@@ -91,8 +91,8 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
       }
       const joined: League = data
       setLeagues(prev => prev.some(l => l.id === joined.id) ? prev : sortLeagues([joined, ...prev]))
-      setJoinStatus('success')
-      setTimeout(() => { closeSheet(); router.push(`/leagues/${joined.id}`) }, 600)
+      closeSheet()
+      router.push(`/leagues/${joined.id}`)
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : 'Something went wrong')
       setJoinStatus('error')

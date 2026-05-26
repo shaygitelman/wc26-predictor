@@ -1,5 +1,4 @@
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 
@@ -79,30 +78,18 @@ async def _bootstrap_default_league() -> None:
             await db.commit()
             log.info("BOOTSTRAP: step 2 done — actual_league_id=%s", actual_league_id)
 
-            # Step 3 — backfill every user who isn't yet a member
-            log.info("BOOTSTRAP: step 3 — backfilling user memberships")
-            rows = (await db.execute(
-                text("SELECT id, COALESCE(total_points, 0) FROM users")
-            )).fetchall()
-            log.info("BOOTSTRAP: step 3 — found %d users to process", len(rows))
-
-            inserted = 0
-            for user_id, total_points in rows:
-                result = await db.execute(text("""
-                    INSERT INTO league_members (id, league_id, user_id, total_points)
-                    VALUES (:id, :league_id, :user_id, :total_points)
-                    ON CONFLICT ON CONSTRAINT uq_league_members_league_user DO NOTHING
-                """), {
-                    "id":           str(uuid.uuid4()),
-                    "league_id":    actual_league_id,
-                    "user_id":      user_id,
-                    "total_points": total_points,
-                })
-                inserted += result.rowcount
+            # Step 3 — backfill every user who isn't yet a member (single bulk INSERT)
+            log.info("BOOTSTRAP: step 3 — backfilling user memberships (bulk)")
+            result = await db.execute(text("""
+                INSERT INTO league_members (id, league_id, user_id, total_points)
+                SELECT gen_random_uuid(), :league_id, id, COALESCE(total_points, 0)
+                FROM users
+                ON CONFLICT ON CONSTRAINT uq_league_members_league_user DO NOTHING
+            """), {"league_id": actual_league_id})
 
             await db.commit()
-            log.info("BOOTSTRAP: done — %d/%d memberships inserted, league_id=%s",
-                     inserted, len(rows), actual_league_id)
+            log.info("BOOTSTRAP: done — %d memberships inserted, league_id=%s",
+                     result.rowcount, actual_league_id)
     except Exception as exc:
         log.error("BOOTSTRAP: FAILED — %s", exc, exc_info=True)
 

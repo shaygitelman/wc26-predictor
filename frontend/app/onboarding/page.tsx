@@ -542,7 +542,7 @@ function safeNext(raw: string | null): string {
 }
 
 export default function OnboardingPage() {
-  const { user, isLoading } = useAuth()
+  const { user, isLoading, refreshUser } = useAuth()
   const router       = useRouter()
   const searchParams = useSearchParams()
   const next         = safeNext(searchParams.get('next'))
@@ -594,8 +594,8 @@ export default function OnboardingPage() {
   }, [winner, scorer])
 
   const handleEnter = useCallback(async () => {
-    // If the user arrived from an invite link, auto-join the league immediately
-    // instead of dropping them on the join page to click a button themselves.
+    // Sync AuthProvider with the fresh JWT (onboarding_completed: true) before
+    // soft-navigating, so the onboarding gate doesn't redirect back here.
     const inviteMatch = /^\/join\/([A-Za-z0-9]+)$/.exec(next)
     if (inviteMatch) {
       setJoining(true)
@@ -607,20 +607,17 @@ export default function OnboardingPage() {
         })
         if (res.ok) {
           const data = await res.json()
-          // Full-page replace so AuthProvider re-mounts with fresh cookie,
-          // then lands directly on the league page.
-          window.location.replace(`/leagues/${data.id}`)
+          await refreshUser()
+          router.push(`/leagues/${data.id}`)
           return
         }
       } catch {}
-      // Auto-join failed (invalid code, network error) — fall through to the
-      // join page which will surface the appropriate error UI.
+      // Auto-join failed — fall through to the join page for its error UI.
       setJoining(false)
     }
-    // Full-page navigation resets the React tree so AuthProvider re-mounts
-    // and reads the fresh JWT cookie (onboarding_completed: true).
-    window.location.replace(next)
-  }, [next])
+    await refreshUser()
+    router.push(next)
+  }, [next, refreshUser, router])
 
   // Guard: if not authenticated, don't render
   if (isLoading || !user) return null

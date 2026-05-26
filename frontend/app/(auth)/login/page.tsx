@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useGoogleLogin } from '@react-oauth/google'
+import { useAuth } from '@/providers/auth-provider'
 import type { AuthUser } from '@/types/auth'
 
 type State = 'idle' | 'loading' | 'error'
@@ -13,6 +14,7 @@ export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const next = searchParams.get('next') ?? '/'
+  const { refreshUser } = useAuth()
 
   async function handleGoogleSuccess(accessToken: string) {
     setState('loading')
@@ -33,14 +35,13 @@ export default function LoginPage() {
       const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
 
       if (user.onboarding_completed === false) {
-        // Full-page navigation to /onboarding so AuthProvider re-mounts and reads
-        // the fresh session cookie — avoids the blank-page race where the onboarding
-        // component sees stale user=null from the pre-login AuthProvider state.
-        // The `next` param is forwarded so the invite (or any other destination)
-        // survives the entire onboarding flow.
-        window.location.replace(`/onboarding?next=${encodeURIComponent(next)}`)
+        // Sync AuthProvider with the fresh JWT before navigating so the onboarding
+        // page doesn't see stale user=null and show a blank screen.
+        await refreshUser()
+        router.push(`/onboarding?next=${encodeURIComponent(next)}`)
       } else {
-        // Returning user — soft navigation preserves scroll/state
+        // Returning user — soft navigation; refresh re-renders server components
+        // with the new session cookie.
         router.push(next)
         router.refresh()
       }

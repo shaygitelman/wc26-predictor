@@ -113,7 +113,7 @@ export default function EditProfilePage() {
       }
 
       setSaveStatus('saved')
-      setTimeout(() => router.push('/profile'), 900)
+      router.push('/profile')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong'
       console.error('[EditProfile] save failed:', msg)

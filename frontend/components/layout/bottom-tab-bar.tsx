@@ -39,6 +39,7 @@ export function BottomTabBar() {
             <Link
               key={href}
               href={href}
+              prefetch={true}
               className={cn(
                 'relative flex flex-col items-center justify-center gap-1 flex-1 h-full',
                 'rounded-xl transition-all duration-200',

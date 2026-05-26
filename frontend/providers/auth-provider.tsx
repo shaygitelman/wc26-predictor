@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import type { AuthUser } from '@/types/auth'
 import { AUTH_ROUTES } from '@/lib/constants'
@@ -56,8 +56,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.refresh()
   }, [router])
 
+  const value = useMemo(
+    () => ({ user, isLoading, logout, refreshUser }),
+    [user, isLoading, logout, refreshUser],
+  )
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout, refreshUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

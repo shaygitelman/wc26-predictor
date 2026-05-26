@@ -110,23 +110,52 @@ export default async function HomePage() {
         {/* ── Tournament picks ───────────────────────────────── */}
         <TournamentPicksCard pick={pick} teams={allTeams} />
 
-        {/* ── Live Now — featured atmosphere section ─────────── */}
+        {/* ── Live Now — high-attention zone: below Tournament Picks, above Leagues ── */}
         {liveMatches.length > 0 && (
-          <section className="relative">
-            {/* Green ambient glow behind the section */}
-            <div className="absolute -inset-4 rounded-3xl bg-live-atmosphere pointer-events-none" />
-            <div className="relative">
+          <section className="relative -mx-1">
+            {/* Multi-layer green atmosphere — extended beyond section bounds */}
+            <div
+              className="absolute pointer-events-none rounded-3xl"
+              style={{
+                inset: '-20px -12px',
+                background: 'radial-gradient(ellipse at 50% 30%, rgba(0,212,106,0.13) 0%, transparent 70%)',
+              }}
+            />
+            <div
+              className="absolute pointer-events-none rounded-3xl"
+              style={{
+                inset: '-10px -4px',
+                background: 'radial-gradient(ellipse at 50% 0%, rgba(0,212,106,0.08) 0%, transparent 60%)',
+              }}
+            />
+            {/* Top green separator line */}
+            <div
+              className="absolute -top-3 left-0 right-0 h-[1px] pointer-events-none"
+              style={{ background: 'linear-gradient(to right, transparent, rgba(0,212,106,0.35) 30%, rgba(0,212,106,0.35) 70%, transparent)' }}
+            />
+            {/* Bottom green separator line */}
+            <div
+              className="absolute -bottom-3 left-0 right-0 h-[1px] pointer-events-none"
+              style={{ background: 'linear-gradient(to right, transparent, rgba(0,212,106,0.20) 30%, rgba(0,212,106,0.20) 70%, transparent)' }}
+            />
+
+            <div className="relative px-1">
+              {/* Header */}
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   <LiveDot size="md" />
-                  <span className="text-[11px] font-black tracking-[0.14em] uppercase text-status-live">
+                  <span className="text-[13px] font-black tracking-[0.12em] uppercase text-status-live">
                     Live Now
                   </span>
                 </div>
-                <span className="text-2xs font-bold text-status-live/70">
+                <span
+                  className="text-[11px] font-bold text-status-live px-2.5 py-1 rounded-full"
+                  style={{ background: 'rgba(0,212,106,0.10)' }}
+                >
                   {liveMatches.length} {liveMatches.length === 1 ? 'match' : 'matches'}
                 </span>
               </div>
+
               <div className="flex flex-col gap-3">
                 {liveMatches.map(match => (
                   <MatchCard key={match.id} match={match} prediction={predsByMatch.get(match.id)} />

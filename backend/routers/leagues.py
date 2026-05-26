@@ -80,15 +80,20 @@ async def my_leagues(
     # UserMembership filters leagues the caller belongs to.
     # LeagueMember (unfiltered) counts all members per league.
     UserMembership = aliased(LeagueMember)
-    result = await db.execute(
-        select(League, func.count(LeagueMember.id).label("member_count"))
-        .join(UserMembership, UserMembership.league_id == League.id)
-        .join(LeagueMember,   LeagueMember.league_id   == League.id)
-        .where(UserMembership.user_id == user.id)
-        .group_by(League.id)
-        .order_by(League.is_default.desc(), League.created_at.desc())
-    )
-    return [LeagueOut.from_orm(league, count) for league, count in result.all()]
+    try:
+        result = await db.execute(
+            select(League, func.count(LeagueMember.id).label("member_count"))
+            .join(UserMembership, UserMembership.league_id == League.id)
+            .join(LeagueMember,   LeagueMember.league_id   == League.id)
+            .where(UserMembership.user_id == user.id)
+            .group_by(League.id)
+            .order_by(League.is_default.desc(), League.created_at.desc())
+        )
+        return [LeagueOut.from_orm(league, count) for league, count in result.all()]
+    except Exception as exc:
+        log.error("my_leagues query error for user ...%s: %s — %s",
+                  user.id[-6:], type(exc).__name__, exc)
+        raise
 
 
 @router.post("", response_model=LeagueOut, status_code=status.HTTP_201_CREATED)

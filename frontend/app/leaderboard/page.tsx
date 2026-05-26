@@ -1,6 +1,9 @@
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { ContextHeader } from '@/components/layout/context-header'
 import { UserAvatar } from '@/components/atoms/user-avatar'
 import { apiGet } from '@/lib/api-server'
+import { SESSION_COOKIE } from '@/lib/session'
 import { cn } from '@/lib/utils'
 
 interface LeaderboardEntry {
@@ -14,6 +17,9 @@ interface LeaderboardEntry {
 }
 
 export default async function LeaderboardPage() {
+  const store = await cookies()
+  if (!store.get(SESSION_COOKIE)?.value) redirect('/login')
+
   let entries: LeaderboardEntry[] = []
   try {
     entries = await apiGet<LeaderboardEntry[]>('/users/leaderboard')

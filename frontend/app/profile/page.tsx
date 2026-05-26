@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { ChevronRight, BookOpen, ShieldCheck } from 'lucide-react'
 import { ContextHeader } from '@/components/layout/context-header'
@@ -6,11 +8,15 @@ import { UserAvatar } from '@/components/atoms/user-avatar'
 import { TournamentPicksCard } from '@/components/molecules/tournament-picks-card'
 import { SignOutButton } from '@/components/atoms/sign-out-button'
 import { apiGet, apiGetCached } from '@/lib/api-server'
+import { SESSION_COOKIE } from '@/lib/session'
 import type { User, UserStats } from '@/types/user'
 import type { TournamentPick } from '@/types/tournament'
 import type { TeamDetail } from '@/types/match'
 
 export default async function ProfilePage() {
+  const store = await cookies()
+  if (!store.get(SESSION_COOKIE)?.value) redirect('/login')
+
   const [userProfile, stats, tournamentPick, teamsResult] = await Promise.allSettled([
     apiGet<User>('/users/me'),
     apiGet<UserStats>('/users/me/stats'),

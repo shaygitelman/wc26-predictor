@@ -1,5 +1,6 @@
+import { cookies } from 'next/headers'
 import { SignJWT, jwtVerify } from 'jose'
-import type { SessionPayload } from '@/types/auth'
+import type { AuthUser, SessionPayload } from '@/types/auth'
 
 export const SESSION_COOKIE = 'matchpoint26-session'
 
@@ -35,6 +36,26 @@ export function cookieOptions(dev: boolean) {
     secure:    !dev,
     maxAge:    SESSION_DURATION_SECONDS,
     path:      '/',
+  }
+}
+
+export async function getSessionUser(): Promise<AuthUser | null> {
+  try {
+    const store = await cookies()
+    const token = store.get(SESSION_COOKIE)?.value
+    if (!token) return null
+    const payload = await decrypt(token)
+    if (!payload) return null
+    return {
+      sub:                 payload.sub,
+      email:               payload.email,
+      username:            payload.username,
+      name:                payload.name,
+      picture:             payload.picture,
+      onboardingCompleted: payload.onboarding_completed !== false,
+    }
+  } catch {
+    return null
   }
 }
 

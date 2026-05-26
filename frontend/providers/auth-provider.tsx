@@ -19,13 +19,20 @@ const AuthContext = createContext<AuthContextValue>({
   refreshUser: async () => {},
 })
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user,      setUser]      = useState<AuthUser | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+export function AuthProvider({
+  children,
+  initialUser,
+}: {
+  children:     React.ReactNode
+  initialUser?: AuthUser | null
+}) {
+  const [user,      setUser]      = useState<AuthUser | null>(initialUser ?? null)
+  const [isLoading, setIsLoading] = useState(initialUser === undefined)
   const router   = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
+    if (initialUser !== undefined) return  // SSR already provided the user
     fetch('/api/auth/me')
       .then(r => r.ok ? r.json() : null)
       .then(data => setUser(data?.user ?? null))

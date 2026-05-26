@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
@@ -225,8 +225,13 @@ export function MatchesClient({ initialMatches, initialPredictions, initialStand
   const [predictions, setPredictions] = useState<Prediction[]>(initialPredictions)
   const [filter,      setFilter]      = useState<FilterValue>('all')
 
+  const lastFocusFetchRef = useRef(0)
+
   useEffect(() => {
     function onFocus() {
+      const now = Date.now()
+      if (now - lastFocusFetchRef.current < 10_000) return  // 10s cooldown
+      lastFocusFetchRef.current = now
       fetch('/api/predictions/me')
         .then(r => r.ok ? r.json() : null)
         .then(ps => { if (ps) setPredictions(ps) })

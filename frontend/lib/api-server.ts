@@ -16,6 +16,9 @@ type FetchOptions = Omit<RequestInit, 'body'> & {
 export async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
   const { auth = true, body, ...rest } = options
 
+  const controller = new AbortController()
+  const timeoutId  = setTimeout(() => controller.abort(), 10_000)
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(rest.headers as Record<string, string> ?? {}),
@@ -27,18 +30,23 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
     if (token) headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...rest,
-    headers,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  })
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...rest,
+      headers,
+      signal: controller.signal,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    throw new Error(`API ${res.status} ${path}: ${text}`)
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText)
+      throw new Error(`API ${res.status} ${path}: ${text}`)
+    }
+
+    return res.json()
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  return res.json()
 }
 
 /** User-specific or frequently-changing data — never cached. */

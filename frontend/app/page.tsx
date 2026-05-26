@@ -156,76 +156,47 @@ export default async function HomePage() {
         )}
 
         {/* ── My Leagues ─────────────────────────────────────── */}
-        <Suspense fallback={<MyLeaguesFallback />}>
-          <MyLeaguesSection leagues={leagues} userId={user?.id} />
-        </Suspense>
+        <MyLeaguesSection leagues={leagues} userId={user?.id} />
 
       </div>
     </div>
   )
 }
 
-function MyLeaguesFallback() {
+async function LeagueWithStandings({ league, userId }: { league: League; userId?: string }) {
+  const standings = await apiGet<LeagueStanding[]>(`/leagues/${league.id}/standings`).catch(() => [])
+  const me     = standings.find(s => s.userId === userId)
+  const leader = standings[0]
   return (
-    <section>
-      <div className="flex items-center justify-between mb-3">
-        <div className="h-3 w-24 rounded bg-surface-elevated animate-pulse" />
-        <div className="h-3 w-12 rounded bg-surface-elevated animate-pulse" />
-      </div>
-      <div className="flex flex-col gap-2">
-        {[0, 1].map(i => (
-          <div key={i} className="h-[60px] bg-card rounded-2xl border border-border animate-pulse" />
-        ))}
-      </div>
-    </section>
+    <LeagueCard
+      league={league}
+      userPoints={me?.totalPoints}
+      leaderUsername={leader?.username}
+      leaderPoints={leader?.totalPoints}
+    />
   )
 }
 
-async function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId?: string }) {
-  if (leagues.length === 0) {
-    return (
-      <section>
-        <SectionHeader title="My Leagues" href="/leagues" />
+function MyLeaguesSection({ leagues, userId }: { leagues: League[]; userId?: string }) {
+  return (
+    <section>
+      <SectionHeader title="My Leagues" href="/leagues" />
+      {leagues.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2 bg-card rounded-2xl border border-border text-center shadow-card">
           <p className="text-sm text-muted-foreground">You haven&apos;t joined any leagues yet.</p>
           <Link href="/leagues" className="text-xs font-bold text-primary">
             Create or join one →
           </Link>
         </div>
-      </section>
-    )
-  }
-
-  const standingsResults = await Promise.allSettled(
-    leagues.map(l => apiGet<LeagueStanding[]>(`/leagues/${l.id}/standings`))
-  )
-
-  const leaguePreviews = leagues.map((league, i) => {
-    const standings = standingsResults[i].status === 'fulfilled' ? standingsResults[i].value : []
-    const me        = standings.find(s => s.userId === userId)
-    const leader    = standings[0]
-    return {
-      league,
-      userPoints:     me?.totalPoints,
-      leaderUsername: leader?.username,
-      leaderPoints:   leader?.totalPoints,
-    }
-  })
-
-  return (
-    <section>
-      <SectionHeader title="My Leagues" href="/leagues" />
-      <div className="flex flex-col gap-2">
-        {leaguePreviews.map(({ league, userPoints, leaderUsername, leaderPoints }) => (
-          <LeagueCard
-            key={league.id}
-            league={league}
-            userPoints={userPoints ?? undefined}
-            leaderUsername={leaderUsername ?? undefined}
-            leaderPoints={leaderPoints ?? undefined}
-          />
-        ))}
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {leagues.map(league => (
+            <Suspense key={league.id} fallback={<LeagueCard league={league} />}>
+              <LeagueWithStandings league={league} userId={userId} />
+            </Suspense>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

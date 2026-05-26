@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { AppProviders } from '@/providers/app-providers'
 import { ConditionalTabBar } from '@/components/layout/conditional-tab-bar'
+import { getSessionUser } from '@/lib/session'
 import './globals.css'
 
 const inter = Inter({
@@ -80,15 +81,17 @@ export const viewport: Viewport = {
   ],
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const initialUser = await getSessionUser()
+
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body className="bg-background text-foreground antialiased">
-        <AppProviders>
+        <AppProviders initialUser={initialUser}>
           {children}
           <ConditionalTabBar />
         </AppProviders>

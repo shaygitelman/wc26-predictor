@@ -2,9 +2,11 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { ContextHeader } from '@/components/layout/context-header'
 import { UserAvatar } from '@/components/atoms/user-avatar'
-import { apiGet } from '@/lib/api-server'
+import { LiveRefresh } from '@/components/atoms/live-refresh'
+import { apiGet, apiGetCached } from '@/lib/api-server'
 import { SESSION_COOKIE } from '@/lib/session'
 import { cn } from '@/lib/utils'
+import type { Match } from '@/types/match'
 
 interface LeaderboardEntry {
   rank:        number
@@ -20,16 +22,21 @@ export default async function LeaderboardPage() {
   const store = await cookies()
   if (!store.get(SESSION_COOKIE)?.value) redirect('/login')
 
-  let entries: LeaderboardEntry[] = []
-  try {
-    entries = await apiGet<LeaderboardEntry[]>('/users/leaderboard')
-  } catch {}
+  const [entriesRes, matchesRes] = await Promise.allSettled([
+    apiGet<LeaderboardEntry[]>('/users/leaderboard'),
+    apiGetCached<Match[]>('/matches', 30, { auth: false }),
+  ])
+  const entries        = entriesRes.status === 'fulfilled' ? entriesRes.value : []
+  const hasLiveMatches = matchesRes.status === 'fulfilled'
+    ? matchesRes.value.some(m => m.status === 'live')
+    : false
 
   const top3   = entries.slice(0, 3)
   const meRank = entries.find(e => e.isMe)?.rank ?? null
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+      <LiveRefresh active={hasLiveMatches} />
       <ContextHeader title="Rankings" />
 
       {entries.length === 0 ? (

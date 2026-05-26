@@ -3,14 +3,20 @@
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { AuthProvider } from './auth-provider'
+import type { AuthUser } from '@/types/auth'
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
+interface Props {
+  children:     React.ReactNode
+  initialUser?: AuthUser | null
+}
+
+export function AppProviders({ children, initialUser }: Props) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
 
   return (
     <GoogleOAuthProvider clientId={clientId}>
       <ThemeProvider attribute="class" defaultTheme="dark">
-        <AuthProvider>
+        <AuthProvider initialUser={initialUser}>
           {children}
         </AuthProvider>
       </ThemeProvider>

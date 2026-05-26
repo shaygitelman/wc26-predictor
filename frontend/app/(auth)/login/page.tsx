@@ -11,37 +11,29 @@ type State = 'idle' | 'loading' | 'error'
 export default function LoginPage() {
   const [state,  setState]  = useState<State>('idle')
   const [errMsg, setErrMsg] = useState('')
-  const router = useRouter()
+  const router       = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get('next') ?? '/'
+  const next         = searchParams.get('next') ?? '/'
   const { refreshUser } = useAuth()
 
   async function handleGoogleSuccess(accessToken: string) {
     setState('loading')
     setErrMsg('')
-
     try {
       const res = await fetch('/api/auth/google', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ accessToken }),
       })
-
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error ?? 'Sign-in failed')
       }
-
       const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
-
       if (user.onboarding_completed === false) {
-        // Sync AuthProvider with the fresh JWT before navigating so the onboarding
-        // page doesn't see stale user=null and show a blank screen.
         await refreshUser()
         router.push(`/onboarding?next=${encodeURIComponent(next)}`)
       } else {
-        // Returning user — soft navigation; refresh re-renders server components
-        // with the new session cookie.
         router.push(next)
         router.refresh()
       }
@@ -59,48 +51,105 @@ export default function LoginPage() {
   return (
     <div className="w-full max-w-sm flex flex-col items-center gap-10">
 
-      {/* ── Brand ───────────────────────────────────────── */}
-      <div className="flex flex-col items-center gap-4 pt-4">
-        <div className="size-20 rounded-2xl bg-primary-muted flex items-center justify-center border border-primary/20">
-          <span className="text-4xl leading-none select-none">⚽</span>
+      {/* ── Brand hero ──────────────────────────────────── */}
+      <div className="flex flex-col items-center gap-7 pt-2">
+
+        {/* Logo badge */}
+        <div
+          className="relative flex items-center justify-center animate-enter-up"
+          style={{ animationFillMode: 'backwards' }}
+        >
+          {/* Outer breathing glow */}
+          <div
+            className="absolute rounded-full animate-glow-breathe pointer-events-none"
+            style={{
+              width: 118, height: 118,
+              background: 'radial-gradient(circle, rgba(136,117,255,0.2) 0%, transparent 70%)',
+            }}
+            aria-hidden="true"
+          />
+          {/* Badge circle */}
+          <div
+            className="relative flex flex-col items-center justify-center"
+            style={{
+              width: 84, height: 84,
+              borderRadius: '50%',
+              background: 'linear-gradient(150deg, var(--color-primary-muted) 0%, var(--color-surface) 100%)',
+              border: '1.5px solid rgba(136,117,255,0.45)',
+              boxShadow: '0 0 24px 4px rgba(136,117,255,0.15), inset 0 1px 0 rgba(255,255,255,0.07)',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{ color: 'var(--color-gold)', fontSize: 13, lineHeight: 1, marginBottom: 3 }}
+            >★</span>
+            <span
+              className="font-black leading-none tracking-tight animate-gold-pulse"
+              style={{ color: 'var(--color-gold)', fontSize: 30, lineHeight: 1 }}
+            >26</span>
+          </div>
         </div>
-        <div className="text-center">
-          <h1 className="text-2xl font-extrabold text-foreground tracking-tight">
-            MatchPoint26
+
+        {/* Title + divider + tagline */}
+        <div
+          className="text-center flex flex-col items-center gap-3 animate-enter-up"
+          style={{ animationDelay: '80ms', animationFillMode: 'backwards' }}
+        >
+          <h1 className="leading-none tracking-tight">
+            <span className="text-[32px] font-black text-foreground">Match</span>
+            <span className="text-[32px] font-black text-primary">Point</span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-            Predict matches. Compete with friends.<br />Win glory.
+
+          <div className="flex items-center gap-2.5">
+            <div
+              className="h-px w-10"
+              style={{ background: 'linear-gradient(to right, transparent, rgba(240,168,12,0.45))' }}
+            />
+            <span
+              className="text-[10px] font-bold tracking-[0.2em] uppercase"
+              style={{ color: 'var(--color-gold-dim)' }}
+            >World Cup 2026</span>
+            <div
+              className="h-px w-10"
+              style={{ background: 'linear-gradient(to left, transparent, rgba(240,168,12,0.45))' }}
+            />
+          </div>
+
+          <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
+            Predict matches. Compete with friends.{' '}
+            <span className="text-foreground/70 font-semibold">Win glory.</span>
           </p>
         </div>
       </div>
 
-      {/* ── Auth ────────────────────────────────────────── */}
-      <div className="w-full flex flex-col gap-4">
+      {/* ── Auth CTA ────────────────────────────────────── */}
+      <div
+        className="w-full flex flex-col gap-4 animate-enter-up"
+        style={{ animationDelay: '150ms', animationFillMode: 'backwards' }}
+      >
         <GoogleButton
           onClick={() => { setState('idle'); setErrMsg(''); login() }}
           loading={state === 'loading'}
         />
-
         {state === 'error' && (
-          <p className="text-center text-xs text-status-lost animate-fade-in">
-            {errMsg}
-          </p>
+          <p className="text-center text-xs text-status-lost animate-fade-in">{errMsg}</p>
         )}
       </div>
 
       {/* ── Footer ──────────────────────────────────────── */}
-      <p className="text-center text-2xs text-muted-foreground leading-relaxed px-4">
+      <p
+        className="text-center text-2xs text-muted-foreground leading-relaxed px-4 animate-fade-in"
+        style={{ animationDelay: '220ms', animationFillMode: 'backwards' }}
+      >
         By continuing, you agree to our{' '}
-        <span className="text-foreground font-medium">Terms of Service</span>
+        <span className="text-foreground/70 font-medium">Terms of Service</span>
         {' '}and{' '}
-        <span className="text-foreground font-medium">Privacy Policy</span>.
+        <span className="text-foreground/70 font-medium">Privacy Policy</span>.
       </p>
 
     </div>
   )
 }
-
-// ─── Sub-components ──────────────────────────────────────────
 
 function GoogleButton({ onClick, loading }: { onClick: () => void; loading: boolean }) {
   return (
@@ -109,11 +158,12 @@ function GoogleButton({ onClick, loading }: { onClick: () => void; loading: bool
       disabled={loading}
       className={[
         'w-full flex items-center justify-center gap-3',
-        'bg-card border border-border rounded-2xl',
-        'px-5 py-4 transition-all duration-150',
+        'bg-white/[0.04] border border-white/10',
+        'rounded-2xl px-5 py-[18px]',
+        'transition-all duration-200',
         loading
           ? 'opacity-60 cursor-not-allowed'
-          : 'hover:bg-surface-elevated hover:border-primary/30 active:scale-[0.98]',
+          : 'hover:bg-white/[0.07] hover:border-primary/40 active:scale-[0.98]',
       ].join(' ')}
     >
       {loading ? <Spinner /> : <GoogleLogo />}

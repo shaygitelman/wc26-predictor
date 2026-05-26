@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X, QrCode, Link2, Globe } from 'lucide-react'
 import { ContextHeader } from '@/components/layout/context-header'
 import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
+import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { useAuth } from '@/providers/auth-provider'
 import type { League, LeagueStanding } from '@/types/league'
 
@@ -189,9 +190,11 @@ function SettingsMenu({ isOwner, onDelete, onLeave }: { isOwner: boolean; onDele
 export function LeagueDetailClient({
   league,
   initialStandings,
+  hasLiveMatches = false,
 }: {
   league:           League
   initialStandings: LeagueStanding[]
+  hasLiveMatches?:  boolean
 }) {
   const { user } = useAuth()
   const router   = useRouter()
@@ -242,6 +245,7 @@ export function LeagueDetailClient({
       if (res.ok || res.status === 204) {
         setModal(null)
         showToast('League deleted.', 'success')
+        router.refresh()
         router.push('/leagues')
       } else {
         const data = await res.json().catch(() => ({}))
@@ -263,6 +267,7 @@ export function LeagueDetailClient({
       if (res.ok || res.status === 204) {
         setModal(null)
         showToast('You have left the league.', 'success')
+        router.refresh()
         router.push('/leagues')
       } else {
         const data = await res.json().catch(() => ({}))
@@ -283,6 +288,7 @@ export function LeagueDetailClient({
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+      <LiveRefresh active={hasLiveMatches} />
       <ContextHeader
         title={league.name}
         back="/leagues"

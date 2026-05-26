@@ -5,10 +5,10 @@ Generates automatic predictions for users who have not submitted a prediction
 when a match goes live (with a 60-second buffer after scheduled kick-off).
 
 Design invariants:
-- Score is deterministic: pool[hash(match_id) % len(pool)] — same pick every time
-  for the same match, even across multiple sync ticks.
+- Score is deterministic: pool[abs(hash(match_id)) % len(pool)] — same pick every
+  time for the same match, even across multiple sync ticks.
 - ON CONFLICT DO NOTHING: a concurrent manual submission always wins.
-- Auto-picks are capped at "outcome" points by score_match() — no exact bonus.
+- Auto-picks are scored identically to manual predictions — exact scores earn full points.
 - Test accounts (email *@test.wc26, google_id google-test-*) are excluded.
 """
 import logging
@@ -25,7 +25,8 @@ from models.user import User
 log = logging.getLogger(__name__)
 
 # Round-aware score pools. Index = abs(hash(match_id)) % len(pool).
-# Scores are realistic but intentionally unremarkable — never exact in aggregate.
+# Scores are realistic and round-appropriate. The same scoreline is assigned to
+# all absentees for a given match, so any exact-score luck is shared equally.
 ROUND_SCORE_POOLS: dict[str, list[tuple[int, int]]] = {
     "group": [(1, 0), (0, 1), (1, 1), (2, 1), (1, 2)],
     "r32":   [(1, 0), (0, 1), (2, 1), (1, 2)],

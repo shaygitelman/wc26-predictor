@@ -137,6 +137,7 @@ async def my_stats(
         correctPredictions = user.correct_predictions,
         totalPredictions   = pred_count or 0,
         exactScoreAccuracy = exact_pct,
+        autoPicksUsed      = user.auto_picks_used,
     )
 
 

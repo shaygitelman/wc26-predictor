@@ -30,6 +30,7 @@ class User(Base):
     exact_scores:        Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     correct_predictions: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     total_predictions:   Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    auto_picks_used:     Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     # ── Privacy settings ──────────────────────────────────────────
     hide_picks_until_kickoff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")

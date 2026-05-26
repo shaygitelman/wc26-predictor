@@ -145,12 +145,24 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
         </span>
 
         {isFinished && hasPick ? (
-          <PointsBadge
-            points={prediction.pointsEarned ?? 0}
-            outcome={prediction.outcome ?? 'wrong'}
-          />
+          <div className="flex items-center gap-1.5">
+            {prediction?.isAutoPick && (
+              <span className="text-[9px] font-black tracking-widest uppercase text-muted-foreground/50 bg-surface-elevated px-1.5 py-0.5 rounded">
+                AUTO
+              </span>
+            )}
+            <PointsBadge
+              points={prediction.pointsEarned ?? 0}
+              outcome={prediction.outcome ?? 'wrong'}
+            />
+          </div>
         ) : hasPick ? (
           <span className="flex items-center gap-1.5 text-primary">
+            {prediction?.isAutoPick && (
+              <span className="text-[9px] font-black tracking-widest uppercase text-muted-foreground/50 bg-surface-elevated px-1.5 py-0.5 rounded">
+                AUTO
+              </span>
+            )}
             <Lock className="size-3 flex-shrink-0" strokeWidth={2.5} />
             <span className="text-xs font-bold tabular">
               {prediction.predictedHome} – {prediction.predictedAway}

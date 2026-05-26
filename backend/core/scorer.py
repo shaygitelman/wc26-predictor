@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.scoring import compute_outcome
+from core.scoring import ROUND_POINTS, compute_outcome
 from models.league import LeagueMember
 from models.match import Match
 from models.prediction import Prediction
@@ -29,6 +29,22 @@ async def score_match(
     match = await db.get(Match, match_id)
     if not match:
         raise ValueError(f"Match {match_id} not found")
+
+    # ── Backstop: fill auto-picks for any user who missed the live trigger ──
+    # Only fires if auto_picks were never generated (flag is False), which
+    # means the match went from scheduled → finished without going through live.
+    if not match.auto_picks_generated:
+        try:
+            from services.auto_pick import generate_auto_picks
+            n = await generate_auto_picks(match.id, match.round, db)
+            log.info("[Scorer] BACKSTOP match=%s — inserted %d auto-picks", match.id, n)
+            # Mark generated so we don't retry on re-score
+            match.auto_picks_generated = True
+        except Exception as backstop_exc:
+            log.warning(
+                "[Scorer] BACKSTOP FAIL match=%s: %s — continuing with scoring",
+                match.id, backstop_exc,
+            )
 
     # ── Idempotency guard ─────────────────────────────────────────
     # If the match was already scored with the same result, return early.
@@ -75,6 +91,11 @@ async def score_match(
             home_score, away_score,
             match.round,
         )
+        # Auto-picks cannot earn "exact" points — cap at direction pts ("outcome")
+        if pred.is_auto_pick and outcome == "exact":
+            direction_pts, _ = ROUND_POINTS.get(match.round, ROUND_POINTS["group"])
+            outcome = "outcome"
+            points  = direction_pts
         pred.outcome = outcome
         pred.points_earned = points
         if pred.locked_at is None:

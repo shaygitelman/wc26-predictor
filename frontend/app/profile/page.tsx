@@ -99,6 +99,11 @@ export default async function ProfilePage() {
                 ? `${s.exactScores} exact · ${s.correctPredictions} correct · ${s.totalPoints} pts earned`
                 : 'View all predictions'}
             </p>
+            {s && s.autoPicksUsed > 0 && (
+              <p className="text-[10px] text-muted-foreground/55 mt-0.5">
+                {s.autoPicksUsed} auto-filled
+              </p>
+            )}
           </div>
           <ChevronRight className="size-5 text-muted-foreground flex-shrink-0" />
         </Link>

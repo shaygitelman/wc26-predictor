@@ -19,6 +19,7 @@ class PredictionOut(BaseModel):
     pointsEarned:  Optional[int] = None
     lockedAt:      Optional[str] = None
     createdAt:     str
+    isAutoPick:    bool = False
 
     @classmethod
     def from_orm(cls, p: Prediction) -> "PredictionOut":
@@ -32,4 +33,5 @@ class PredictionOut(BaseModel):
             pointsEarned  = p.points_earned,
             lockedAt      = p.locked_at.isoformat() if p.locked_at else None,
             createdAt     = p.created_at.isoformat(),
+            isAutoPick    = p.is_auto_pick,
         )

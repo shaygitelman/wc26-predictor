@@ -81,6 +81,7 @@ class UserStatsOut(BaseModel):
     correctPredictions: int
     totalPredictions:   int
     exactScoreAccuracy: int
+    autoPicksUsed:      int
 
 
 class LeaderboardEntry(BaseModel):

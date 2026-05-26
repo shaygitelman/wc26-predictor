@@ -15,4 +15,5 @@ export interface Prediction {
   outcome?: PredictionOutcome
   lockedAt: string
   createdAt: string
+  isAutoPick?: boolean
 }

@@ -547,8 +547,13 @@ class SyncService:
         Poll the provider for currently live fixtures and update DB.
         When a match transitions to 'finished', score_match() is called so
         user prediction points are awarded automatically.
+        When a match transitions to 'live' (after a 60-second buffer), auto-picks
+        are generated for any user who has not yet submitted a prediction.
         """
+        from datetime import timedelta
+
         from core.scorer import score_match as do_score
+        from services.auto_pick import generate_auto_picks
 
         log = await self._start_log("live", db)
 
@@ -583,6 +588,31 @@ class SyncService:
                     .execution_options(synchronize_session=False)
                 )
                 count += 1
+
+                # Generate auto-picks when a match goes live (60-second buffer after kick-off)
+                buffer_elapsed = (
+                    datetime.now(timezone.utc) >= match.scheduled_at + timedelta(seconds=60)
+                )
+                if fx.status == "live" and buffer_elapsed and not match.auto_picks_generated:
+                    log.info(
+                        "[Sync/live] AUTO-PICK trigger match=%s external=%s round=%s",
+                        match.id, fx.external_id, match.round,
+                    )
+                    try:
+                        n = await generate_auto_picks(match.id, match.round, db)
+                        if n >= 0:
+                            await db.execute(
+                                update(Match)
+                                .where(Match.id == match.id)
+                                .values(auto_picks_generated=True)
+                                .execution_options(synchronize_session=False)
+                            )
+                    except Exception as auto_exc:
+                        log.error(
+                            "[Sync/live] AUTO-PICK FAIL match=%s: %s",
+                            match.id, auto_exc,
+                        )
+                        errors.append(f"auto-pick {fx.external_id}: {auto_exc}")
 
                 # Award points when a match just finished
                 if fx.status == "finished" and prev_status != "finished":

@@ -69,7 +69,16 @@ export function PredictionResultCard({
       {/* Scores row */}
       <div className="flex items-center gap-2 bg-surface-elevated rounded-lg p-3">
         <div className="flex-1 text-center">
-          <p className="text-2xs text-muted-foreground font-medium mb-0.5">Your pick</p>
+          <p className="text-2xs text-muted-foreground font-medium mb-0.5">
+            {prediction.isAutoPick ? (
+              <span className="inline-flex items-center gap-1">
+                Your pick
+                <span className="text-[8px] font-black tracking-widest uppercase text-muted-foreground/50 bg-border/60 px-1 py-0.5 rounded leading-none">
+                  AUTO
+                </span>
+              </span>
+            ) : 'Your pick'}
+          </p>
           <p className="text-base font-black tabular text-foreground">
             {prediction.predictedHome} – {prediction.predictedAway}
           </p>

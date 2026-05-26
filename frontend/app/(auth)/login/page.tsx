@@ -54,46 +54,59 @@ export default function LoginPage() {
       {/* ── Brand hero ──────────────────────────────────── */}
       <div className="flex flex-col items-center gap-7 pt-2">
 
-        {/* Logo badge */}
+        {/* Trophy mark */}
         <div
           className="relative flex items-center justify-center animate-enter-up"
           style={{ animationFillMode: 'backwards' }}
         >
-          {/* Outer breathing glow */}
+          {/* Gold glow behind trophy */}
           <div
             className="absolute animate-glow-breathe pointer-events-none"
             style={{
-              width: 130, height: 140,
-              background: 'radial-gradient(ellipse at center, rgba(136,117,255,0.18) 0%, transparent 65%)',
+              width: 140, height: 140,
+              background: 'radial-gradient(ellipse at center, rgba(240,168,12,0.18) 0%, transparent 65%)',
             }}
             aria-hidden="true"
           />
-          {/* Hexagon + MP monogram */}
-          <div className="relative flex items-center justify-center" style={{ width: 88, height: 96 }}>
-            <svg
-              width="88" height="96"
-              viewBox="0 0 88 96"
-              className="absolute inset-0"
-              aria-hidden="true"
-            >
-              <defs>
-                <linearGradient id="hexFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgba(136,117,255,0.28)" />
-                  <stop offset="100%" stopColor="rgba(136,117,255,0.06)" />
-                </linearGradient>
-              </defs>
-              <polygon
-                points="44,5 81,26 81,70 44,91 7,70 7,26"
-                fill="url(#hexFill)"
-                stroke="rgba(136,117,255,0.5)"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <span
-              className="relative z-10 font-black text-foreground leading-none"
-              style={{ fontSize: 27, letterSpacing: '-0.02em' }}
-            >MP</span>
-          </div>
+          <svg
+            width="72" height="80"
+            viewBox="0 0 80 90"
+            aria-label="Trophy"
+            role="img"
+          >
+            <defs>
+              <linearGradient id="trophyGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#FFB91A" />
+                <stop offset="55%"  stopColor="#F0A80C" />
+                <stop offset="100%" stopColor="#C88A00" />
+              </linearGradient>
+            </defs>
+            {/* Cup body */}
+            <path
+              d="M14 8 L66 8 L60 42 C57 54 49 62 40 62 C31 62 23 54 20 42 Z"
+              fill="url(#trophyGrad)"
+            />
+            {/* Left handle */}
+            <path
+              d="M14 8 C6 8 2 15 2 22 C2 33 10 38 15 36"
+              fill="none"
+              stroke="url(#trophyGrad)"
+              strokeWidth="4.5"
+              strokeLinecap="round"
+            />
+            {/* Right handle */}
+            <path
+              d="M66 8 C74 8 78 15 78 22 C78 33 70 38 65 36"
+              fill="none"
+              stroke="url(#trophyGrad)"
+              strokeWidth="4.5"
+              strokeLinecap="round"
+            />
+            {/* Stem */}
+            <rect x="35" y="62" width="10" height="15" rx="2" fill="url(#trophyGrad)" />
+            {/* Base */}
+            <rect x="21" y="77" width="38" height="8" rx="4" fill="url(#trophyGrad)" />
+          </svg>
         </div>
 
         {/* Title + divider + tagline */}

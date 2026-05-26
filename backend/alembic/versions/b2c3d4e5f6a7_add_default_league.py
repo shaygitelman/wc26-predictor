@@ -34,24 +34,29 @@ def upgrade() -> None:
         "ADD COLUMN IF NOT EXISTS is_system  BOOLEAN NOT NULL DEFAULT FALSE"
     ))
 
-    # ── 2. Create the default league (idempotent on both id and invite_code) ──
-    bind.execute(sa.text("""
-        INSERT INTO leagues (id, name, invite_code, created_by, is_default, is_system)
-        VALUES (
-            :id,
-            :name,
-            :code,
-            NULL,
-            TRUE,
-            TRUE
-        )
-        ON CONFLICT DO NOTHING
-    """), {"id": DEFAULT_LEAGUE_ID, "name": DEFAULT_LEAGUE_NAME, "code": DEFAULT_INVITE_CODE})
+    # ── 2. Find or create the default league ─────────────────────────────────
+    #    Look up by fixed UUID OR by invite_code — handles the case where a
+    #    previous (failed) run already inserted a row with a different UUID.
+    #    Without this, ON CONFLICT DO NOTHING silently skips the INSERT but the
+    #    fixed UUID still doesn't exist, causing the backfill to hit an FK
+    #    violation and roll back the whole migration.
+    existing = bind.execute(sa.text(
+        "SELECT id FROM leagues WHERE id = :id OR invite_code = :code LIMIT 1"
+    ), {"id": DEFAULT_LEAGUE_ID, "code": DEFAULT_INVITE_CODE}).fetchone()
 
-    # ── 3. Backfill every existing user into the default league ───────────────
-    #    Uses Python-generated UUIDs (avoids gen_random_uuid() availability
-    #    issues across different PostgreSQL hosting environments).
-    #    ON CONFLICT DO NOTHING makes this safe to re-run.
+    if existing:
+        actual_league_id = existing[0]
+        bind.execute(sa.text(
+            "UPDATE leagues SET is_default = TRUE, is_system = TRUE WHERE id = :id"
+        ), {"id": actual_league_id})
+    else:
+        bind.execute(sa.text("""
+            INSERT INTO leagues (id, name, invite_code, created_by, is_default, is_system)
+            VALUES (:id, :name, :code, NULL, TRUE, TRUE)
+        """), {"id": DEFAULT_LEAGUE_ID, "name": DEFAULT_LEAGUE_NAME, "code": DEFAULT_INVITE_CODE})
+        actual_league_id = DEFAULT_LEAGUE_ID
+
+    # ── 3. Backfill every existing user into the actual default league ────────
     rows = bind.execute(
         sa.text("SELECT id, COALESCE(total_points, 0) FROM users")
     ).fetchall()
@@ -63,7 +68,7 @@ def upgrade() -> None:
             ON CONFLICT ON CONSTRAINT uq_league_members_league_user DO NOTHING
         """), {
             "id":           str(_uuid.uuid4()),
-            "league_id":    DEFAULT_LEAGUE_ID,
+            "league_id":    actual_league_id,
             "user_id":      user_id,
             "total_points": total_points,
         })

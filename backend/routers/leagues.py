@@ -1,9 +1,10 @@
 import logging
 import secrets
 import string
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,12 +25,13 @@ router = APIRouter(prefix="/leagues", tags=["leagues"])
 
 _ALPHABET = string.ascii_uppercase + string.digits
 
-# Fixed UUID — matches the Alembic migration seed.
-_DEFAULT_LEAGUE_ID = '00000000-0000-0000-0000-000000000001'
-
-
 def _generate_invite_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(8))
+
+
+async def _get_default_league_id(db: AsyncSession) -> str | None:
+    """Return the ID of the platform default league (is_default=TRUE), or None if not yet seeded."""
+    return await db.scalar(select(League.id).where(League.is_default == True).limit(1))
 
 
 async def _ensure_default_membership(user_id: str, user_points: int, db: AsyncSession) -> None:
@@ -40,32 +42,78 @@ async def _ensure_default_membership(user_id: str, user_points: int, db: AsyncSe
     Safe to call concurrently — the unique constraint prevents duplicate rows.
     """
     try:
+        default_id = await _get_default_league_id(db)
+        if not default_id:
+            log.warning("Default league not found — bootstrap may not have run yet")
+            return
+
         # Short-circuit if already a member
         already = await db.scalar(
             select(LeagueMember.id).where(
-                LeagueMember.league_id == _DEFAULT_LEAGUE_ID,
+                LeagueMember.league_id == default_id,
                 LeagueMember.user_id   == user_id,
             )
         )
         if already:
             return
 
-        # Verify the default league actually exists (migration may be pending)
-        default_league = await db.get(League, _DEFAULT_LEAGUE_ID)
-        if not default_league:
-            log.warning("Default league %s not found — migration may not have run", _DEFAULT_LEAGUE_ID)
-            return
-
         db.add(LeagueMember(
-            league_id    = _DEFAULT_LEAGUE_ID,
+            league_id    = default_id,
             user_id      = user_id,
             total_points = user_points,
         ))
         await db.commit()
-        log.info("Auto-joined user %s to the global default league", user_id)
+        log.info("Auto-joined user %s to the global default league %s", user_id, default_id)
     except Exception as exc:
         await db.rollback()
         log.warning("Could not auto-join user %s to default league: %s", user_id, exc)
+
+
+@router.get("/debug", response_model=dict[str, Any])
+async def leagues_debug(
+    user: User = Depends(get_current_user),
+    db:   AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Temporary diagnostic endpoint — returns raw DB state for the default league."""
+    # 1. Default league row
+    default_row = (await db.execute(text(
+        "SELECT id, name, invite_code, is_default, is_system FROM leagues WHERE is_default = TRUE LIMIT 1"
+    ))).fetchone()
+
+    # 2. All leagues with invite_code=WORLD001 (any UUID)
+    world_rows = (await db.execute(text(
+        "SELECT id, name, invite_code, is_default, is_system FROM leagues WHERE invite_code = 'WORLD001'"
+    ))).fetchall()
+
+    # 3. Current user's memberships
+    memberships = (await db.execute(text(
+        "SELECT lm.league_id, l.name, l.is_default FROM league_members lm "
+        "JOIN leagues l ON l.id = lm.league_id "
+        "WHERE lm.user_id = :uid"
+    ), {"uid": user.id})).fetchall()
+
+    # 4. Total users and total default-league members
+    total_users   = (await db.execute(text("SELECT COUNT(*) FROM users"))).scalar()
+    total_members = (await db.execute(text(
+        "SELECT COUNT(*) FROM league_members WHERE league_id = (SELECT id FROM leagues WHERE is_default=TRUE LIMIT 1)"
+    ))).scalar() if default_row else 0
+
+    return {
+        "userId":       user.id,
+        "defaultLeague": dict(zip(
+            ["id", "name", "inviteCode", "isDefault", "isSystem"], default_row
+        )) if default_row else None,
+        "world001Rows": [
+            dict(zip(["id", "name", "inviteCode", "isDefault", "isSystem"], r))
+            for r in world_rows
+        ],
+        "myMemberships": [
+            {"leagueId": r[0], "name": r[1], "isDefault": r[2]}
+            for r in memberships
+        ],
+        "totalUsers":         total_users,
+        "defaultLeagueMembers": total_members,
+    }
 
 
 @router.get("/me", response_model=list[LeagueOut])
@@ -88,7 +136,12 @@ async def my_leagues(
         .group_by(League.id)
         .order_by(League.is_default.desc(), League.created_at.desc())
     )
-    return [LeagueOut.from_orm(league, count) for league, count in result.all()]
+    rows = result.all()
+    log.info(
+        "my_leagues user=%s returned=%d ids=%s",
+        user.id, len(rows), [league.id for league, _ in rows]
+    )
+    return [LeagueOut.from_orm(league, count) for league, count in rows]
 
 
 @router.post("", response_model=LeagueOut, status_code=status.HTTP_201_CREATED)
@@ -335,7 +388,8 @@ async def _require_member(league_id: str, user_id: str, db: AsyncSession) -> Non
     if not exists:
         # The global default league is open to every authenticated user — auto-join
         # instead of rejecting (handles direct URL navigation before /leagues/me runs).
-        if league_id == _DEFAULT_LEAGUE_ID:
+        default_id = await _get_default_league_id(db)
+        if default_id and league_id == default_id:
             user = await db.get(User, user_id)
             await _ensure_default_membership(user_id, user.total_points if user else 0, db)
             return

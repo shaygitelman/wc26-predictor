@@ -1,10 +1,9 @@
 import logging
 import secrets
 import string
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,53 +68,6 @@ async def _ensure_default_membership(user_id: str, user_points: int, db: AsyncSe
         log.warning("Could not auto-join user %s to default league: %s", user_id, exc)
 
 
-@router.get("/debug", response_model=dict[str, Any])
-async def leagues_debug(
-    user: User = Depends(get_current_user),
-    db:   AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """Temporary diagnostic endpoint — returns raw DB state for the default league."""
-    # 1. Default league row
-    default_row = (await db.execute(text(
-        "SELECT id, name, invite_code, is_default, is_system FROM leagues WHERE is_default = TRUE LIMIT 1"
-    ))).fetchone()
-
-    # 2. All leagues with invite_code=WORLD001 (any UUID)
-    world_rows = (await db.execute(text(
-        "SELECT id, name, invite_code, is_default, is_system FROM leagues WHERE invite_code = 'WORLD001'"
-    ))).fetchall()
-
-    # 3. Current user's memberships
-    memberships = (await db.execute(text(
-        "SELECT lm.league_id, l.name, l.is_default FROM league_members lm "
-        "JOIN leagues l ON l.id = lm.league_id "
-        "WHERE lm.user_id = :uid"
-    ), {"uid": user.id})).fetchall()
-
-    # 4. Total users and total default-league members
-    total_users   = (await db.execute(text("SELECT COUNT(*) FROM users"))).scalar()
-    total_members = (await db.execute(text(
-        "SELECT COUNT(*) FROM league_members WHERE league_id = (SELECT id FROM leagues WHERE is_default=TRUE LIMIT 1)"
-    ))).scalar() if default_row else 0
-
-    return {
-        "userId":       user.id,
-        "defaultLeague": dict(zip(
-            ["id", "name", "inviteCode", "isDefault", "isSystem"], default_row
-        )) if default_row else None,
-        "world001Rows": [
-            dict(zip(["id", "name", "inviteCode", "isDefault", "isSystem"], r))
-            for r in world_rows
-        ],
-        "myMemberships": [
-            {"leagueId": r[0], "name": r[1], "isDefault": r[2]}
-            for r in memberships
-        ],
-        "totalUsers":         total_users,
-        "defaultLeagueMembers": total_members,
-    }
-
-
 @router.get("/me", response_model=list[LeagueOut])
 async def my_leagues(
     user: User = Depends(get_current_user),
@@ -136,12 +88,7 @@ async def my_leagues(
         .group_by(League.id)
         .order_by(League.is_default.desc(), League.created_at.desc())
     )
-    rows = result.all()
-    log.info(
-        "my_leagues user=%s returned=%d ids=%s",
-        user.id, len(rows), [league.id for league, _ in rows]
-    )
-    return [LeagueOut.from_orm(league, count) for league, count in rows]
+    return [LeagueOut.from_orm(league, count) for league, count in result.all()]
 
 
 @router.post("", response_model=LeagueOut, status_code=status.HTTP_201_CREATED)

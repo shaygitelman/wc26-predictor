@@ -37,7 +37,23 @@ from models.user import User
 BASE    = "http://localhost:8000"
 ADMIN_H = {"X-Admin-Key": settings.admin_key}
 
-NO_CLEANUP = "--no-cleanup" in sys.argv
+NO_CLEANUP  = "--no-cleanup"  in sys.argv
+FORCE_PROD  = "--force-prod"  in sys.argv
+
+# ── Production DB guard ───────────────────────────────────────────
+# Refuse to run against a known production host unless the caller
+# explicitly acknowledges it with --force-prod.
+_db_url = settings.database_url.lower()
+_looks_like_prod = any(
+    kw in _db_url for kw in ("supabase", "render", ".pooler.", "prod")
+)
+if _looks_like_prod and not FORCE_PROD:
+    print("\n  ⛔  PRODUCTION DATABASE DETECTED")
+    print(f"     DB URL contains a known production host pattern.")
+    print(f"     Running this test will CREATE real rows in your production DB.")
+    print(f"     If you really want to proceed, re-run with --force-prod.")
+    print(f"     (Cleanup still runs by default — omit --no-cleanup to be safe.)\n")
+    sys.exit(1)
 
 # ── test state ────────────────────────────────────────────────────
 _pass = 0

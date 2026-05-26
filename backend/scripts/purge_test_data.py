@@ -74,6 +74,10 @@ FAKE_TEAM_NAME_EXACT    = [
 # Leagues: name fragments
 FAKE_LEAGUE_NAME_FRAGMENTS = ["test", "demo", "qa", "e2e", "seed", "showcase", "placeholder"]
 
+# Test users: email suffixes and google_id prefixes produced by integration_e2e.py
+TEST_USER_EMAIL_SUFFIXES  = ["@test.wc26", "@test.com", "@example.com"]
+TEST_USER_GOOGLE_PREFIXES = ["google-test-"]
+
 
 def _match_id_condition() -> str:
     """SQL WHERE clause fragment matching fake match IDs."""
@@ -122,6 +126,16 @@ def _fake_league_condition() -> str:
     )
 
 
+def _test_user_condition() -> str:
+    email_checks = " OR ".join(
+        f"email ILIKE '%{s}'" for s in TEST_USER_EMAIL_SUFFIXES
+    )
+    google_checks = " OR ".join(
+        f"google_id ILIKE '{p}%'" for p in TEST_USER_GOOGLE_PREFIXES
+    )
+    return f"({email_checks} OR {google_checks})"
+
+
 async def audit(label: str) -> dict:
     """Read-only scan — never writes. Returns counts for summary."""
     async with SessionLocal() as db:
@@ -152,7 +166,17 @@ async def audit(label: str) -> dict:
 
         total_preds  = (await db.execute(text("SELECT COUNT(*) FROM predictions"))).scalar_one()
         total_users  = (await db.execute(text("SELECT COUNT(*) FROM users"))).scalar_one()
+        test_users   = (await db.execute(text(
+            f"SELECT COUNT(*) FROM users WHERE {_test_user_condition()}"
+        ))).scalar_one()
         total_players= (await db.execute(text("SELECT COUNT(*) FROM players"))).scalar_one()
+
+        # sample test users
+        sample_test_users = (await db.execute(text(f"""
+            SELECT id, email, google_id, username FROM users
+            WHERE {_test_user_condition()}
+            LIMIT 20
+        """))).all()
 
         # sample fake matches for review
         sample_fake = (await db.execute(text(f"""
@@ -192,7 +216,7 @@ async def audit(label: str) -> dict:
     print(f"  Teams   : {total_teams} total | {fake_teams} FAKE")
     print(f"  Leagues : {total_leagues} total | {fake_leagues} test/demo")
     print(f"  Predictions : {total_preds} total | {fake_predictions} on fake matches")
-    print(f"  Users   : {total_users} (none will be deleted)")
+    print(f"  Users   : {total_users} total | {test_users} TEST")
     print(f"  Players : {total_players}")
 
     print("\n  Real match breakdown:")
@@ -214,6 +238,11 @@ async def audit(label: str) -> dict:
         for r in sample_fake_leagues:
             print(f"    id={r.id[:24]}...  name={r.name}  code={r.invite_code}")
 
+    if sample_test_users:
+        print(f"\n  TEST users to remove ({len(sample_test_users)} shown):")
+        for r in sample_test_users:
+            print(f"    id={r.id[:24]}...  email={r.email}  google={r.google_id}  username={r.username}")
+
     return {
         "total_matches":    total_matches,
         "real_matches":     real_matches,
@@ -224,6 +253,7 @@ async def audit(label: str) -> dict:
         "fake_leagues":     fake_leagues,
         "fake_predictions": fake_predictions,
         "total_users":      total_users,
+        "test_users":       test_users,
     }
 
 
@@ -264,7 +294,14 @@ async def purge() -> dict:
         """))
         deleted["leagues"] = r.rowcount
 
-        # ── 5. Sync log entries referencing test external IDs ────────
+        # ── 5. Test users (and their data via CASCADE) ───────────────
+        # Deletes predictions, league_members, and tournament_picks via FK CASCADE.
+        r = await db.execute(text(f"""
+            DELETE FROM users WHERE {_test_user_condition()}
+        """))
+        deleted["test_users"] = r.rowcount
+
+        # ── 6. Sync log entries referencing test external IDs ────────
         # sync_log has no FK but may have provider=test or entity_type that
         # references fake fixtures. Remove rows that mention test prefixes.
         r = await db.execute(text("""
@@ -361,7 +398,13 @@ async def main() -> None:
     banner("BEFORE — current DB state")
     before = await audit("before")
 
-    if before["fake_matches"] == 0 and before["fake_teams"] == 0 and before["fake_leagues"] == 0:
+    nothing_to_purge = (
+        before["fake_matches"] == 0
+        and before["fake_teams"] == 0
+        and before["fake_leagues"] == 0
+        and before["test_users"] == 0
+    )
+    if nothing_to_purge:
         print("\n  Nothing to purge — database is already clean.")
         await integrity_check()
         return
@@ -372,6 +415,7 @@ async def main() -> None:
     {before['fake_matches']:4d}  matches
     {before['fake_teams']:4d}  teams
     {before['fake_leagues']:4d}  leagues (test/demo names only)
+    {before['test_users']:4d}  test users (email/google_id pattern match)
     """)
 
     if DRY_RUN:

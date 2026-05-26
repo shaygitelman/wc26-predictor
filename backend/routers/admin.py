@@ -581,3 +581,49 @@ async def fixture_mapping_audit(db: AsyncSession = Depends(get_db)) -> dict:
         },
         "recent_fixture_sync_log": sync_log_summary,
     }
+
+
+# ── Test-user cleanup ─────────────────────────────────────────────
+
+_TEST_USER_CONDITION = """
+    email ILIKE '%@test.wc26'
+    OR email ILIKE '%@test.com'
+    OR email ILIKE '%@example.com'
+    OR google_id ILIKE 'google-test-%'
+"""
+
+
+@router.get(
+    "/test-users",
+    dependencies=[Depends(_verify_admin)],
+    summary="List all test/demo users in the database",
+)
+async def list_test_users(db: AsyncSession = Depends(get_db)) -> dict:
+    rows = (await db.execute(text(
+        f"SELECT id, email, username, google_id FROM users WHERE {_TEST_USER_CONDITION} ORDER BY email"
+    ))).all()
+    return {
+        "count": len(rows),
+        "users": [
+            {"id": r.id, "email": r.email, "username": r.username, "googleId": r.google_id}
+            for r in rows
+        ],
+    }
+
+
+@router.delete(
+    "/test-users",
+    dependencies=[Depends(_verify_admin)],
+    summary="Permanently delete all test/demo users and their data",
+)
+async def delete_test_users(db: AsyncSession = Depends(get_db)) -> dict:
+    """Delete users whose email or google_id matches test/demo patterns.
+
+    Cascades to: predictions, league_members, tournament_picks.
+    Does NOT touch real users, real matches, or real leagues.
+    """
+    result = await db.execute(text(
+        f"DELETE FROM users WHERE {_TEST_USER_CONDITION}"
+    ))
+    await db.commit()
+    return {"deleted": result.rowcount}

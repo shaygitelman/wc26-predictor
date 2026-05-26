@@ -110,8 +110,8 @@ async def my_stats(
     db:   AsyncSession = Depends(get_db),
 ) -> UserStatsOut:
     rank, total_users, pred_count = await asyncio.gather(
-        db.scalar(select(func.count()).where(User.total_points > user.total_points)),
-        db.scalar(select(func.count(User.id))),
+        db.scalar(select(func.count()).where(User.total_points > user.total_points, User.onboarding_completed == True)),  # noqa: E712
+        db.scalar(select(func.count(User.id)).where(User.onboarding_completed == True)),  # noqa: E712
         db.scalar(select(func.count(Prediction.id)).where(Prediction.user_id == user.id)),
     )
 
@@ -133,6 +133,7 @@ async def leaderboard(
     users = (
         await db.execute(
             select(User)
+            .where(User.onboarding_completed == True)  # noqa: E712 — exclude test/incomplete accounts
             .order_by(User.total_points.desc(), User.created_at.asc())
         )
     ).scalars().all()

@@ -530,7 +530,7 @@ function CelebrationStep({
 /** Only allow same-origin relative paths to prevent open-redirect. */
 function safeNext(raw: string | null): string {
   if (!raw) return '/'
-  if (!raw.startsWith('/')) return '/'
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/'
   return raw
 }
 

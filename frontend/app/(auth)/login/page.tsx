@@ -61,32 +61,38 @@ export default function LoginPage() {
         >
           {/* Outer breathing glow */}
           <div
-            className="absolute rounded-full animate-glow-breathe pointer-events-none"
+            className="absolute animate-glow-breathe pointer-events-none"
             style={{
-              width: 118, height: 118,
-              background: 'radial-gradient(circle, rgba(136,117,255,0.2) 0%, transparent 70%)',
+              width: 130, height: 140,
+              background: 'radial-gradient(ellipse at center, rgba(136,117,255,0.18) 0%, transparent 65%)',
             }}
             aria-hidden="true"
           />
-          {/* Badge circle */}
-          <div
-            className="relative flex flex-col items-center justify-center"
-            style={{
-              width: 84, height: 84,
-              borderRadius: '50%',
-              background: 'linear-gradient(150deg, var(--color-primary-muted) 0%, var(--color-surface) 100%)',
-              border: '1.5px solid rgba(136,117,255,0.45)',
-              boxShadow: '0 0 24px 4px rgba(136,117,255,0.15), inset 0 1px 0 rgba(255,255,255,0.07)',
-            }}
-          >
-            <span
+          {/* Hexagon + MP monogram */}
+          <div className="relative flex items-center justify-center" style={{ width: 88, height: 96 }}>
+            <svg
+              width="88" height="96"
+              viewBox="0 0 88 96"
+              className="absolute inset-0"
               aria-hidden="true"
-              style={{ color: 'var(--color-gold)', fontSize: 13, lineHeight: 1, marginBottom: 3 }}
-            >★</span>
+            >
+              <defs>
+                <linearGradient id="hexFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(136,117,255,0.28)" />
+                  <stop offset="100%" stopColor="rgba(136,117,255,0.06)" />
+                </linearGradient>
+              </defs>
+              <polygon
+                points="44,5 81,26 81,70 44,91 7,70 7,26"
+                fill="url(#hexFill)"
+                stroke="rgba(136,117,255,0.5)"
+                strokeWidth="1.5"
+              />
+            </svg>
             <span
-              className="font-black leading-none tracking-tight animate-gold-pulse"
-              style={{ color: 'var(--color-gold)', fontSize: 30, lineHeight: 1 }}
-            >26</span>
+              className="relative z-10 font-black text-foreground leading-none"
+              style={{ fontSize: 27, letterSpacing: '-0.02em' }}
+            >MP</span>
           </div>
         </div>
 

@@ -195,7 +195,8 @@ async def league_standings(
         select(LeagueMember, User.username, User.avatar_url, User.avatar_id, User.show_stats)
         .join(User, User.id == LeagueMember.user_id)
         .where(LeagueMember.league_id == league_id)
-        .where(User.onboarding_completed == True)  # noqa: E712 — exclude test/incomplete accounts
+        .where(~User.email.ilike('%@test.wc26'))
+        .where(~User.google_id.ilike('google-test-%'))
         .order_by(LeagueMember.total_points.desc(), LeagueMember.joined_at)
     )
     rows = result.all()

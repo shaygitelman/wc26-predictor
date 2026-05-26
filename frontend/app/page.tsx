@@ -170,9 +170,9 @@ async function LeagueWithStandings({ league, userId }: { league: League; userId?
   return (
     <LeagueCard
       league={league}
-      userPoints={me?.totalPoints}
+      userPoints={me?.totalPoints ?? undefined}
       leaderUsername={leader?.username}
-      leaderPoints={leader?.totalPoints}
+      leaderPoints={leader?.totalPoints ?? undefined}
     />
   )
 }

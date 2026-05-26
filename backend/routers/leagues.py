@@ -132,11 +132,9 @@ async def join_league(
             LeagueMember.user_id   == user.id,
         )
     )
-    if already:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already a member")
-
-    db.add(LeagueMember(league_id=league.id, user_id=user.id, total_points=user.total_points))
-    await db.commit()
+    if not already:
+        db.add(LeagueMember(league_id=league.id, user_id=user.id, total_points=user.total_points))
+        await db.commit()
 
     count = await db.scalar(
         select(func.count()).where(LeagueMember.league_id == league.id)

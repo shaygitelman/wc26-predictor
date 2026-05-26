@@ -33,11 +33,6 @@ export function JoinClient({ name, memberCount, creatorUsername, inviteCode }: P
         router.push(`/leagues/${data.id}`)
         return
       }
-      if (res.status === 409) {
-        // Already a member — take them to their leagues list
-        router.push('/leagues')
-        return
-      }
       setError(data?.detail ?? 'Could not join league. Please try again.')
     } catch {
       setError('Network error. Please try again.')

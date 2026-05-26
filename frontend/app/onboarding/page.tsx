@@ -450,10 +450,12 @@ function CelebrationStep({
   winner:        winnerTeam,
   scorer:        scorerPlayer,
   onEnter,
+  joining,
 }: {
-  winner:  Team
-  scorer:  Player
-  onEnter: () => void
+  winner:   Team
+  scorer:   Player
+  onEnter:  () => void
+  joining?: boolean
 }) {
   return (
     <div className="relative flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-6">
@@ -513,12 +515,17 @@ function CelebrationStep({
 
         <button
           onClick={onEnter}
+          disabled={joining}
           className="w-full max-w-xs h-14 rounded-2xl bg-primary text-primary-foreground text-[15px] font-black
             flex items-center justify-center gap-2
-            shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all"
+            shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all
+            disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          Enter MatchPoint26
-          <ChevronRight className="size-5" strokeWidth={2.5} />
+          {joining ? (
+            <><Loader2 className="size-5 animate-spin" /> Joining league…</>
+          ) : (
+            <>Enter MatchPoint26 <ChevronRight className="size-5" strokeWidth={2.5} /></>
+          )}
         </button>
       </div>
     </div>
@@ -545,6 +552,7 @@ export default function OnboardingPage() {
   const [winner,     setWinner]     = useState<Team | null>(null)
   const [scorer,     setScorer]     = useState<Player | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [joining,    setJoining]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
 
   // If already onboarded, go to the intended destination (not always '/')
@@ -585,12 +593,32 @@ export default function OnboardingPage() {
     }
   }, [winner, scorer])
 
-  const handleEnter = useCallback(() => {
+  const handleEnter = useCallback(async () => {
+    // If the user arrived from an invite link, auto-join the league immediately
+    // instead of dropping them on the join page to click a button themselves.
+    const inviteMatch = /^\/join\/([A-Za-z0-9]+)$/.exec(next)
+    if (inviteMatch) {
+      setJoining(true)
+      try {
+        const res = await fetch('/api/leagues/join', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ inviteCode: inviteMatch[1] }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          // Full-page replace so AuthProvider re-mounts with fresh cookie,
+          // then lands directly on the league page.
+          window.location.replace(`/leagues/${data.id}`)
+          return
+        }
+      } catch {}
+      // Auto-join failed (invalid code, network error) — fall through to the
+      // join page which will surface the appropriate error UI.
+      setJoining(false)
+    }
     // Full-page navigation resets the React tree so AuthProvider re-mounts
-    // and reads the fresh JWT cookie (onboarding_completed: true), avoiding
-    // the race where the gate fires with stale in-memory state.
-    // `next` carries the original invite URL (e.g. /join/ABCD1234) so the
-    // user lands on the right page instead of always being sent to '/'.
+    // and reads the fresh JWT cookie (onboarding_completed: true).
     window.location.replace(next)
   }, [next])
 
@@ -632,6 +660,7 @@ export default function OnboardingPage() {
             winner={winner}
             scorer={scorer}
             onEnter={handleEnter}
+            joining={joining}
           />
         )}
       </div>

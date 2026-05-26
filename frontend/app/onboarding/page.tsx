@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Check, ChevronRight, Loader2 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { cn } from '@/lib/utils'
@@ -527,9 +527,18 @@ function CelebrationStep({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+/** Only allow same-origin relative paths to prevent open-redirect. */
+function safeNext(raw: string | null): string {
+  if (!raw) return '/'
+  if (!raw.startsWith('/')) return '/'
+  return raw
+}
+
 export default function OnboardingPage() {
   const { user, isLoading } = useAuth()
-  const router = useRouter()
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const next         = safeNext(searchParams.get('next'))
 
   const [step,       setStep]       = useState(0)
   const [teams,      setTeams]      = useState<Team[]>([])
@@ -538,12 +547,12 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
 
-  // If already onboarded, skip to home
+  // If already onboarded, go to the intended destination (not always '/')
   useEffect(() => {
     if (!isLoading && user?.onboardingCompleted) {
-      router.replace('/')
+      router.replace(next)
     }
-  }, [user, isLoading, router])
+  }, [user, isLoading, router, next])
 
   // Fetch teams
   useEffect(() => {
@@ -577,12 +586,13 @@ export default function OnboardingPage() {
   }, [winner, scorer])
 
   const handleEnter = useCallback(() => {
-    // Full browser navigation — resets the React tree so AuthProvider
-    // re-mounts and reads the fresh JWT cookie (onboarding_completed: true).
-    // This avoids the race where the client-side gate fires with stale
-    // in-memory state before React commits the refreshUser() state update.
-    window.location.replace('/')
-  }, [])
+    // Full-page navigation resets the React tree so AuthProvider re-mounts
+    // and reads the fresh JWT cookie (onboarding_completed: true), avoiding
+    // the race where the gate fires with stale in-memory state.
+    // `next` carries the original invite URL (e.g. /join/ABCD1234) so the
+    // user lands on the right page instead of always being sent to '/'.
+    window.location.replace(next)
+  }, [next])
 
   // Guard: if not authenticated, don't render
   if (isLoading || !user) return null

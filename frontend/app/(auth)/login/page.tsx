@@ -32,9 +32,18 @@ export default function LoginPage() {
 
       const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
 
-      // New users go to onboarding; returning users go to their intended destination
-      router.push(user.onboarding_completed === false ? '/onboarding' : next)
-      router.refresh()
+      if (user.onboarding_completed === false) {
+        // Full-page navigation to /onboarding so AuthProvider re-mounts and reads
+        // the fresh session cookie — avoids the blank-page race where the onboarding
+        // component sees stale user=null from the pre-login AuthProvider state.
+        // The `next` param is forwarded so the invite (or any other destination)
+        // survives the entire onboarding flow.
+        window.location.replace(`/onboarding?next=${encodeURIComponent(next)}`)
+      } else {
+        // Returning user — soft navigation preserves scroll/state
+        router.push(next)
+        router.refresh()
+      }
     } catch (err) {
       setState('error')
       setErrMsg(err instanceof Error ? err.message : 'Something went wrong')

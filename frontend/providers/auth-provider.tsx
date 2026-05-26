@@ -33,13 +33,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setIsLoading(false))
   }, [])
 
-  // Onboarding gate: redirect first-time users before they see the app
+  // Onboarding gate: redirect first-time users before they see the app.
+  // The current pathname is forwarded as `next` so that after onboarding
+  // the user returns to exactly where they were (e.g. /join/ABCD1234).
   useEffect(() => {
     if (isLoading) return
     if (!user) return
     if (user.onboardingCompleted) return
     if (AUTH_ROUTES.some(r => pathname.startsWith(r))) return
-    router.replace('/onboarding')
+    router.replace(`/onboarding?next=${encodeURIComponent(pathname)}`)
   }, [user, isLoading, pathname, router])
 
   const refreshUser = useCallback(async () => {

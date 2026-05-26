@@ -78,7 +78,7 @@ export default async function ProfilePage() {
           <StatCell label="Exact"     value={s ? s.exactScores.toString()         : '—'} />
           <StatCell label="Correct"   value={s ? s.correctPredictions.toString()  : '—'} />
           <StatCell label="Predicted" value={s ? `${s.totalPredictions}/104`      : '—'} />
-          <StatCell label="Accuracy"  value={s ? `${s.exactScoreAccuracy}%`       : '—'} variant="gold" />
+          <StatCell label="Accuracy"  value={s ? `${s.exactScoreAccuracy ?? 0}%`   : '—'} />
         </div>
 
         {/* ── Tournament picks ──────────────────────────────── */}

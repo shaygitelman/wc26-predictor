@@ -29,7 +29,7 @@ export function LeagueCard({
       href={`/leagues/${league.id}`}
       className={cn(
         'flex items-center gap-3 rounded-2xl border px-4 py-3.5',
-        'hover:border-primary/30 active:scale-[0.985] transition-all',
+        'hover:border-primary/40 hover:shadow-primary-glow hover:scale-[1.005] active:scale-[0.985] transition-all duration-200',
         isDefault
           ? 'bg-primary/[0.06] border-primary/25 shadow-none'
           : 'bg-card border-border shadow-card',
@@ -61,8 +61,8 @@ export function LeagueCard({
 
       {userPoints != null && (
         <div className="text-right flex-shrink-0">
-          <p className="text-sm font-black tabular text-primary">{userPoints}</p>
-          <p className="text-xs text-muted-foreground">pts</p>
+          <p className="text-[18px] font-black tabular text-primary leading-none">{userPoints}</p>
+          <p className="text-2xs text-muted-foreground mt-0.5">pts</p>
         </div>
       )}
 

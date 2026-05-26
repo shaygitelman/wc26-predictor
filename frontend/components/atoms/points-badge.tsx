@@ -22,6 +22,7 @@ export function PointsBadge({ points, outcome = 'pending', className }: PointsBa
     <span className={cn(
       'inline-flex items-center px-2.5 py-1 rounded-full',
       'text-xs tabular',
+      outcome === 'exact' && 'animate-score-pop',
       color, bg, ring,
       className,
     )}>

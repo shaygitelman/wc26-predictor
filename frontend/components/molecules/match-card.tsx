@@ -25,12 +25,18 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
       href={`/matches/${match.id}`}
       className={cn(
         'relative block rounded-2xl border overflow-hidden transition-all duration-200',
-        'active:scale-[0.98]',
+        'active:scale-[0.97]',
         isLive
           ? 'bg-card border-status-live/30 shadow-live'
-          : needsPick
-            ? 'bg-card border-primary/25 hover:border-primary/50 hover:shadow-primary-glow'
-            : 'bg-card border-border hover:border-border/80 hover:shadow-raised',
+          : isFinished && hasPick
+            ? prediction?.outcome === 'exact'
+              ? 'bg-card border-gold/35'
+              : prediction?.outcome === 'wrong'
+                ? 'bg-card border-status-lost/25'
+                : 'bg-card border-status-partial/25'
+            : needsPick
+              ? 'bg-card border-primary/30 hover:border-primary/60 hover:shadow-primary-glow hover:scale-[1.01]'
+              : 'bg-card border-border hover:border-border/80 hover:shadow-raised',
         className,
       )}
     >
@@ -42,13 +48,24 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
         <div className="absolute inset-0 bg-live-atmosphere pointer-events-none" />
       )}
 
-      {/* ── Top accent strip ── */}
+      {/* ── Gold ambient tint for exact predictions ── */}
+      {isFinished && prediction?.outcome === 'exact' && (
+        <div className="absolute inset-0 bg-gradient-to-br from-gold/[0.06] to-transparent pointer-events-none" />
+      )}
+
+      {/* ── Top accent strip — outcome-aware ── */}
       {isLive ? (
         <div className="h-[4px] bg-gradient-to-r from-transparent via-status-live to-transparent" />
+      ) : isFinished && hasPick ? (
+        prediction?.outcome === 'exact' ? (
+          <div className="h-[3px] bg-gradient-to-r from-transparent via-gold to-transparent" />
+        ) : prediction?.outcome === 'wrong' ? (
+          <div className="h-[2px] bg-gradient-to-r from-transparent via-status-lost/55 to-transparent" />
+        ) : (
+          <div className="h-[2px] bg-gradient-to-r from-transparent via-status-partial/60 to-transparent" />
+        )
       ) : needsPick ? (
-        <div className="h-[3px] bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
-      ) : isFinished ? (
-        <div className="h-[2px] bg-gradient-to-r from-transparent via-border to-transparent" />
+        <div className="h-[3px] bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
       ) : null}
 
       {/* ── Round + Status header ── */}
@@ -140,7 +157,7 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
             </span>
           </span>
         ) : match.status === 'scheduled' ? (
-          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tracking-wide shadow-[0_2px_14px_rgba(136,117,255,0.40)]">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold tracking-wide shadow-[0_2px_20px_rgba(136,117,255,0.55)]">
             Predict →
           </span>
         ) : null}

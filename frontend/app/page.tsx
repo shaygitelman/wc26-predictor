@@ -78,15 +78,17 @@ export default async function HomePage() {
         {/* ── Profile strip ──────────────────────────────────── */}
         <Link
           href="/profile"
-          className="relative flex items-center gap-3 bg-card rounded-2xl border border-border px-4 py-3.5 hover:border-primary/30 transition-all overflow-hidden shadow-card"
+          className="relative flex items-center gap-3 bg-card rounded-2xl border border-border px-4 py-4 hover:border-primary/40 hover:shadow-primary-glow hover:scale-[1.01] transition-all duration-200 overflow-hidden shadow-card"
         >
-          {/* Subtle left-gradient brand accent */}
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/[0.06] via-transparent to-transparent pointer-events-none" />
+          {/* Stronger purple sweep from left */}
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/[0.13] via-primary/[0.03] to-transparent pointer-events-none" />
+          {/* Top highlight line */}
+          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-primary/30 to-transparent pointer-events-none" />
           <UserAvatar username={user?.username ?? '?'} avatarId={user?.avatarId} avatarUrl={user?.avatarUrl} size="md" />
           <div className="flex-1 min-w-0">
             <p className="font-bold text-[15px] text-foreground">{user?.username ?? '—'}</p>
             {s?.rankChange && s.rankChange > 0 ? (
-              <div className="flex items-center gap-1 text-xs font-semibold text-status-won">
+              <div className="inline-flex items-center gap-1 text-[11px] font-bold text-status-won bg-status-won/10 px-2 py-0.5 rounded-full">
                 <TrendingUp className="size-3" />
                 <span>+{s.rankChange} places today</span>
               </div>
@@ -94,14 +96,14 @@ export default async function HomePage() {
               <p className="text-xs text-muted-foreground">View your profile</p>
             )}
           </div>
-          <div className="flex items-center gap-4 flex-shrink-0">
-            <div className="text-center">
-              <p className="text-lg font-black text-primary tabular leading-none">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="text-right">
+              <p className="text-[22px] font-black text-primary tabular leading-none">
                 {s ? s.totalPoints : '—'}
               </p>
               <p className="text-2xs text-muted-foreground mt-0.5">pts</p>
             </div>
-<ChevronRight className="size-4 text-muted-foreground" />
+            <ChevronRight className="size-4 text-muted-foreground" />
           </div>
         </Link>
 
@@ -136,7 +138,9 @@ export default async function HomePage() {
 
         {/* ── Predict Now ────────────────────────────────────── */}
         {upcomingPred.length > 0 && (
-          <section>
+          <section className="relative">
+            <div className="absolute -inset-3 rounded-3xl bg-gradient-to-b from-primary/[0.05] to-transparent pointer-events-none" />
+            <div className="relative">
             <SectionHeader title="Predict Now" href="/matches" accent="primary" />
             <div className="flex flex-col gap-3">
               {upcomingPred.slice(0, 3).map(match => (
@@ -151,6 +155,7 @@ export default async function HomePage() {
                   <ChevronRight className="size-3.5" />
                 </Link>
               )}
+            </div>
             </div>
           </section>
         )}

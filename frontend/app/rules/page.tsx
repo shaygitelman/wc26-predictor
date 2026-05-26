@@ -144,7 +144,7 @@ export default function RulesPage() {
             />
             <RuleRow
               icon={<Zap className="size-4 text-muted-foreground flex-shrink-0" />}
-              text="Auto-picks earn outcome points only — no exact-score bonus"
+              text="Auto-picks are scored like any prediction — exact scores earn full points"
             />
             <RuleRow
               icon={<Users className="size-4 text-muted-foreground flex-shrink-0" />}

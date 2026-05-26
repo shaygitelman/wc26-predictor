@@ -6,7 +6,7 @@ Covers:
 - generate_auto_picks: inserts for users without a pick, skips those who have one
 - ON CONFLICT DO NOTHING: manual submission beats auto-pick (race safety)
 - Idempotency: double-call with auto_picks_generated flag
-- Fairness cap: auto-pick that would score "exact" is downgraded to "outcome"
+- Auto-pick scoring: scored identically to manual predictions (no cap)
 - Backstop: score_match fills auto-picks if auto_picks_generated is False
 - auto_picks_used counter increments correctly
 """
@@ -63,53 +63,50 @@ class TestDeterministicScore:
         assert isinstance(s1, tuple) and len(s1) == 2
 
 
-# ─── Fairness cap in score_match ────────────────────────────────
+# ─── Auto-pick scoring (identical to manual predictions) ─────────
 
-class TestFairnessCap:
-    """Auto-picks that hit the exact score must be downgraded to 'outcome'."""
+class TestAutoPickScoring:
+    """Auto-picks are scored exactly like normal predictions — no cap applied."""
 
     @pytest.mark.parametrize("round_code", ["group", "r32", "r16", "qf", "sf", "3rd", "final"])
-    def test_exact_downgraded_to_outcome_pts(self, round_code):
-        # Simulate the fairness cap logic from score_match
+    def test_exact_score_earns_full_exact_pts(self, round_code):
         outcome, points = compute_outcome(2, 1, 2, 1, round_code)
         assert outcome == "exact"
+        _, expected_exact = ROUND_POINTS[round_code]
+        assert points == expected_exact
 
-        # Apply cap
-        if outcome == "exact":
-            direction_pts, _ = ROUND_POINTS.get(round_code, ROUND_POINTS["group"])
-            outcome = "outcome"
-            points  = direction_pts
-
+    @pytest.mark.parametrize("round_code", ["group", "r32", "r16", "qf", "sf", "3rd", "final"])
+    def test_correct_outcome_earns_direction_pts(self, round_code):
+        outcome, points = compute_outcome(1, 0, 3, 0, round_code)
         assert outcome == "outcome"
         expected_direction, _ = ROUND_POINTS[round_code]
         assert points == expected_direction
 
     @pytest.mark.parametrize("round_code", ["group", "r32", "r16", "qf", "sf", "3rd", "final"])
-    def test_non_exact_outcomes_not_capped(self, round_code):
-        # "outcome" result is not affected by the cap
-        outcome, points = compute_outcome(1, 0, 3, 0, round_code)
-        assert outcome == "outcome"
-        # No cap applied — points stay the same
-        direction_pts, _ = ROUND_POINTS[round_code]
-        assert points == direction_pts
-
-    @pytest.mark.parametrize("round_code", ["group", "r32", "r16", "qf", "sf", "3rd", "final"])
-    def test_wrong_outcomes_not_affected(self, round_code):
+    def test_wrong_outcome_earns_zero(self, round_code):
         outcome, points = compute_outcome(1, 0, 0, 1, round_code)
         assert outcome == "wrong"
         assert points == 0
 
-    def test_auto_pick_never_earns_more_than_manual_exact(self):
-        # Auto-pick (capped at direction pts) < manual exact pick (exact pts)
-        _, exact_pts = ROUND_POINTS["group"]
-        direction_pts, _ = ROUND_POINTS["group"]
-        assert direction_pts < exact_pts
+    @pytest.mark.parametrize("round_code", ["group", "r32", "r16", "qf", "sf", "3rd", "final"])
+    def test_auto_pick_exact_equals_manual_exact(self, round_code):
+        # Auto-pick and manual pick produce identical outcomes — no special treatment
+        auto_outcome, auto_pts   = compute_outcome(2, 1, 2, 1, round_code)
+        manual_outcome, manual_pts = compute_outcome(2, 1, 2, 1, round_code)
+        assert auto_outcome == manual_outcome == "exact"
+        assert auto_pts == manual_pts
 
-    def test_cap_preserves_manual_exact_advantage_all_rounds(self):
-        for round_code, (direction_pts, exact_pts) in ROUND_POINTS.items():
-            assert direction_pts < exact_pts, (
-                f"{round_code}: direction_pts({direction_pts}) should be < exact_pts({exact_pts})"
-            )
+    def test_no_cap_logic_in_scorer(self):
+        # Confirm scorer.py does not import ROUND_POINTS (cap was removed)
+        import ast, pathlib
+        src = pathlib.Path(__file__).parent.parent / "core" / "scorer.py"
+        tree = ast.parse(src.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = [a.name for a in node.names]
+                assert "ROUND_POINTS" not in names, (
+                    "ROUND_POINTS should no longer be imported in scorer.py — cap was removed"
+                )
 
 
 # ─── Race condition: manual submission beats auto-pick ───────────

@@ -21,4 +21,5 @@ export interface TournamentPick {
   scorer?:      ScorerInfo
   submittedAt?: string
   isLocked:     boolean
+  lockTime?:    string  // ISO-8601 UTC — first match kickoff
 }

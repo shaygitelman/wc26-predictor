@@ -2,20 +2,20 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import case, delete, func, select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import get_db
 from core.scorer import score_match
-from core.wc2026_config import APIFOOTBALL_ID_TO_CODE, CODE_TO_FLAG, CODE_TO_GROUP, CODE_TO_NAME, GROUPS
+from core.wc2026_config import APIFOOTBALL_ID_TO_CODE, GROUPS
 from models.match import Match
 from models.sync_log import SyncLog
 from models.team import Team
 from providers.apifootball import ApiFootballProvider
 from schemas.match import MatchOut
-from services.sync import SyncResult, SyncService
+from services.sync import SyncService
 from services.wc2026_seed import WC2026SeedService
 
 router = APIRouter(prefix="/admin", tags=["admin"])

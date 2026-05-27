@@ -9,6 +9,7 @@ import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { useAuth } from '@/providers/auth-provider'
 import type { League, LeagueStanding } from '@/types/league'
+import { trackInviteLinkCopied } from '@/lib/analytics'
 
 // Lazy-load the QR library (~80KB) — only downloaded when the modal opens.
 const QRCodeSVG = dynamic(
@@ -210,7 +211,7 @@ export function LeagueDetailClient({
 
   const inviteUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/join/${league.inviteCode}`
-    : `https://matchpoint26.vercel.app/join/${league.inviteCode}`
+    : `https://wc26-predictor-xi.vercel.app/join/${league.inviteCode}`
   const shareText = `Join my MatchPoint26 league:\n${league.name} ⚽\n\n${inviteUrl}`
 
   const handleShare = async () => {
@@ -230,6 +231,7 @@ export function LeagueDetailClient({
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(inviteUrl)
+      trackInviteLinkCopied({ leagueId: league.id })
       setCopyState('copied')
       showToast('Invite link copied!', 'success')
       setTimeout(() => setCopyState('idle'), 2500)
@@ -367,7 +369,8 @@ export function LeagueDetailClient({
               <div className="flex items-center gap-2 mb-3">
                 <Link2 className="size-3.5 text-muted-foreground flex-shrink-0" />
                 <span className="text-xs text-muted-foreground font-mono truncate">
-                  matchpoint26.vercel.app/join/<span className="text-primary font-bold">{league.inviteCode}</span>
+                  {inviteUrl.replace(/^https?:\/\//, '').replace(league.inviteCode, '')}
+                  <span className="text-primary font-bold">{league.inviteCode}</span>
                 </span>
               </div>
 

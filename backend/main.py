@@ -2,14 +2,81 @@ import logging
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.database import get_db
 from routers import admin, auth, groups, matches, players, predictions, leagues, teams, tournament, users
 
 log = logging.getLogger(__name__)
+
+
+# ── Sentry — initialise before anything else so every exception is captured ───
+
+def _init_sentry() -> None:
+    if not settings.sentry_dsn:
+        log.info("Sentry DSN not configured — error monitoring disabled")
+        return
+
+    import logging as _logging
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi  import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
+    from sentry_sdk.integrations.asyncio  import AsyncioIntegration
+    from sentry_sdk.integrations.logging  import LoggingIntegration
+
+    def _before_send(event: dict, hint: dict) -> dict | None:
+        """Strip auth tokens and cookies; never send PII to Sentry."""
+        req = event.get("request", {})
+        headers: dict = req.get("headers", {})
+        for sensitive in ("authorization", "cookie", "x-session-token", "x-api-key"):
+            headers.pop(sensitive, None)
+        # Scrub password / secret fields from any captured data
+        for frame in event.get("exception", {}).get("values", []):
+            for sf in frame.get("stacktrace", {}).get("frames", []):
+                for key in list(sf.get("vars", {}).keys()):
+                    if any(w in key.lower() for w in ("password", "secret", "token", "jwt")):
+                        sf["vars"][key] = "[Filtered]"
+        return event
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        release=settings.sentry_release or None,
+
+        # Errors: 100% capture; traces: light sampling to control cost
+        traces_sample_rate=0.05 if settings.is_production else 1.0,
+
+        integrations=[
+            # FastAPI + Starlette: captures request context, route, status code
+            StarletteIntegration(transaction_style="endpoint"),
+            FastApiIntegration(transaction_style="endpoint"),
+            # SQLAlchemy: captures DB errors with query context
+            SqlAlchemyIntegration(),
+            # asyncio: captures unhandled exceptions in background tasks
+            AsyncioIntegration(),
+            # Logging: WARNING → breadcrumb, ERROR → Sentry event
+            LoggingIntegration(
+                level=_logging.WARNING,
+                event_level=_logging.ERROR,
+            ),
+        ],
+
+        before_send=_before_send,
+        send_default_pii=False,   # never auto-attach cookies / IP addresses
+    )
+    log.info(
+        "Sentry initialised (env=%s, release=%s)",
+        settings.app_env, settings.sentry_release or "unset",
+    )
+
+
+_init_sentry()
+
 
 _db_url = settings.database_url
 _db_host = _db_url.split("@")[-1].split(":")[0] if "@" in _db_url else "UNKNOWN"
@@ -132,5 +199,26 @@ app.include_router(admin.router)
 
 
 @app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
+async def health(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Liveness + readiness check.
+
+    Runs a lightweight DB ping so Railway's health check actually validates
+    DB connectivity. Returns degraded (503) rather than a false-positive OK
+    when the database is unreachable.
+
+    Timeout: the DB session inherits the engine's pool_pre_ping and
+    pool_recycle settings. A hung connection will be recycled automatically;
+    this endpoint will never block indefinitely.
+    """
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "ok"}
+    except Exception as exc:
+        log.error("[Health] DB ping failed: %s", exc)
+        from fastapi import Response
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "db": "unreachable"},
+        )

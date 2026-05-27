@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { LeagueCard } from '@/components/molecules/league-card'
 import { SectionHeader } from '@/components/molecules/section-header'
 import type { League } from '@/types/league'
+import { trackLeagueCreated, trackLeagueJoined } from '@/lib/analytics'
 
 type SheetMode   = 'create' | 'join' | null
 type SheetStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -64,6 +65,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
       const data = await res.json()
       if (!res.ok) throw new Error(data?.detail ?? data?.error ?? 'Failed to create league')
       const newLeague: League = data
+      trackLeagueCreated()
       setLeagues(prev => sortLeagues([newLeague, ...prev]))
       closeSheet()
       router.push(`/leagues/${newLeague.id}`)
@@ -90,6 +92,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
         throw new Error(data?.detail ?? data?.error ?? 'Failed to join league')
       }
       const joined: League = data
+      trackLeagueJoined({ source: 'code_entry' })
       setLeagues(prev => prev.some(l => l.id === joined.id) ? prev : sortLeagues([joined, ...prev]))
       closeSheet()
       router.push(`/leagues/${joined.id}`)

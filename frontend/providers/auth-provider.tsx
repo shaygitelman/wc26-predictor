@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useState, useCallback, useMemo } 
 import { useRouter, usePathname } from 'next/navigation'
 import type { AuthUser } from '@/types/auth'
 import { AUTH_ROUTES } from '@/lib/constants'
+import { identifyUser, resetIdentity } from '@/lib/analytics'
+import * as Sentry from '@sentry/nextjs'
 
 interface AuthContextValue {
   user:        AuthUser | null
@@ -32,10 +34,27 @@ export function AuthProvider({
   const pathname = usePathname()
 
   useEffect(() => {
-    if (initialUser !== undefined) return  // SSR already provided the user
+    if (initialUser !== undefined) {
+      if (initialUser) {
+        identifyUser(initialUser.sub, {
+          email:    initialUser.email,
+          username: initialUser.username ?? '',
+          name:     initialUser.name,
+        })
+        Sentry.setUser({ id: initialUser.sub, username: initialUser.username ?? undefined })
+      }
+      return
+    }
     fetch('/api/auth/me')
       .then(r => r.ok ? r.json() : null)
-      .then(data => setUser(data?.user ?? null))
+      .then(data => {
+        const u = data?.user ?? null
+        setUser(u)
+        if (u) {
+          identifyUser(u.sub, { email: u.email, username: u.username ?? '', name: u.name })
+          Sentry.setUser({ id: u.sub, username: u.username ?? undefined })
+        }
+      })
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false))
   }, [])
@@ -58,6 +77,8 @@ export function AuthProvider({
 
   const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
+    resetIdentity()
+    Sentry.setUser(null)
     setUser(null)
     router.push('/login')
     router.refresh()

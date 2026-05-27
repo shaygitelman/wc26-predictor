@@ -555,12 +555,28 @@ class SyncService:
         from core.scorer import score_match as do_score
         from services.auto_pick import generate_auto_picks
 
-        log = await self._start_log("live", db)
+        # Skip external API call when no matches are live or starting within 5 minutes.
+        # Keeps API-Football call count well within plan limits during non-match windows.
+        _now = datetime.now(timezone.utc)
+        has_active = await db.scalar(
+            select(Match.id).where(
+                (Match.status == "live")
+                | (
+                    (Match.status == "scheduled")
+                    & (Match.scheduled_at <= _now + timedelta(minutes=5))
+                )
+            ).limit(1)
+        )
+        if not has_active:
+            log.debug("[Sync/live] skip — no live or imminent matches in DB")
+            return SyncResult(status="skipped", entity_type="live", records_affected=0)
+
+        _log_entry = await self._start_log("live", db)
 
         try:
             fixtures = await self.provider.fetch_live(self.league_id)
         except Exception as exc:
-            return await self._fail_log(log, str(exc), db)
+            return await self._fail_log(_log_entry, str(exc), db)
 
         count  = 0
         errors: list[str] = []
@@ -636,7 +652,7 @@ class SyncService:
                 errors.append(f"{fx.external_id}: {exc}")
 
         await db.commit()
-        return await self._finish_log(log, count, "\n".join(errors) if errors else None, db)
+        return await self._finish_log(_log_entry, count, "\n".join(errors) if errors else None, db)
 
     # ── set_groups_manual ─────────────────────────────────────────
 

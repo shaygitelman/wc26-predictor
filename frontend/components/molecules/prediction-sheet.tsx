@@ -7,6 +7,7 @@ import { ROUND_POINTS } from '@/lib/constants'
 import { TeamFlag } from '@/components/atoms/team-flag'
 import type { Match } from '@/types/match'
 import type { Prediction } from '@/types/prediction'
+import { trackPredictionSubmitted } from '@/lib/analytics'
 
 interface PredictionSheetProps {
   match: Match
@@ -49,6 +50,13 @@ export function PredictionSheet({
       })
       if (!res.ok) throw new Error(await res.text())
       const prediction: Prediction = await res.json()
+      trackPredictionSubmitted({
+        matchId:   match.id,
+        round:     match.round,
+        isNew:     !hasExisting,
+        homeScore,
+        awayScore,
+      })
       onSaved?.(prediction)
       setStatus('saved')
       setTimeout(() => { setIsOpen(false); setStatus('idle') }, 900)

@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Check, ChevronRight, Loader2 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { cn } from '@/lib/utils'
+import {
+  trackOnboardingStarted,
+  trackOnboardingStep,
+  trackOnboardingCompleted,
+} from '@/lib/analytics'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +91,7 @@ function ProgressDots({ step, total }: { step: number; total: number }) {
 
 // ─── Step 0: Welcome ──────────────────────────────────────────────────────────
 
-function WelcomeStep({ onNext }: { onNext: () => void }) {
+function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-8">
       {/* Glow ball */}
@@ -120,7 +125,9 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           <ChevronRight className="size-5" strokeWidth={2.5} />
         </button>
         <p className="text-2xs text-muted-foreground/50 mt-3">2 quick picks · takes under a minute</p>
-        <p className="text-2xs text-muted-foreground/40 mt-1">You can change your picks anytime before the tournament starts.</p>
+        <p className="text-2xs text-muted-foreground/40 mt-1">
+          {isLocked ? 'The tournament has started — your picks lock on submission.' : 'You can change your picks anytime before the tournament starts.'}
+        </p>
       </div>
     </div>
   )
@@ -133,11 +140,13 @@ function WinnerStep({
   selected,
   onSelect,
   onNext,
+  isLocked,
 }: {
   teams:    Team[]
   selected: Team | null
   onSelect: (t: Team) => void
   onNext:   () => void
+  isLocked?: boolean
 }) {
   const [search, setSearch] = useState('')
 
@@ -226,7 +235,9 @@ function WinnerStep({
             </>
           ) : 'Pick a team to continue'}
         </button>
-        <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">You can edit this pick before the tournament lock date.</p>
+        <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">
+          {isLocked ? 'The tournament has started — your picks will be locked after submission.' : 'You can edit this pick before the tournament lock date.'}
+        </p>
       </div>
     </div>
   )
@@ -276,11 +287,13 @@ function ScorerStep({
   onSelect,
   onSubmit,
   submitting,
+  isLocked,
 }: {
   selected:   Player | null
   onSelect:   (p: Player) => void
   onSubmit:   () => void
   submitting: boolean
+  isLocked?:  boolean
 }) {
   const [search,    setSearch]    = useState('')
   const [players,   setPlayers]   = useState<Player[]>([])
@@ -383,7 +396,9 @@ function ScorerStep({
             <>{selected.name} — Save My Picks</>
           ) : 'Pick a player to continue'}
         </button>
-        <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">You can edit this pick before the tournament lock date.</p>
+        <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">
+          {isLocked ? 'The tournament has started — your picks will be locked after submission.' : 'You can edit this pick before the tournament lock date.'}
+        </p>
       </div>
     </div>
   )
@@ -547,13 +562,24 @@ export default function OnboardingPage() {
   const searchParams = useSearchParams()
   const next         = safeNext(searchParams.get('next'))
 
-  const [step,       setStep]       = useState(0)
-  const [teams,      setTeams]      = useState<Team[]>([])
-  const [winner,     setWinner]     = useState<Team | null>(null)
-  const [scorer,     setScorer]     = useState<Player | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [joining,    setJoining]    = useState(false)
-  const [error,      setError]      = useState<string | null>(null)
+  const [step,          setStep]          = useState(0)
+  const [teams,         setTeams]         = useState<Team[]>([])
+  const [winner,        setWinner]        = useState<Team | null>(null)
+  const [scorer,        setScorer]        = useState<Player | null>(null)
+  const [submitting,    setSubmitting]    = useState(false)
+  const [joining,       setJoining]       = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [isLocked,      setIsLocked]      = useState(false)
+
+  useEffect(() => { trackOnboardingStarted() }, [])
+
+  const goToStep = useCallback((s: number) => {
+    setStep(s)
+    const names: Record<number, 'welcome' | 'winner' | 'scorer' | 'celebration'> = {
+      0: 'welcome', 1: 'winner', 2: 'scorer', 3: 'celebration',
+    }
+    if (names[s]) trackOnboardingStep(names[s])
+  }, [])
 
   // If already onboarded, go to the intended destination (not always '/')
   useEffect(() => {
@@ -562,12 +588,16 @@ export default function OnboardingPage() {
     }
   }, [user, isLoading, router, next])
 
-  // Fetch teams
+  // Fetch teams + lock status in parallel
   useEffect(() => {
     fetch('/api/tournament/teams')
       .then(r => r.ok ? r.json() : [])
       .then(setTeams)
       .catch(() => setTeams([]))
+    fetch('/api/tournament/lock-status')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { isLocked?: boolean } | null) => { if (d?.isLocked) setIsLocked(true) })
+      .catch(() => {})
   }, [])
 
   const handleSubmit = useCallback(async () => {
@@ -585,7 +615,8 @@ export default function OnboardingPage() {
         setError(data?.detail ?? 'Something went wrong. Please try again.')
         return
       }
-      setStep(3)
+      trackOnboardingCompleted({ pickedWinner: !!winner, pickedScorer: !!scorer, hadInvite: /^\/join\//.test(next) })
+      goToStep(3)
     } catch {
       setError('Network error. Please try again.')
     } finally {
@@ -632,14 +663,15 @@ export default function OnboardingPage() {
       )}
 
       <div key={step} className="animate-in fade-in duration-300">
-        {step === 0 && <WelcomeStep onNext={() => setStep(1)} />}
+        {step === 0 && <WelcomeStep onNext={() => goToStep(1)} isLocked={isLocked} />}
 
         {step === 1 && (
           <WinnerStep
             teams={teams}
             selected={winner}
             onSelect={setWinner}
-            onNext={() => setStep(2)}
+            onNext={() => goToStep(2)}
+            isLocked={isLocked}
           />
         )}
 
@@ -649,6 +681,7 @@ export default function OnboardingPage() {
             onSelect={setScorer}
             onSubmit={handleSubmit}
             submitting={submitting}
+            isLocked={isLocked}
           />
         )}
 

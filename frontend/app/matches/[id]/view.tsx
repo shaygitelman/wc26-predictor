@@ -17,6 +17,7 @@ import { ROUND_POINTS } from '@/lib/constants'
 import { ROUND_LABELS } from '@/types/match'
 import type { Match } from '@/types/match'
 import type { Prediction } from '@/types/prediction'
+import { trackPredictionSubmitted } from '@/lib/analytics'
 
 interface MatchDetailViewProps {
   match: Match
@@ -254,6 +255,13 @@ function InlinePredictionHero({
       })
       if (!res.ok) throw new Error(await res.text())
       const prediction: Prediction = await res.json()
+      trackPredictionSubmitted({
+        matchId:   match.id,
+        round:     match.round,
+        isNew:     true,
+        homeScore: home,
+        awayScore: away,
+      })
       setStatus('saved')
       setTimeout(() => onSaved(prediction), 800)
     } catch (e) {

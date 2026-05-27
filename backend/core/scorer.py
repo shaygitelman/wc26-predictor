@@ -167,22 +167,33 @@ async def score_match(
 
 async def _rerank_league(league_id: str, db: AsyncSession) -> None:
     """
-    Assign sequential rank to all members of a league, ordered by
-    total_points DESC then joined_at ASC (earlier join wins ties).
-    ROW_NUMBER produces 1,2,3,… (no gaps on ties — consistent with
-    what the standings endpoint shows via enumerate()).
+    Assign sequential rank to all members of a league using the published
+    tiebreaker order:
+      1. total_points DESC
+      2. exact_scores DESC
+      3. correct_predictions DESC
+      4. joined_at ASC  (earlier join wins remaining ties)
+
+    ROW_NUMBER produces 1,2,3,… with no gaps — consistent with what the
+    standings endpoint shows via enumerate(). Requires a JOIN to users for
+    the score-based criteria (those columns live on the users table).
     """
     await db.execute(
         text("""
             UPDATE league_members lm
             SET    rank = ranked.rk
             FROM (
-                SELECT id,
+                SELECT lm2.id,
                        ROW_NUMBER() OVER (
-                           ORDER BY total_points DESC, joined_at ASC
+                           ORDER BY
+                               lm2.total_points      DESC,
+                               u.exact_scores        DESC,
+                               u.correct_predictions DESC,
+                               lm2.joined_at         ASC
                        ) AS rk
-                FROM   league_members
-                WHERE  league_id = :league_id
+                FROM   league_members lm2
+                JOIN   users u ON u.id = lm2.user_id
+                WHERE  lm2.league_id = :league_id
             ) ranked
             WHERE lm.id = ranked.id
         """),

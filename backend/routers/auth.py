@@ -1,13 +1,13 @@
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.security import create_access_token
-from models.league import League, LeagueMember
+from models.league import LeagueMember
 from models.user import User
 from schemas.auth import AuthResponse, GoogleAuthRequest, UserOut
 
@@ -75,10 +75,14 @@ async def google_auth(
         except Exception as exc:
             log.warning("Could not auto-join default league for new user: %s", exc)
     else:
-        # ── Returning user — refresh mutable fields ───────────────
+        # ── Returning user — only sync fields the user hasn't customised ──
+        # name: always sync from Google (display name changes are benign).
+        # avatar_url: only sync if the user has no custom avatar_id set.
+        #   - avatar_id set → user chose a custom emoji avatar → never overwrite
+        #   - avatar_id None → user relies on Google profile picture → keep fresh
         if payload.name:
             user.name = payload.name
-        if payload.avatar_url:
+        if payload.avatar_url and user.avatar_id is None:
             user.avatar_url = payload.avatar_url
 
     user.update_last_login()

@@ -4,6 +4,7 @@ import string
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,9 +37,8 @@ async def _get_default_league_id(db: AsyncSession) -> str | None:
 async def _ensure_default_membership(user_id: str, user_points: int, db: AsyncSession) -> None:
     """Idempotently enroll the user in the global default league.
 
-    Called before every /leagues/me response so no user ever misses the
-    global league regardless of migration timing or backfill failures.
-    Safe to call concurrently — the unique constraint prevents duplicate rows.
+    Uses ON CONFLICT DO NOTHING so concurrent calls are safe — the DB
+    unique constraint guarantees no duplicate rows regardless of race timing.
     """
     try:
         default_id = await _get_default_league_id(db)
@@ -46,26 +46,20 @@ async def _ensure_default_membership(user_id: str, user_points: int, db: AsyncSe
             log.warning("Default league not found — bootstrap may not have run yet")
             return
 
-        # Short-circuit if already a member
-        already = await db.scalar(
-            select(LeagueMember.id).where(
-                LeagueMember.league_id == default_id,
-                LeagueMember.user_id   == user_id,
+        await db.execute(
+            pg_insert(LeagueMember)
+            .values(
+                league_id    = default_id,
+                user_id      = user_id,
+                total_points = user_points,
             )
+            .on_conflict_do_nothing(constraint="uq_league_members_league_user")
         )
-        if already:
-            return
-
-        db.add(LeagueMember(
-            league_id    = default_id,
-            user_id      = user_id,
-            total_points = user_points,
-        ))
         await db.commit()
-        log.info("Auto-joined user %s to the global default league %s", user_id, default_id)
+        log.debug("Ensured default league membership for user %s", user_id)
     except Exception as exc:
         await db.rollback()
-        log.warning("Could not auto-join user %s to default league: %s", user_id, exc)
+        log.warning("Could not ensure default league membership for user %s: %s", user_id, exc)
 
 
 @router.get("/me", response_model=list[LeagueOut])
@@ -126,15 +120,20 @@ async def join_league(
     if not league:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid invite code")
 
-    already = await db.scalar(
-        select(LeagueMember).where(
-            LeagueMember.league_id == league.id,
-            LeagueMember.user_id   == user.id,
+    # ON CONFLICT DO NOTHING is race-safe — concurrent joins for the same
+    # user+league are silently deduplicated by the DB unique constraint
+    # (uq_league_members_league_user), so we never get duplicate rows even
+    # under concurrent requests.
+    await db.execute(
+        pg_insert(LeagueMember)
+        .values(
+            league_id    = league.id,
+            user_id      = user.id,
+            total_points = user.total_points,
         )
+        .on_conflict_do_nothing(constraint="uq_league_members_league_user")
     )
-    if not already:
-        db.add(LeagueMember(league_id=league.id, user_id=user.id, total_points=user.total_points))
-        await db.commit()
+    await db.commit()
 
     count = await db.scalar(
         select(func.count()).where(LeagueMember.league_id == league.id)
@@ -195,7 +194,12 @@ async def league_standings(
         .where(LeagueMember.league_id == league_id)
         .where(~User.email.ilike('%@test.wc26'))
         .where(~User.google_id.ilike('google-test-%'))
-        .order_by(LeagueMember.total_points.desc(), LeagueMember.joined_at)
+        .order_by(
+            LeagueMember.total_points.desc(),
+            User.exact_scores.desc(),
+            User.correct_predictions.desc(),
+            LeagueMember.joined_at.asc(),
+        )
     )
     rows = result.all()
     return [

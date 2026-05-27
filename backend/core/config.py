@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # API-Football (api-sports.io)
     apifootball_key: str = ""
 
+    # Sentry error monitoring
+    sentry_dsn:     str = ""
+    sentry_release: str = ""   # injected by CI (e.g. RAILWAY_GIT_COMMIT_SHA)
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

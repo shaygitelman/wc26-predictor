@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Users, Trophy, Loader2, Share2 } from 'lucide-react'
+import { trackLeagueJoined } from '@/lib/analytics'
 
 interface Props {
   name:            string
@@ -30,6 +31,7 @@ export function JoinClient({ name, memberCount, creatorUsername, inviteCode }: P
       const data = await res.json()
 
       if (res.ok) {
+        trackLeagueJoined({ source: 'invite_link' })
         router.push(`/leagues/${data.id}`)
         return
       }
@@ -100,7 +102,7 @@ export function JoinClient({ name, memberCount, creatorUsername, inviteCode }: P
           <div className="flex items-center gap-1.5 justify-center">
             <Share2 className="size-3 text-muted-foreground/50 flex-shrink-0" />
             <p className="text-2xs text-muted-foreground/60 font-mono truncate">
-              {inviteUrl || `matchpoint26.vercel.app/join/${inviteCode}`}
+              {inviteUrl || `wc26-predictor-xi.vercel.app/join/${inviteCode}`}
             </p>
           </div>
         </div>

@@ -63,18 +63,6 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
 
         setFacts(d)
         setStatus('ready')
-        console.debug(`[MatchFacts] ${matchId} — squadConfidence=${d.squadConfidence}`, {
-          home: {
-            injured:   d.squad.home.injured.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
-            suspended: d.squad.home.suspended.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
-            doubtful:  d.squad.home.doubtful.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
-          },
-          away: {
-            injured:   d.squad.away.injured.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
-            suspended: d.squad.away.suspended.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
-            doubtful:  d.squad.away.doubtful.map(p => ({ name: p.name, validated: p.validated, source: p.source })),
-          },
-        })
       })
       .catch(() => setStatus('error'))
       .finally(() => clearTimeout(timer))
@@ -308,13 +296,6 @@ function TeamSquadBlock({
       )
     }
     return ok
-  })
-
-  // Log each validated player being rendered so the source is always traceable
-  safeAbsent.forEach(p => {
-    console.debug(
-      `[SquadBlock:${code}] rendering player name=${JSON.stringify(p.name)} status=${p.status} validated=${p.validated} source=${JSON.stringify(p.source)}`,
-    )
   })
 
   return (

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, Lock, Search, X, Star } from 'lucide-react'
+import { Check, Lock, Search, X, Star, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { TeamFlag } from '@/components/atoms/team-flag'
@@ -10,6 +10,49 @@ import { TOURNAMENT_BONUS } from '@/lib/constants'
 import type { TournamentPick } from '@/types/tournament'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+// ─── Lock banner helpers ──────────────────────────────────────────────────────
+
+function formatLockDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: 'long', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    })
+  } catch {
+    return iso
+  }
+}
+
+/** Returns a human-readable countdown string, or null if >= 7 days or already past. */
+function useLockCountdown(lockTimeIso: string | undefined): string | null {
+  const [countdown, setCountdown] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!lockTimeIso) return
+    const lockMs = new Date(lockTimeIso).getTime()
+
+    function tick() {
+      const diff = lockMs - Date.now()
+      if (diff <= 0 || diff > 7 * 24 * 60 * 60 * 1000) {
+        setCountdown(null)
+        return
+      }
+      const days    = Math.floor(diff / 86_400_000)
+      const hours   = Math.floor((diff % 86_400_000) / 3_600_000)
+      const minutes = Math.floor((diff % 3_600_000) / 60_000)
+      if (days > 0)   setCountdown(`${days}d ${hours}h`)
+      else if (hours > 0) setCountdown(`${hours}h ${minutes}m`)
+      else setCountdown(`${minutes}m`)
+    }
+
+    tick()
+    const id = setInterval(tick, 30_000)
+    return () => clearInterval(id)
+  }, [lockTimeIso])
+
+  return countdown
+}
 
 const POSITION_COLORS: Record<string, string> = {
   FWD: 'bg-orange-500/15 text-orange-500',
@@ -28,6 +71,7 @@ export default function TournamentPage() {
   const [winnerId,       setWinnerId]       = useState<string | undefined>()
   const [scorerId,       setScorerId]       = useState<string | undefined>()
   const [isLocked,       setIsLocked]       = useState(false)
+  const [lockTime,       setLockTime]       = useState<string | undefined>()
   const [loading,        setLoading]        = useState(true)
   const [saveState,      setSaveState]      = useState<SaveState>('idle')
   const [saveError,      setSaveError]      = useState('')
@@ -54,6 +98,7 @@ export default function TournamentPage() {
         setWinnerId(pick.winnerId ?? undefined)
         setScorerId(pick.topScorerId ?? undefined)
         setIsLocked(pick.isLocked)
+        setLockTime(pick.lockTime ?? undefined)
 
         // Hydrate selected player from embedded scorer data in pick response
         if (pick.scorer) {
@@ -107,7 +152,8 @@ export default function TournamentPage() {
     setSearchResults([])
   }
 
-  const canSave = !isLocked && (winnerId !== undefined || scorerId !== undefined)
+  const countdown = useLockCountdown(isLocked ? undefined : lockTime)
+  const canSave   = !isLocked && (winnerId !== undefined || scorerId !== undefined)
 
   async function handleSave() {
     if (!canSave || saveState !== 'idle') return
@@ -127,6 +173,7 @@ export default function TournamentPage() {
       setWinnerId(data.winnerId ?? undefined)
       setScorerId(data.topScorerId ?? undefined)
       setIsLocked(data.isLocked)
+      setLockTime(data.lockTime ?? undefined)
       if (data.scorer) {
         setSelectedPlayer({
           id:            data.scorer.id,
@@ -167,17 +214,30 @@ export default function TournamentPage() {
 
       <div className="flex flex-col gap-6 p-4">
 
-        {isLocked && (
-          <div className="flex items-center gap-3 bg-surface-elevated rounded-xl border border-border p-4">
-            <Lock className="size-5 text-muted-foreground flex-shrink-0" />
+        {/* ── Lock banners ──────────────────────────────── */}
+        {isLocked ? (
+          <div className="flex items-start gap-3 bg-surface-elevated rounded-xl border border-border p-4">
+            <Lock className="size-5 text-muted-foreground flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-bold text-foreground">Picks are locked</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Tournament predictions locked at kickoff.
+                {lockTime
+                  ? `Locked since ${formatLockDate(lockTime)}`
+                  : 'Tournament predictions locked at kickoff.'}
               </p>
             </div>
           </div>
-        )}
+        ) : countdown ? (
+          <div className="flex items-center gap-3 bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
+            <Clock className="size-5 text-amber-500 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Picks lock soon</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {`${countdown} until predictions are locked — edit before kickoff!`}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Points callout */}
         <div className="flex gap-3">
@@ -331,7 +391,11 @@ export default function TournamentPage() {
         )}
 
         <p className="text-center text-xs text-muted-foreground -mt-2">
-          Picks lock when the first match kicks off · One submission only
+          {isLocked
+            ? 'Picks are permanently locked — final selections only'
+            : lockTime
+              ? `Picks lock on ${formatLockDate(lockTime)}`
+              : 'Picks lock when the first match kicks off'}
         </p>
       </div>
     </div>

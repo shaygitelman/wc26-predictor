@@ -110,8 +110,29 @@ async def my_stats(
     db:   AsyncSession = Depends(get_db),
 ) -> UserStatsOut:
     rank, total_users, pred_count, completed_count = await asyncio.gather(
+        # Count users who rank strictly AHEAD of me under the published 4-criteria
+        # tiebreaker: points → exact scores → correct predictions → registration date.
+        # A user is ahead if ANY of the first three criteria are strictly better,
+        # or if all three tie and they registered earlier.
         db.scalar(select(func.count()).where(
-            User.total_points > user.total_points,
+            (
+                (User.total_points > user.total_points) |
+                (
+                    (User.total_points == user.total_points) &
+                    (User.exact_scores > user.exact_scores)
+                ) |
+                (
+                    (User.total_points == user.total_points) &
+                    (User.exact_scores == user.exact_scores) &
+                    (User.correct_predictions > user.correct_predictions)
+                ) |
+                (
+                    (User.total_points == user.total_points) &
+                    (User.exact_scores == user.exact_scores) &
+                    (User.correct_predictions == user.correct_predictions) &
+                    (User.created_at < user.created_at)
+                )
+            ),
             ~User.email.ilike('%@test.wc26'),
             ~User.google_id.ilike('google-test-%'),
         )),
@@ -153,7 +174,12 @@ async def leaderboard(
                 ~User.email.ilike('%@test.wc26'),
                 ~User.google_id.ilike('google-test-%'),
             )
-            .order_by(User.total_points.desc(), User.created_at.asc())
+            .order_by(
+                User.total_points.desc(),
+                User.exact_scores.desc(),
+                User.correct_predictions.desc(),
+                User.created_at.asc(),
+            )
         )
     ).scalars().all()
 

@@ -94,12 +94,25 @@ function ProgressDots({ step, total }: { step: number; total: number }) {
 function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-8">
-      {/* Glow ball */}
-      <div className="relative">
-        <div className="absolute inset-0 rounded-full bg-primary/30 blur-3xl scale-150" />
-        <div className="relative text-[88px] leading-none select-none animate-in zoom-in-50 duration-700">
-          ⚽
-        </div>
+      {/* Brand icon */}
+      <div className="relative flex items-center justify-center animate-in zoom-in-50 duration-700">
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            width: 190, height: 190,
+            background: 'radial-gradient(ellipse at center, rgba(240,168,12,0.2) 0%, transparent 65%)',
+          }}
+          aria-hidden="true"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/apple-icon.png"
+          alt="MatchPoint26"
+          width={96}
+          height={96}
+          className="relative rounded-[22%]"
+          style={{ filter: 'drop-shadow(0 4px 24px rgba(240,168,12,0.38))' }}
+        />
       </div>
 
       <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">

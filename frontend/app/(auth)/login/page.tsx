@@ -49,102 +49,72 @@ export default function LoginPage() {
   })
 
   return (
-    <div className="w-full max-w-sm flex flex-col items-center gap-10">
+    <div className="w-full max-w-sm flex flex-col items-center gap-9">
 
       {/* ── Brand hero ──────────────────────────────────── */}
-      <div className="flex flex-col items-center gap-7 pt-2">
-
-        {/* Trophy mark */}
-        <div
-          className="relative flex items-center justify-center animate-enter-up"
-          style={{ animationFillMode: 'backwards' }}
-        >
-          {/* Gold glow behind trophy */}
+      <div
+        className="flex flex-col items-center gap-6 pt-2 animate-enter-up"
+        style={{ animationFillMode: 'backwards' }}
+      >
+        {/* App icon with gold glow */}
+        <div className="relative flex items-center justify-center">
           <div
             className="absolute animate-glow-breathe pointer-events-none"
             style={{
-              width: 140, height: 140,
-              background: 'radial-gradient(ellipse at center, rgba(240,168,12,0.18) 0%, transparent 65%)',
+              width: 170, height: 170,
+              background: 'radial-gradient(ellipse at center, rgba(240,168,12,0.22) 0%, transparent 65%)',
             }}
             aria-hidden="true"
           />
-          <svg
-            width="72" height="80"
-            viewBox="0 0 80 90"
-            aria-label="Trophy"
-            role="img"
-          >
-            <defs>
-              <linearGradient id="trophyGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#FFB91A" />
-                <stop offset="55%"  stopColor="#F0A80C" />
-                <stop offset="100%" stopColor="#C88A00" />
-              </linearGradient>
-            </defs>
-            {/* Cup body */}
-            <path
-              d="M14 8 L66 8 L60 42 C57 54 49 62 40 62 C31 62 23 54 20 42 Z"
-              fill="url(#trophyGrad)"
-            />
-            {/* Left handle */}
-            <path
-              d="M14 8 C6 8 2 15 2 22 C2 33 10 38 15 36"
-              fill="none"
-              stroke="url(#trophyGrad)"
-              strokeWidth="4.5"
-              strokeLinecap="round"
-            />
-            {/* Right handle */}
-            <path
-              d="M66 8 C74 8 78 15 78 22 C78 33 70 38 65 36"
-              fill="none"
-              stroke="url(#trophyGrad)"
-              strokeWidth="4.5"
-              strokeLinecap="round"
-            />
-            {/* Stem */}
-            <rect x="35" y="62" width="10" height="15" rx="2" fill="url(#trophyGrad)" />
-            {/* Base */}
-            <rect x="21" y="77" width="38" height="8" rx="4" fill="url(#trophyGrad)" />
-          </svg>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/apple-icon.png"
+            alt="MatchPoint26"
+            width={88}
+            height={88}
+            className="relative rounded-[22%]"
+            style={{ filter: 'drop-shadow(0 4px 20px rgba(240,168,12,0.35))' }}
+          />
         </div>
 
-        {/* Title + divider + tagline */}
+        {/* Title + tagline */}
         <div
           className="text-center flex flex-col items-center gap-3 animate-enter-up"
-          style={{ animationDelay: '80ms', animationFillMode: 'backwards' }}
+          style={{ animationDelay: '70ms', animationFillMode: 'backwards' }}
         >
-          <h1 className="leading-none tracking-tight">
-            <span className="text-[32px] font-black text-foreground">Match</span>
-            <span className="text-[32px] font-black text-primary">Point</span>
+          <h1 className="text-[36px] font-black leading-none tracking-tight">
+            <span className="text-foreground">MatchPoint</span>
+            <span className="text-primary">26</span>
           </h1>
 
           <div className="flex items-center gap-2.5">
             <div
               className="h-px w-10"
-              style={{ background: 'linear-gradient(to right, transparent, rgba(240,168,12,0.45))' }}
+              style={{ background: 'linear-gradient(to right, transparent, rgba(240,168,12,0.4))' }}
             />
             <span
-              className="text-[10px] font-bold tracking-[0.2em] uppercase"
+              className="text-[10px] font-bold tracking-[0.22em] uppercase"
               style={{ color: 'var(--color-gold-dim)' }}
-            >World Cup 2026</span>
+            >
+              FIFA · World Cup · 2026
+            </span>
             <div
               className="h-px w-10"
-              style={{ background: 'linear-gradient(to left, transparent, rgba(240,168,12,0.45))' }}
+              style={{ background: 'linear-gradient(to left, transparent, rgba(240,168,12,0.4))' }}
             />
           </div>
 
-          <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
-            Predict matches. Compete with friends.{' '}
-            <span className="text-foreground/70 font-semibold">Win glory.</span>
+          <p className="text-sm text-muted-foreground leading-relaxed mt-0.5">
+            Predict the World Cup.{' '}
+            <span className="text-foreground/75 font-semibold">Compete with friends.</span>
           </p>
         </div>
       </div>
 
       {/* ── Auth CTA ────────────────────────────────────── */}
       <div
-        className="w-full flex flex-col gap-4 animate-enter-up"
-        style={{ animationDelay: '150ms', animationFillMode: 'backwards' }}
+        className="w-full flex flex-col gap-3 animate-enter-up"
+        style={{ animationDelay: '140ms', animationFillMode: 'backwards' }}
       >
         <GoogleButton
           onClick={() => { setState('idle'); setErrMsg(''); login() }}
@@ -157,8 +127,8 @@ export default function LoginPage() {
 
       {/* ── Footer ──────────────────────────────────────── */}
       <p
-        className="text-center text-2xs text-muted-foreground leading-relaxed px-4 animate-fade-in"
-        style={{ animationDelay: '220ms', animationFillMode: 'backwards' }}
+        className="text-center text-2xs text-muted-foreground/70 leading-relaxed px-6 animate-fade-in"
+        style={{ animationDelay: '210ms', animationFillMode: 'backwards' }}
       >
         By continuing, you agree to our{' '}
         <span className="text-foreground/70 font-medium">Terms of Service</span>
@@ -177,12 +147,12 @@ function GoogleButton({ onClick, loading }: { onClick: () => void; loading: bool
       disabled={loading}
       className={[
         'w-full flex items-center justify-center gap-3',
-        'bg-white/[0.04] border border-white/10',
+        'bg-white/[0.05] border border-white/[0.12]',
         'rounded-2xl px-5 py-[18px]',
         'transition-all duration-200',
         loading
           ? 'opacity-60 cursor-not-allowed'
-          : 'hover:bg-white/[0.07] hover:border-primary/40 active:scale-[0.98]',
+          : 'hover:bg-white/[0.08] hover:border-primary/40 active:scale-[0.98]',
       ].join(' ')}
     >
       {loading ? <Spinner /> : <GoogleLogo />}

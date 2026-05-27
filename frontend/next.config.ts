@@ -2,6 +2,14 @@ import type { NextConfig } from 'next'
 import { withSentryConfig } from '@sentry/nextjs'
 
 const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      // Serve apple-touch-icon via the Next.js-generated /apple-icon.png route
+      // (embedded in .next/static, works even if public/ isn't served by Vercel)
+      { source: '/apple-touch-icon.png',            destination: '/apple-icon.png' },
+      { source: '/apple-touch-icon-precomposed.png', destination: '/apple-icon.png' },
+    ]
+  },
   images: {
     remotePatterns: [
       {

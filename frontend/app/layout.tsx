@@ -60,6 +60,11 @@ export const metadata: Metadata = {
     },
   },
 
+  // ── Icons (versioned to bust iOS apple-touch-icon cache) ─────
+  icons: {
+    apple: [{ url: '/apple-touch-icon.png?v=3', sizes: '180x180', type: 'image/png' }],
+  },
+
   // ── PWA / install hints ───────────────────────────────────────
   manifest: '/manifest.webmanifest',
   appleWebApp: {

@@ -30,12 +30,11 @@ export default function LoginPage() {
         throw new Error(data.error ?? 'Sign-in failed')
       }
       const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
+      await refreshUser()
       if (user.onboarding_completed === false) {
-        await refreshUser()
         router.push(`/onboarding?next=${encodeURIComponent(next)}`)
       } else {
         router.push(next)
-        router.refresh()
       }
     } catch (err) {
       setState('error')

@@ -79,10 +79,11 @@ export function AuthProvider({
     await fetch('/api/auth/logout', { method: 'POST' })
     resetIdentity()
     Sentry.setUser(null)
-    setUser(null)
-    router.push('/login')
-    router.refresh()
-  }, [router])
+    // Hard navigation: destroys the component tree cleanly and avoids the
+    // concurrent-startTransition conflict caused by router.push + router.refresh
+    // both firing during the auth→anon transition (which triggers global-error).
+    window.location.href = '/login'
+  }, [])
 
   const value = useMemo(
     () => ({ user, isLoading, logout, refreshUser }),

@@ -24,23 +24,44 @@ jobs:
       - name: Call /api/cron/sync-live
         id: sync
         run: |
-          HTTP_STATUS=$(curl -sf \
+          # -s (silent) only — intentionally no -f so curl does NOT exit non-zero
+          # on HTTP 4xx/5xx.  We capture the status code and decide below.
+          APP_URL="${{ vars.APP_URL }}"
+          if [ -z "${APP_URL}" ]; then
+            echo "APP_URL is empty — set it as a GitHub repository variable (Settings → Variables)"
+            exit 1
+          fi
+
+          HTTP_STATUS=$(curl -s \
             --max-time 57 \
             --retry 0 \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -o /tmp/sync_body.json \
             -w "%{http_code}" \
-            "${{ vars.APP_URL }}/api/cron/sync-live")
+            "${APP_URL}/api/cron/sync-live") || HTTP_STATUS="000"
 
-          echo "http_status=$HTTP_STATUS" >> "$GITHUB_OUTPUT"
-          echo "HTTP $HTTP_STATUS"
-          cat /tmp/sync_body.json 2>/dev/null | head -c 500 || true
+          echo "http_status=${HTTP_STATUS}" >> "$GITHUB_OUTPUT"
+          echo "--- HTTP ${HTTP_STATUS} ---"
+          cat /tmp/sync_body.json 2>/dev/null | head -c 1000 || echo "(no body)"
+          echo ""
 
-          # 4xx = misconfigured (wrong secret, wrong URL) — fail loudly
-          if [ "$HTTP_STATUS" -ge 400 ] && [ "$HTTP_STATUS" -lt 500 ]; then
-            echo "Client error $HTTP_STATUS — check CRON_SECRET and APP_URL"
+          # 000 = network/timeout error
+          if [ "${HTTP_STATUS}" = "000" ]; then
+            echo "Network error or timeout — check APP_URL and Vercel reachability"
             exit 1
           fi
 
-          # 5xx / network errors are Sentry-captured on the backend; don't fail the job
+          # 401/403 = auth misconfigured — fail loudly so the misconfiguration is visible
+          if [ "${HTTP_STATUS}" = "401" ] || [ "${HTTP_STATUS}" = "403" ]; then
+            echo "Auth error ${HTTP_STATUS} — verify CRON_SECRET matches between GitHub Secrets and Vercel env vars"
+            exit 1
+          fi
+
+          # Other 4xx = misconfigured URL or route missing
+          if [ "${HTTP_STATUS}" -ge 400 ] && [ "${HTTP_STATUS}" -lt 500 ]; then
+            echo "Client error ${HTTP_STATUS} — check APP_URL points to the correct production deployment"
+            exit 1
+          fi
+
+          # 5xx / backend errors are Sentry-captured; don't fail the job
           exit 0

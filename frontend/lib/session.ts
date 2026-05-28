@@ -40,12 +40,20 @@ export function cookieOptions(dev: boolean) {
 }
 
 export async function getSessionUser(): Promise<AuthUser | null> {
+  if (!process.env.JWT_SECRET) {
+    console.error('[session] JWT_SECRET env var is not set — all authenticated requests will fail')
+    return null
+  }
   try {
     const store = await cookies()
     const token = store.get(SESSION_COOKIE)?.value
     if (!token) return null
     const payload = await decrypt(token)
-    if (!payload) return null
+    if (!payload) {
+      // Cookie present but JWT verification failed — expired token or JWT_SECRET mismatch
+      console.warn('[session] JWT verification failed — token may be expired or JWT_SECRET mismatch between frontend and backend')
+      return null
+    }
     return {
       sub:                 payload.sub,
       email:               payload.email,
@@ -54,7 +62,8 @@ export async function getSessionUser(): Promise<AuthUser | null> {
       picture:             payload.picture,
       onboardingCompleted: payload.onboarding_completed !== false,
     }
-  } catch {
+  } catch (err) {
+    console.error('[session] unexpected error in getSessionUser:', err)
     return null
   }
 }

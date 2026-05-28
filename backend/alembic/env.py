@@ -2,26 +2,22 @@ import asyncio
 import os
 import ssl
 import sys
+import uuid
 from logging.config import fileConfig
 
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 from alembic import context
 
 # ── Make backend root importable ─────────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# ── Import metadata (models only) — NOT the shared app engine ────
-# Importing the shared engine here would cause it to be disposed inside
-# a ThreadPoolExecutor + asyncio.run() during the in-app migration call,
-# corrupting the asyncpg connection pool for the main FastAPI event loop.
 from core.database import Base  # noqa: E402
 from core.config import settings  # noqa: E402
 
-# ── Register every model so autogenerate can diff them ───────────
-import models  # noqa: E402, F401  — imports all models via models/__init__.py
+import models  # noqa: E402, F401
 
-# ── Alembic config ───────────────────────────────────────────────
 alembic_config = context.config
 
 if alembic_config.config_file_name:
@@ -31,7 +27,6 @@ target_metadata = Base.metadata
 
 
 def _migration_url() -> str:
-    """Return the database URL with the asyncpg scheme."""
     url = settings.database_url
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
@@ -41,17 +36,30 @@ def _migration_url() -> str:
 
 
 def _migration_connect_args() -> dict:
-    """asyncpg connect_args for Supabase / production (mirrors database.py)."""
+    """asyncpg connect_args safe for Supabase PgBouncer transaction mode.
+
+    statement_cache_size=0       : disables asyncpg's user-query LRU cache.
+    prepared_statement_name_func : generates a UUID-based name for EVERY
+        prepared statement asyncpg creates, including internal introspection
+        queries like "select pg_catalog.version()".  Without this, asyncpg
+        uses deterministic names (__asyncpg_0__, __asyncpg_1__, …) that
+        collide when PgBouncer reuses a backend connection that already has
+        those statements prepared from a previous session.
+    ssl                          : required for Supabase (private CA).
+    """
+    args: dict = {
+        "statement_cache_size": 0,
+        "prepared_statement_name_func": lambda _: f"__asyncpg_{uuid.uuid4().hex}__",
+    }
     host = settings.database_url.split("@")[-1].split(":")[0] if "@" in settings.database_url else ""
     if "supabase.co" in host or "supabase.com" in host or settings.is_production:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        return {"ssl": ctx, "statement_cache_size": 0}
-    return {}
+        args["ssl"] = ctx
+    return args
 
 
-# ── Offline mode — generates SQL without a live connection ────────
 def run_migrations_offline() -> None:
     context.configure(
         url=_migration_url(),
@@ -63,7 +71,6 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-# ── Online mode — runs against the live database ──────────────────
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
@@ -71,12 +78,11 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    # Create a short-lived engine local to this migration run.
-    # Never reuse the app's shared engine here — disposing it from within
-    # a thread's asyncio.run() event loop corrupts the pool for FastAPI's
-    # main event loop.
+    # NullPool: migrations need exactly one connection; no pooling required.
+    # Each connect() → close() cycle is clean and independent.
     migration_engine = create_async_engine(
         _migration_url(),
+        poolclass=NullPool,
         connect_args=_migration_connect_args(),
     )
     try:

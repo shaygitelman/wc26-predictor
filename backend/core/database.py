@@ -1,4 +1,5 @@
 import ssl
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -22,21 +23,27 @@ def _asyncpg_url(url: str) -> str:
 
 
 def _connect_args() -> dict:
-    """Return asyncpg connect_args for Supabase / production environments.
+    """Return asyncpg connect_args for Supabase PgBouncer transaction mode.
 
-    - ssl=ctx          : TLS required; skip CA verification (Supabase uses an
-                         internal CA not in public trust stores).
-    - statement_cache_size=0 : disables asyncpg prepared-statement caching,
-                         required for Supabase PgBouncer in transaction mode
-                         (prevents DuplicatePreparedStatementError across
-                         pooled connections).
+    statement_cache_size=0       : disables asyncpg's user-query LRU cache.
+    prepared_statement_name_func : generates a UUID name for every prepared
+        statement asyncpg creates — including internal introspection queries
+        like "select pg_catalog.version()".  Deterministic names collide when
+        PgBouncer reuses a backend connection that already has those statements
+        from a prior session; unique UUIDs prevent that entirely.
+    ssl                          : Supabase uses a private CA not in public
+        trust stores; require TLS but skip CA verification.
     """
     host = settings.database_url.split("@")[-1].split(":")[0] if "@" in settings.database_url else ""
     if "supabase.co" in host or "supabase.com" in host or settings.is_production:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        return {"ssl": ctx, "statement_cache_size": 0}
+        return {
+            "ssl": ctx,
+            "statement_cache_size": 0,
+            "prepared_statement_name_func": lambda _: f"__asyncpg_{uuid.uuid4().hex}__",
+        }
     return {}
 
 

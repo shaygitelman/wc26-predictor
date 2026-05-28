@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -285,6 +286,61 @@ async def _bootstrap_critical_players() -> None:
         log.error("BOOTSTRAP: player sync FAILED — %s", exc, exc_info=True)
 
 
+async def _bootstrap_all_players() -> None:
+    """Background task: sync player rosters for all remaining WC2026 teams.
+
+    Runs as a non-blocking background task after startup so it doesn't delay
+    the health check. Only syncs teams with 0 players — once any player data
+    exists for a team, it's left to the critical-teams threshold logic above.
+    Each team = 1 API call (rate-limited by the provider).
+    """
+    if not settings.apifootball_key:
+        return
+
+    from core.database import SessionLocal
+    from core.wc2026_config import APIFOOTBALL_ID_TO_CODE
+    from providers.apifootball import ApiFootballProvider
+    from services.sync import SyncService
+
+    all_wc26_teams = [code.lower() for code in APIFOOTBALL_ID_TO_CODE.values()]
+
+    log.info("BACKGROUND: checking player coverage for all %d WC2026 teams", len(all_wc26_teams))
+    try:
+        async with SessionLocal() as db:
+            rows = (await db.execute(
+                text(
+                    "SELECT team_id, COUNT(*) AS cnt FROM players "
+                    "WHERE team_id = ANY(:ids) GROUP BY team_id"
+                ),
+                {"ids": all_wc26_teams},
+            )).all()
+            counts = {r[0]: r[1] for r in rows}
+
+        teams_to_sync = [t for t in all_wc26_teams if counts.get(t, 0) == 0]
+
+        if not teams_to_sync:
+            log.info("BACKGROUND: all %d WC2026 teams already have players", len(all_wc26_teams))
+            return
+
+        log.info(
+            "BACKGROUND: syncing %d teams with 0 players: %s",
+            len(teams_to_sync), sorted(teams_to_sync),
+        )
+        svc = SyncService(
+            provider=ApiFootballProvider(settings.apifootball_key),
+            league_id="1",
+            season="2026",
+        )
+        async with SessionLocal() as db:
+            result = await svc.sync_players(db, team_ids=teams_to_sync)
+            log.info(
+                "BACKGROUND: full player sync done — records=%d status=%s errors=%s",
+                result.records_affected, result.status, result.errors or "none",
+            )
+    except Exception as exc:
+        log.error("BACKGROUND: full player sync FAILED — %s", exc, exc_info=True)
+
+
 async def _bootstrap_knockout_matches() -> None:
     """Seed WC 2026 knockout placeholder matches if none exist yet.
 
@@ -395,6 +451,7 @@ async def lifespan(app: FastAPI):
     await _bootstrap_group_fixtures()    # 72 group fixtures (skips if no API key)
     await _bootstrap_knockout_matches()  # 32 knockout placeholder matches
     await _bootstrap_critical_players()  # Golden Boot candidate players (skips if no key)
+    asyncio.create_task(_bootstrap_all_players())  # remaining 36 teams in background
 
     yield
 

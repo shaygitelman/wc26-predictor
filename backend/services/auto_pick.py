@@ -5,12 +5,13 @@ Generates automatic predictions for users who have not submitted a prediction
 when a match goes live (with a 60-second buffer after scheduled kick-off).
 
 Design invariants:
-- Score is deterministic: pool[abs(hash(match_id)) % len(pool)] — same pick every
-  time for the same match, even across multiple sync ticks.
+- Score is deterministic: pool[sha256(match_id) % len(pool)] — same pick every
+  time for the same match, stable across restarts/deploys (unlike Python hash()).
 - ON CONFLICT DO NOTHING: a concurrent manual submission always wins.
 - Auto-picks are scored identically to manual predictions — exact scores earn full points.
 - Test accounts (email *@test.wc26, google_id google-test-*) are excluded.
 """
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -24,7 +25,7 @@ from models.user import User
 
 log = logging.getLogger(__name__)
 
-# Round-aware score pools. Index = abs(hash(match_id)) % len(pool).
+# Round-aware score pools. Index = sha256(match_id) % len(pool).
 # Scores are realistic and round-appropriate. The same scoreline is assigned to
 # all absentees for a given match, so any exact-score luck is shared equally.
 ROUND_SCORE_POOLS: dict[str, list[tuple[int, int]]] = {
@@ -40,9 +41,10 @@ _DEFAULT_POOL: list[tuple[int, int]] = [(1, 0), (0, 1), (1, 1)]
 
 
 def deterministic_score(match_id: str, round_code: str) -> tuple[int, int]:
-    """Return the auto-pick scoreline for this match — stable across calls."""
+    """Return the auto-pick scoreline for this match — stable across calls and restarts."""
     pool = ROUND_SCORE_POOLS.get(round_code, _DEFAULT_POOL)
-    idx  = abs(hash(match_id)) % len(pool)
+    # sha256 is stable across process restarts unlike Python's randomised hash().
+    idx  = int(hashlib.sha256(match_id.encode()).hexdigest(), 16) % len(pool)
     return pool[idx]
 
 

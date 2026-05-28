@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   Sparkles, Zap, TriangleAlert, Flame, BookOpen,
   Wind, ArrowRightLeft, Shield, Crosshair, Swords, Target,
-  ChevronRight, ArrowUp, LayoutGrid, Clock, WifiOff,
+  ChevronRight, ArrowUp, LayoutGrid, Clock, WifiOff, CheckCircle2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { assertVerified } from '@/lib/provenance'
@@ -249,10 +249,14 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
 
         {/* ── Sparse data notice — only shown when some content exists ── */}
         {safeConfidence === 'low' && hasAnyContent && (
-          <div className="mx-4 my-1 px-3 py-2 rounded-lg bg-surface-elevated border border-border flex items-start gap-2">
-            <TriangleAlert className="size-3 text-muted-foreground/60 flex-shrink-0 mt-[2px]" strokeWidth={2} />
+          <div className="mx-4 my-1 px-3 py-2 rounded-lg bg-amber-500/[0.05] border border-amber-500/20 flex items-start gap-2">
+            <TriangleAlert className="size-3 text-amber-500/70 flex-shrink-0 mt-[2px]" strokeWidth={2} />
             <p className="text-[10.5px] leading-snug" style={{ color: 'var(--muted-foreground)' }}>
-              Limited match data — insights reflect a smaller sample and confidence will increase as more matches are played.
+              Limited match data
+              {insights.dataProvenance?.fallbackUsed
+                ? ' — some values are estimated, not directly measured.'
+                : ' — insights reflect a smaller sample.'}
+              {' '}Confidence improves as more matches are played.
             </p>
           </div>
         )}
@@ -335,6 +339,9 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
             </div>
           )}
         </section>
+
+        {/* ── Data transparency footer ── */}
+        <DataTransparencyFooter provenance={insights.dataProvenance} />
       </div>
     </div>
   )
@@ -553,19 +560,36 @@ function BulletList({ bullets }: { bullets: InsightBullet[] }) {
   )
 }
 
-const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; cls: string }> = {
-  low:    { label: 'Limited data', cls: 'bg-amber-500/10 text-amber-500 border-amber-500/25' },
-  medium: { label: 'Medium',       cls: 'bg-primary/10 text-primary border-primary/25' },
-  high:   { label: 'High',         cls: 'bg-status-won/10 text-status-won border-status-won/25' },
+const CONFIDENCE_CONFIG: Record<ConfidenceLevel, {
+  label: string
+  cls:   string
+  icon:  React.ReactNode
+}> = {
+  low: {
+    label: 'Limited data',
+    cls:   'bg-amber-500/10 text-amber-500 border-amber-500/25',
+    icon:  <TriangleAlert className="size-[8px] flex-shrink-0" strokeWidth={2.5} />,
+  },
+  medium: {
+    label: 'Partial data',
+    cls:   'bg-primary/10 text-primary border-primary/25',
+    icon:  null,
+  },
+  high: {
+    label: 'Verified data',
+    cls:   'bg-status-won/10 text-status-won border-status-won/25',
+    icon:  <CheckCircle2 className="size-[8px] flex-shrink-0" strokeWidth={2.5} />,
+  },
 }
 
 function ConfidenceChip({ confidence }: { confidence: ConfidenceLevel }) {
-  const { label, cls } = CONFIDENCE_CONFIG[confidence]
+  const { label, cls, icon } = CONFIDENCE_CONFIG[confidence]
   return (
     <span className={cn(
-      'text-[10px] font-bold tracking-[0.06em] uppercase px-2 py-[3px] rounded-full border whitespace-nowrap',
+      'flex items-center gap-[3px] text-[10px] font-bold tracking-[0.06em] uppercase px-2 py-[3px] rounded-full border whitespace-nowrap',
       cls,
     )}>
+      {icon}
       {label}
     </span>
   )
@@ -614,6 +638,35 @@ function EdgeBanner({ edge, edgeNote }: { edge: MatchInsights['edge']; edgeNote?
           {edgeNote}
         </p>
       )}
+    </div>
+  )
+}
+
+// ─── Data transparency footer ────────────────────────────────
+
+function DataTransparencyFooter({
+  provenance,
+}: { provenance?: MatchInsights['dataProvenance'] }) {
+  const sourceLabel = (() => {
+    if (!provenance?.source) return 'tournament stats'
+    const host = provenance.source.split(':')[0]
+    if (host === 'api-football') return 'API-Football'
+    return host.replace(/-/g, ' ')
+  })()
+
+  const provenanceNote =
+    provenance?.confidence === 'verified'
+      ? `Verified from ${sourceLabel}`
+      : provenance?.confidence === 'partial'
+        ? `Partial data from ${sourceLabel}`
+        : 'Pre-tournament data only'
+
+  return (
+    <div className="px-4 py-2 border-t border-border/30 flex items-center justify-center gap-1.5">
+      <Sparkles className="size-[9px] text-muted-foreground/25 flex-shrink-0" strokeWidth={2} />
+      <p className="text-[9.5px] text-muted-foreground/35 text-center leading-relaxed">
+        AI analysis · {provenanceNote} · May not reflect late lineup changes
+      </p>
     </div>
   )
 }

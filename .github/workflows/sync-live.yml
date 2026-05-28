@@ -1,0 +1,46 @@
+name: Live Match Sync
+
+# Triggers every minute during World Cup.
+# The backend's sync_live() skips the external API call when no matches
+# are live or within 5 minutes of kick-off, so this burns zero API quota
+# outside of active match windows.
+
+on:
+  schedule:
+    - cron: '* * * * *'    # every minute
+  workflow_dispatch:        # allow manual trigger for testing/debugging
+
+concurrency:
+  group: live-sync
+  cancel-in-progress: true  # drop stale ticks; never allow two syncs to overlap
+
+jobs:
+  sync:
+    name: Trigger sync-live
+    runs-on: ubuntu-latest
+    timeout-minutes: 2      # hard ceiling — prevents stuck jobs from blocking the next tick
+
+    steps:
+      - name: Call /api/cron/sync-live
+        id: sync
+        run: |
+          HTTP_STATUS=$(curl -sf \
+            --max-time 57 \
+            --retry 0 \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -o /tmp/sync_body.json \
+            -w "%{http_code}" \
+            "${{ vars.APP_URL }}/api/cron/sync-live")
+
+          echo "http_status=$HTTP_STATUS" >> "$GITHUB_OUTPUT"
+          echo "HTTP $HTTP_STATUS"
+          cat /tmp/sync_body.json 2>/dev/null | head -c 500 || true
+
+          # 4xx = misconfigured (wrong secret, wrong URL) — fail loudly
+          if [ "$HTTP_STATUS" -ge 400 ] && [ "$HTTP_STATUS" -lt 500 ]; then
+            echo "Client error $HTTP_STATUS — check CRON_SECRET and APP_URL"
+            exit 1
+          fi
+
+          # 5xx / network errors are Sentry-captured on the backend; don't fail the job
+          exit 0

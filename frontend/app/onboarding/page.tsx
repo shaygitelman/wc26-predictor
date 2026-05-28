@@ -571,7 +571,7 @@ function safeNext(raw: string | null): string {
 }
 
 function OnboardingPageInner() {
-  const { user, isLoading, refreshUser } = useAuth()
+  const { user, isLoading } = useAuth()
   const router       = useRouter()
   const searchParams = useSearchParams()
   const next         = safeNext(searchParams.get('next'))
@@ -653,6 +653,8 @@ function OnboardingPageInner() {
   }, [winner, scorer])
 
   // Show the install prompt once for mobile first-timers, then navigate.
+  // Hard navigation ensures the new page mounts with a fresh RootLayout SSR
+  // read of the updated session cookie (onboarding_completed: true).
   const navigateOrPrompt = useCallback((dest: string) => {
     const shouldPrompt = (() => {
       try {
@@ -667,13 +669,11 @@ function OnboardingPageInner() {
       setInstallDest(dest)
       setShowInstallPrompt(true)
     } else {
-      router.push(dest)
+      window.location.href = dest
     }
-  }, [router])
+  }, [])
 
   const handleEnter = useCallback(async () => {
-    // Sync AuthProvider with the fresh JWT (onboarding_completed: true) before
-    // soft-navigating, so the onboarding gate doesn't redirect back here.
     const inviteMatch = /^\/join\/([A-Za-z0-9]+)$/.exec(next)
     if (inviteMatch) {
       setJoining(true)
@@ -685,7 +685,6 @@ function OnboardingPageInner() {
         })
         if (res.ok) {
           const data = await res.json()
-          await refreshUser()
           setJoining(false)
           navigateOrPrompt(`/leagues/${data.id}`)
           return
@@ -694,9 +693,8 @@ function OnboardingPageInner() {
       // Auto-join failed — fall through to the join page for its error UI.
       setJoining(false)
     }
-    await refreshUser()
     navigateOrPrompt(next)
-  }, [next, refreshUser, navigateOrPrompt])
+  }, [next, navigateOrPrompt])
 
   if (isLoading || !user) return null
 
@@ -714,7 +712,7 @@ function OnboardingPageInner() {
           deferredPrompt={deferredInstallPrompt}
           onDone={() => {
             setShowInstallPrompt(false)
-            router.push(installDest)
+            window.location.href = installDest
           }}
         />
       )}

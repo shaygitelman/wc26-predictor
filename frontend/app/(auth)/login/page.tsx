@@ -1,20 +1,24 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { useGoogleLogin } from '@react-oauth/google'
-import { useAuth } from '@/providers/auth-provider'
 import type { AuthUser } from '@/types/auth'
+
+/** Reject non-relative or protocol-relative URLs to prevent open-redirect. */
+function safeNext(raw: string | null): string {
+  if (!raw) return '/'
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/'
+  return raw
+}
 
 type State = 'idle' | 'loading' | 'error'
 
 function LoginPageContent() {
   const [state,  setState]  = useState<State>('idle')
   const [errMsg, setErrMsg] = useState('')
-  const router       = useRouter()
   const searchParams = useSearchParams()
-  const next         = searchParams.get('next') ?? '/'
-  const { refreshUser } = useAuth()
+  const next         = safeNext(searchParams.get('next'))
 
   async function handleGoogleSuccess(accessToken: string) {
     setState('loading')
@@ -30,11 +34,14 @@ function LoginPageContent() {
         throw new Error(data.error ?? 'Sign-in failed')
       }
       const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
-      await refreshUser()
+      // Hard navigation: destroys client state so RootLayout re-runs server-side
+      // with the new session cookie, giving AuthProvider a fresh initialUser on
+      // mount. Same pattern as logout — avoids stale RSC payloads and the
+      // refreshUser→setUser race condition that left user=null after soft nav.
       if (user.onboarding_completed === false) {
-        router.push(`/onboarding?next=${encodeURIComponent(next)}`)
+        window.location.href = `/onboarding?next=${encodeURIComponent(next)}`
       } else {
-        router.push(next)
+        window.location.href = next
       }
     } catch (err) {
       setState('error')

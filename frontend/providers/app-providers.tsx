@@ -7,16 +7,15 @@ import { PostHogProvider } from './posthog-provider'
 import type { AuthUser } from '@/types/auth'
 
 interface Props {
-  children:     React.ReactNode
-  initialUser?: AuthUser | null
+  children:       React.ReactNode
+  initialUser?:   AuthUser | null
+  googleClientId: string
 }
 
-export function AppProviders({ children, initialUser }: Props) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
-
+export function AppProviders({ children, initialUser, googleClientId }: Props) {
   return (
     <PostHogProvider>
-      <GoogleOAuthProvider clientId={clientId}>
+      <GoogleOAuthProvider clientId={googleClientId}>
         <ThemeProvider attribute="class" defaultTheme="dark">
           <AuthProvider initialUser={initialUser}>
             {children}

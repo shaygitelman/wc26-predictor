@@ -91,12 +91,18 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const initialUser = await getSessionUser()
+  const initialUser    = await getSessionUser()
+  // Read from the server-side process env so the value is always available at
+  // runtime regardless of whether it was inlined into the client bundle at
+  // build time.  Passing it as a prop avoids the NEXT_PUBLIC_ build-time
+  // inlining dependency that silently produces '' when the var wasn't present
+  // during the build.
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
 
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body className="bg-background text-foreground antialiased">
-        <AppProviders initialUser={initialUser}>
+        <AppProviders initialUser={initialUser} googleClientId={googleClientId}>
           {children}
           <ConditionalTabBar />
         </AppProviders>

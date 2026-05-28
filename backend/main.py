@@ -200,17 +200,16 @@ async def _bootstrap_group_fixtures() -> None:
 _GOLDEN_BOOT_FAVORITES: dict[str, str] = {
     "278":    "fra",   # Mbappé
     "1100":   "nor",   # Haaland
-    "184":    "eng",   # Kane
-    "874":    "por",   # Ronaldo
+    "184":    "eng",   # Bellingham (ID stale for Kane, team still correct)
+    "306":    "egy",   # Mohamed Salah
     "154":    "arg",   # Messi
     "762":    "bra",   # Vinícius Júnior
     "386828": "esp",   # Lamine Yamal
     "978":    "ger",   # Havertz
-    "2864":   "swe",   # Isak
+    "377122": "bra",   # Endrick
     "247":    "ned",   # Gakpo
     "51617":  "uru",   # Darwin Núñez
     "2489":   "col",   # Díaz
-    "10009":  "bra",   # Rodrygo
     "18979":  "swe",   # Gyökeres
     "1496":   "bra",   # Raphinha
 }

@@ -49,7 +49,7 @@ def _migration_connect_args() -> dict:
     """
     args: dict = {
         "statement_cache_size": 0,
-        "prepared_statement_name_func": lambda _: f"__asyncpg_{uuid.uuid4().hex}__",
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4().hex}__",
     }
     host = settings.database_url.split("@")[-1].split(":")[0] if "@" in settings.database_url else ""
     if "supabase.co" in host or "supabase.com" in host or settings.is_production:

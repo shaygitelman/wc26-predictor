@@ -42,7 +42,7 @@ def _connect_args() -> dict:
         return {
             "ssl": ctx,
             "statement_cache_size": 0,
-            "prepared_statement_name_func": lambda _: f"__asyncpg_{uuid.uuid4().hex}__",
+            "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4().hex}__",
         }
     return {}
 

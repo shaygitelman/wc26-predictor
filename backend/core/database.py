@@ -13,7 +13,10 @@ def _ssl_args() -> dict:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        return {"connect_args": {"ssl": ctx}}
+        # statement_cache_size=0 disables asyncpg prepared-statement caching,
+        # required for Supabase PgBouncer in transaction mode (avoids
+        # DuplicatePreparedStatementError across pooled connections).
+        return {"connect_args": {"ssl": ctx, "statement_cache_size": 0}}
     return {}
 
 

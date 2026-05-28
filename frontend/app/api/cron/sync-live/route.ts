@@ -6,7 +6,7 @@ export const maxDuration = 55
 
 const CRON_SECRET  = process.env.CRON_SECRET   // set in Vercel env vars (server-only)
 const ADMIN_KEY    = process.env.ADMIN_KEY      // set in Vercel env vars (server-only)
-const BACKEND_URL  = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const BACKEND_URL  = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 function isAuthorized(req: NextRequest): boolean {
   // Vercel sends Authorization: Bearer <CRON_SECRET>

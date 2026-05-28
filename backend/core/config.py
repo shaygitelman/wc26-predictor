@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Sentry error monitoring
     sentry_dsn:     str = ""
-    sentry_release: str = ""   # injected by CI (e.g. RAILWAY_GIT_COMMIT_SHA)
+    sentry_release: str = ""   # set to git commit SHA for Sentry release tracking (e.g. RENDER_GIT_COMMIT)
 
     @property
     def is_production(self) -> bool:

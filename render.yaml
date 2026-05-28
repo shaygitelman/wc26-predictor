@@ -4,7 +4,7 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -27,3 +27,5 @@ services:
         sync: false
       - key: SENTRY_DSN
         sync: false
+      - key: SENTRY_RELEASE
+        value: $RENDER_GIT_COMMIT

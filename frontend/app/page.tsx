@@ -11,6 +11,7 @@ import { TournamentPicksCard } from '@/components/molecules/tournament-picks-car
 import { LeagueCard } from '@/components/molecules/league-card'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { apiGet, apiGetCached } from '@/lib/api-server'
+import { getSessionUser } from '@/lib/session'
 import type { User, UserStats } from '@/types/user'
 import type { Match, TeamDetail } from '@/types/match'
 import type { League, LeagueStanding } from '@/types/league'
@@ -19,9 +20,11 @@ import type { Prediction } from '@/types/prediction'
 
 export default async function HomePage() {
   const [
+    sessionResult,
     userResult, statsResult, matchesResult,
     leaguesResult, teamsResult, pickResult, predsResult,
   ] = await Promise.allSettled([
+    getSessionUser(),
     apiGet<User>('/users/me'),
     apiGet<UserStats>('/users/me/stats'),
     apiGetCached<Match[]>('/matches', 30, { auth: false }),
@@ -31,7 +34,17 @@ export default async function HomePage() {
     apiGet<Prediction[]>('/predictions/me'),
   ])
 
-  const user     = userResult.status    === 'fulfilled' ? userResult.value    : null
+  // If the backend is sleeping or returns an error, fall back to the JWT cookie
+  // so the profile strip still shows the correct name/avatar.
+  const sessionUser = sessionResult.status === 'fulfilled' ? sessionResult.value : null
+  const user     = (userResult.status    === 'fulfilled' ? userResult.value    : null)
+                ?? (sessionUser ? {
+                     id:        sessionUser.sub,
+                     username:  sessionUser.username ?? '',
+                     name:      sessionUser.name,
+                     avatarUrl: sessionUser.picture,
+                     createdAt: '',
+                   } as User : null)
   const s        = statsResult.status   === 'fulfilled' ? statsResult.value   : null
   const matches  = matchesResult.status === 'fulfilled' ? matchesResult.value : []
   const leagues  = leaguesResult.status === 'fulfilled' ? leaguesResult.value : []

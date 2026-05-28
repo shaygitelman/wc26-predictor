@@ -137,12 +137,135 @@ async def _bootstrap_teams() -> None:
         log.error("BOOTSTRAP: team seeding FAILED — %s", exc, exc_info=True)
 
 
+async def _bootstrap_group_fixtures() -> None:
+    """Sync all WC 2026 group-stage fixtures from API-Football on first boot.
+
+    Only runs when:
+      - APIFOOTBALL_KEY is configured
+      - No real (non-manual) fixture rows exist yet
+
+    A single /fixtures call fetches all 72 group-stage matches. After fixtures
+    are inserted, sync_groups() is called to write group letters onto teams.
+    Skipped silently if the API call fails — the admin can call
+    POST /admin/sync/fixtures manually.
+    """
+    if not settings.apifootball_key:
+        log.info("BOOTSTRAP: APIFOOTBALL_KEY not set — skipping fixture auto-sync")
+        return
+
+    from core.database import SessionLocal
+    from providers.apifootball import ApiFootballProvider
+    from services.sync import SyncService
+
+    log.info("BOOTSTRAP: checking group-stage fixtures")
+    try:
+        async with SessionLocal() as db:
+            count = (await db.execute(
+                text(
+                    "SELECT COUNT(*) FROM matches "
+                    "WHERE external_id IS NOT NULL "
+                    "AND external_id NOT LIKE 'manual-wc2026-%'"
+                )
+            )).scalar() or 0
+            if count > 0:
+                log.info("BOOTSTRAP: real fixtures already present (%d rows), skipping sync", count)
+                return
+
+        log.info("BOOTSTRAP: no real fixtures found — triggering API-Football sync")
+        svc = SyncService(
+            provider=ApiFootballProvider(settings.apifootball_key),
+            league_id="1",
+            season="2026",
+        )
+        async with SessionLocal() as db:
+            fix_result = await svc.sync_fixtures(db)
+            log.info(
+                "BOOTSTRAP: fixture sync done — records=%d status=%s errors=%s",
+                fix_result.records_affected, fix_result.status, fix_result.errors or "none",
+            )
+            if fix_result.records_affected > 0:
+                grp_result = await svc.sync_groups(db)
+                log.info(
+                    "BOOTSTRAP: group assignment done — records=%d status=%s",
+                    grp_result.records_affected, grp_result.status,
+                )
+    except Exception as exc:
+        log.error("BOOTSTRAP: fixture sync FAILED — %s", exc, exc_info=True)
+
+
+# API-Football player IDs for the ~15 Golden Boot favorites and their team codes.
+# Kept here (not in routers/players.py) so bootstrap can sync exactly these teams
+# without importing the router.
+_GOLDEN_BOOT_FAVORITES: dict[str, str] = {
+    "278":    "fra",   # Mbappé
+    "1100":   "nor",   # Haaland
+    "184":    "eng",   # Kane
+    "874":    "por",   # Ronaldo
+    "154":    "arg",   # Messi
+    "762":    "bra",   # Vinícius Júnior
+    "386828": "esp",   # Lamine Yamal
+    "978":    "ger",   # Havertz
+    "2864":   "swe",   # Isak
+    "247":    "ned",   # Gakpo
+    "51617":  "uru",   # Darwin Núñez
+    "2489":   "col",   # Díaz
+    "10009":  "bra",   # Rodrygo
+    "18979":  "swe",   # Gyökeres
+    "1496":   "bra",   # Raphinha
+}
+
+
+async def _bootstrap_critical_players() -> None:
+    """Sync player rosters for the Golden Boot candidate teams on first boot.
+
+    Only syncs the ~9 distinct teams whose players appear in the favorites list
+    (BRA, FRA, ARG, ENG, NOR, POR, ESP, GER, SWE, NED, URU, COL) rather than
+    all 48 teams. This ensures the onboarding Golden Boot picker has real players
+    immediately after deployment without requiring a manual admin call.
+
+    Each team = 1 API call (~0.2 s sleep). ~12 teams ≈ 6–10 s total.
+    Skipped entirely if players table already has rows or APIFOOTBALL_KEY is absent.
+    """
+    if not settings.apifootball_key:
+        log.info("BOOTSTRAP: APIFOOTBALL_KEY not set — skipping player auto-sync")
+        return
+
+    from core.database import SessionLocal
+    from providers.apifootball import ApiFootballProvider
+    from services.sync import SyncService
+
+    log.info("BOOTSTRAP: checking player data")
+    try:
+        async with SessionLocal() as db:
+            count = (await db.execute(text("SELECT COUNT(*) FROM players"))).scalar() or 0
+            if count > 0:
+                log.info("BOOTSTRAP: players already seeded (%d rows), skipping", count)
+                return
+
+        critical_teams = list(set(_GOLDEN_BOOT_FAVORITES.values()))
+        log.info(
+            "BOOTSTRAP: no players found — syncing %d critical teams: %s",
+            len(critical_teams), sorted(critical_teams),
+        )
+        svc = SyncService(
+            provider=ApiFootballProvider(settings.apifootball_key),
+            league_id="1",
+            season="2026",
+        )
+        async with SessionLocal() as db:
+            result = await svc.sync_players(db, team_ids=critical_teams)
+            log.info(
+                "BOOTSTRAP: player sync done — records=%d status=%s errors=%s",
+                result.records_affected, result.status, result.errors or "none",
+            )
+    except Exception as exc:
+        log.error("BOOTSTRAP: player sync FAILED — %s", exc, exc_info=True)
+
+
 async def _bootstrap_knockout_matches() -> None:
     """Seed WC 2026 knockout placeholder matches if none exist yet.
 
     Idempotent — WC2026SeedService uses ON CONFLICT DO NOTHING on external_id.
-    Group-stage fixtures are NOT seeded here — they come from the provider sync
-    (POST /admin/sync/fixtures requires APIFOOTBALL_KEY).
     """
     from core.database import SessionLocal
     from services.wc2026_seed import WC2026SeedService
@@ -237,9 +360,18 @@ async def _bootstrap_default_league() -> None:
 async def lifespan(app: FastAPI):
     # Migrations run via `alembic upgrade head` in start.sh BEFORE uvicorn,
     # so all tables are guaranteed to exist by the time we reach here.
+    #
+    # Bootstrap order matters:
+    #   1. default league  — needs: leagues, league_members, users tables
+    #   2. teams           — needs: teams table; no dependencies
+    #   3. group fixtures  — needs: matches + teams (API call if APIFOOTBALL_KEY set)
+    #   4. knockout matches — needs: matches table; no dependencies
+    #   5. critical players — needs: teams with external_ids (API call if key set)
     await _bootstrap_default_league()    # world league + user memberships
     await _bootstrap_teams()             # 48 WC2026 teams from config
+    await _bootstrap_group_fixtures()    # 72 group fixtures (skips if no API key)
     await _bootstrap_knockout_matches()  # 32 knockout placeholder matches
+    await _bootstrap_critical_players()  # Golden Boot candidate players (skips if no key)
 
     yield
 

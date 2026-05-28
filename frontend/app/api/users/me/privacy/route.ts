@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from '@/lib/session'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 async function getToken() {
   const store = await cookies()

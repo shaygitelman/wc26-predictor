@@ -21,7 +21,7 @@ import type {
   SquadFetchLog,
 } from '@/types/match-facts'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // Reject squad data fetched more than 48 h before the match kick-off.
 // (Once real-time data exists this can be tightened to e.g. 4 h.)

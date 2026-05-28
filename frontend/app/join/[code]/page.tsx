@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from '@/lib/session'
 import { JoinClient } from './join-client'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 interface LeaguePreview {
   name:            string

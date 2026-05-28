@@ -6,7 +6,7 @@
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from './session'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 type FetchOptions = Omit<RequestInit, 'body'> & {
   auth?: boolean

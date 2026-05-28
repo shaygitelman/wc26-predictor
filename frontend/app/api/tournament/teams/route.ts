@@ -1,4 +1,4 @@
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // GET /api/tournament/teams — all 48 WC2026 teams, no auth required
 export async function GET() {

@@ -8,7 +8,7 @@ import type {
   RealSquadAvailability,
 } from '@/types/insights-data'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 async function safeFetch<T>(url: string): Promise<T | null> {
   try {

@@ -1,4 +1,4 @@
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 /** Public — no auth. Returns { isLocked: boolean, lockTime: string }. */
 export async function GET() {

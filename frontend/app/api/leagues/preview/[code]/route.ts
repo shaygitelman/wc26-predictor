@@ -1,4 +1,4 @@
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // GET /api/leagues/preview/[code] — public, no auth required
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {

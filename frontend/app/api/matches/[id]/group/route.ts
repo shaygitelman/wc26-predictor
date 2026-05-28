@@ -1,6 +1,6 @@
 import type { ApiGroupStandings } from '@/types/standings'
 
-const API_BASE = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 interface Params { params: Promise<{ id: string }> }
 

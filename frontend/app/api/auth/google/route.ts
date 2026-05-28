@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Persist the user in PostgreSQL via FastAPI and receive a signed JWT
-    const apiUrl = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL
+    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL
     if (!apiUrl) throw new Error('API_URL is not configured')
 
     const backendRes = await fetch(`${apiUrl}/auth/google`, {

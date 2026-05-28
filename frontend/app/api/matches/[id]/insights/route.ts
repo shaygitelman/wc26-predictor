@@ -5,7 +5,7 @@ import { enrichInsightsWithGroq }  from '@/lib/groq-insights'
 import type { Match } from '@/types/match'
 import type { DataProvenance } from '@/types/provenance'
 
-const API_BASE         = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE         = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const DEBUG_MODE       = process.env.DEBUG_AI_INSIGHTS === 'true'
 const DEBUG_PROVENANCE = process.env.DEBUG_DATA_PROVENANCE === 'true'
 

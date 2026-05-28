@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import type { AuthUser } from '@/types/auth'
 import { AUTH_ROUTES } from '@/lib/constants'
@@ -33,6 +33,11 @@ export function AuthProvider({
   const router   = useRouter()
   const pathname = usePathname()
 
+  // Track whether we currently have an authenticated user so the bfcache
+  // handler can decide whether a session check is needed on page restore.
+  const userRef = useRef(user)
+  useEffect(() => { userRef.current = user }, [user])
+
   useEffect(() => {
     if (initialUser !== undefined) {
       if (initialUser) {
@@ -59,6 +64,25 @@ export function AuthProvider({
       .finally(() => setIsLoading(false))
   }, [])
 
+  // Bfcache guard: when the browser restores a page from the back-forward
+  // cache (Back/Forward navigation after logout), re-validate the session.
+  // If the user logged out in the meantime, redirect to /login immediately
+  // instead of showing a stale authenticated page.
+  useEffect(() => {
+    function handlePageShow(ev: PageTransitionEvent) {
+      if (!ev.persisted) return        // normal load, not a bfcache restore
+      if (!userRef.current) return     // anonymous page — no session to check
+      fetch('/api/auth/me')
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+        .then(data => {
+          if (!data?.user) window.location.replace('/login')
+        })
+    }
+    window.addEventListener('pageshow', handlePageShow)
+    return () => window.removeEventListener('pageshow', handlePageShow)
+  }, [])
+
   // Onboarding gate: redirect first-time users before they see the app.
   // The current pathname is forwarded as `next` so that after onboarding
   // the user returns to exactly where they were (e.g. /join/ABCD1234).
@@ -76,9 +100,21 @@ export function AuthProvider({
   }, [])
 
   const logout = useCallback(async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    resetIdentity()
-    Sentry.setUser(null)
+    // Best-effort cookie deletion — always navigate even if the API call
+    // fails (e.g. Render cold start, network blip). The session will expire
+    // naturally; hard navigation destroys all in-memory client state.
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      // Intentionally swallowed — proceed to clear client state.
+    }
+    // Analytics and monitoring must never block the logout navigation.
+    try {
+      resetIdentity()
+      Sentry.setUser(null)
+    } catch {
+      // Intentionally swallowed.
+    }
     // Hard navigation: destroys the component tree cleanly and avoids the
     // concurrent-startTransition conflict caused by router.push + router.refresh
     // both firing during the auth→anon transition (which triggers global-error).

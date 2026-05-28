@@ -83,8 +83,10 @@ export function EditProfileClient({ user }: { user: User }) {
       }
 
       setSaveStatus('saved')
-      router.refresh()
-      router.push('/profile')
+      // Brief delay so the "Saved!" button state is visible, then hard-navigate
+      // so the profile page loads fresh from the server. router.refresh() +
+      // router.push() together cause a concurrent-startTransition crash.
+      setTimeout(() => { window.location.href = '/profile' }, 400)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Something went wrong'
       console.error('[EditProfile] save failed:', msg)

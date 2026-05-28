@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { Plus, Hash, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LeagueCard } from '@/components/molecules/league-card'
@@ -21,8 +20,6 @@ function sortLeagues(list: League[]): League[] {
 }
 
 export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) {
-  const router = useRouter()
-
   const [leagues, setLeagues] = useState<League[]>(sortLeagues(initialLeagues))
   const [sheet,   setSheet]   = useState<SheetMode>(null)
 
@@ -68,8 +65,10 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
       trackLeagueCreated()
       setLeagues(prev => sortLeagues([newLeague, ...prev]))
       closeSheet()
-      router.refresh()
-      router.push(`/leagues/${newLeague.id}`)
+      // Hard navigate so the league detail page loads fresh from the server.
+      // router.refresh() + router.push() together cause a concurrent-startTransition
+      // conflict that throws a global error; hard nav avoids it entirely.
+      window.location.href = `/leagues/${newLeague.id}`
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Something went wrong')
       setCreateStatus('error')
@@ -96,8 +95,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
       trackLeagueJoined({ source: 'code_entry' })
       setLeagues(prev => prev.some(l => l.id === joined.id) ? prev : sortLeagues([joined, ...prev]))
       closeSheet()
-      router.refresh()
-      router.push(`/leagues/${joined.id}`)
+      window.location.href = `/leagues/${joined.id}`
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : 'Something went wrong')
       setJoinStatus('error')

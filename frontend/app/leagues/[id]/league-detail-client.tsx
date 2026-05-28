@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
 import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X, QrCode, Link2, Globe } from 'lucide-react'
 import { ContextHeader } from '@/components/layout/context-header'
 import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
@@ -198,7 +197,6 @@ export function LeagueDetailClient({
   hasLiveMatches?:  boolean
 }) {
   const { user } = useAuth()
-  const router   = useRouter()
 
   const [copyState,  setCopyState]  = useState<'idle' | 'copied'>('idle')
   const [showQR,     setShowQR]     = useState(false)
@@ -247,8 +245,9 @@ export function LeagueDetailClient({
       if (res.ok || res.status === 204) {
         setModal(null)
         showToast('League deleted.', 'success')
-        router.refresh()
-        router.push('/leagues')
+        // Hard navigate — avoids router.refresh() + router.push() concurrent-
+        // startTransition conflict that triggers a global-error crash.
+        window.location.href = '/leagues'
       } else {
         const data = await res.json().catch(() => ({}))
         showToast(data?.detail ?? 'Failed to delete league.', 'error')
@@ -269,8 +268,7 @@ export function LeagueDetailClient({
       if (res.ok || res.status === 204) {
         setModal(null)
         showToast('You have left the league.', 'success')
-        router.refresh()
-        router.push('/leagues')
+        window.location.href = '/leagues'
       } else {
         const data = await res.json().catch(() => ({}))
         showToast(data?.detail ?? 'Failed to leave league.', 'error')

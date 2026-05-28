@@ -1,6 +1,5 @@
 import logging
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -87,13 +86,6 @@ _DEFAULT_LEAGUE_NAME = 'MatchPoint26 World League'
 _DEFAULT_INVITE_CODE = 'WORLD001'
 
 
-def _run_migrations() -> None:
-    from alembic.config import Config
-    from alembic import command
-    cfg = Config("alembic.ini")
-    command.upgrade(cfg, "head")
-
-
 async def _bootstrap_default_league() -> None:
     """Guarantee the default league and all user memberships exist.
 
@@ -163,14 +155,11 @@ async def _bootstrap_default_league() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        log.info("Running Alembic migrations…")
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(_run_migrations).result(timeout=60)
-        log.info("Migrations complete.")
-    except Exception as exc:
-        log.error("Migration failed — proceeding anyway: %s", exc)
-
+    # Migrations are run by `alembic upgrade head` in the startCommand
+    # (render.yaml / deploy scripts) BEFORE uvicorn starts, so they are
+    # guaranteed complete here.  Running them again inside a
+    # ThreadPoolExecutor + asyncio.run() would dispose the shared engine
+    # from a foreign event loop, corrupting the asyncpg connection pool.
     await _bootstrap_default_league()
 
     yield
@@ -203,7 +192,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict:
     """
     Liveness + readiness check.
 
-    Runs a lightweight DB ping so Railway's health check actually validates
+    Runs a lightweight DB ping so Render's health check actually validates
     DB connectivity. Returns degraded (503) rather than a false-positive OK
     when the database is unreachable.
 

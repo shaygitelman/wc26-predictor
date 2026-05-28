@@ -10,6 +10,7 @@ import {
   trackOnboardingStep,
   trackOnboardingCompleted,
 } from '@/lib/analytics'
+import { InstallPrompt, type BeforeInstallPromptEvent } from '@/components/install-prompt'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -575,16 +576,30 @@ export default function OnboardingPage() {
   const searchParams = useSearchParams()
   const next         = safeNext(searchParams.get('next'))
 
-  const [step,          setStep]          = useState(0)
-  const [teams,         setTeams]         = useState<Team[]>([])
-  const [winner,        setWinner]        = useState<Team | null>(null)
-  const [scorer,        setScorer]        = useState<Player | null>(null)
-  const [submitting,    setSubmitting]    = useState(false)
-  const [joining,       setJoining]       = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-  const [isLocked,      setIsLocked]      = useState(false)
+  const [step,                 setStep]                 = useState(0)
+  const [teams,                setTeams]                = useState<Team[]>([])
+  const [winner,               setWinner]               = useState<Team | null>(null)
+  const [scorer,               setScorer]               = useState<Player | null>(null)
+  const [submitting,           setSubmitting]           = useState(false)
+  const [joining,              setJoining]              = useState(false)
+  const [error,                setError]                = useState<string | null>(null)
+  const [isLocked,             setIsLocked]             = useState(false)
+  const [showInstallPrompt,    setShowInstallPrompt]    = useState(false)
+  const [installDest,          setInstallDest]          = useState('/')
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
 
   useEffect(() => { trackOnboardingStarted() }, [])
+
+  // Capture the browser's native PWA install prompt for Android Chrome.
+  // Must be registered early — the event fires once on page load.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setDeferredInstallPrompt(e as BeforeInstallPromptEvent)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
 
   const goToStep = useCallback((s: number) => {
     setStep(s)
@@ -637,6 +652,25 @@ export default function OnboardingPage() {
     }
   }, [winner, scorer])
 
+  // Show the install prompt once for mobile first-timers, then navigate.
+  const navigateOrPrompt = useCallback((dest: string) => {
+    const shouldPrompt = (() => {
+      try {
+        return (
+          localStorage.getItem('mp26_install_shown') !== '1' &&
+          !window.matchMedia('(display-mode: standalone)').matches &&
+          /iPhone|iPad|iPod|Android/.test(navigator.userAgent)
+        )
+      } catch { return false }
+    })()
+    if (shouldPrompt) {
+      setInstallDest(dest)
+      setShowInstallPrompt(true)
+    } else {
+      router.push(dest)
+    }
+  }, [router])
+
   const handleEnter = useCallback(async () => {
     // Sync AuthProvider with the fresh JWT (onboarding_completed: true) before
     // soft-navigating, so the onboarding gate doesn't redirect back here.
@@ -652,7 +686,8 @@ export default function OnboardingPage() {
         if (res.ok) {
           const data = await res.json()
           await refreshUser()
-          router.push(`/leagues/${data.id}`)
+          setJoining(false)
+          navigateOrPrompt(`/leagues/${data.id}`)
           return
         }
       } catch {}
@@ -660,8 +695,8 @@ export default function OnboardingPage() {
       setJoining(false)
     }
     await refreshUser()
-    router.push(next)
-  }, [next, refreshUser, router])
+    navigateOrPrompt(next)
+  }, [next, refreshUser, navigateOrPrompt])
 
   // Guard: if not authenticated, don't render
   if (isLoading || !user) return null
@@ -673,6 +708,16 @@ export default function OnboardingPage() {
           text-sm font-semibold px-4 py-3 rounded-xl shadow-lg animate-in slide-in-from-top-2 duration-200">
           {error}
         </div>
+      )}
+
+      {showInstallPrompt && (
+        <InstallPrompt
+          deferredPrompt={deferredInstallPrompt}
+          onDone={() => {
+            setShowInstallPrompt(false)
+            router.push(installDest)
+          }}
+        />
       )}
 
       <div key={step} className="animate-in fade-in duration-300">

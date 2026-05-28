@@ -24,33 +24,27 @@ router = APIRouter(prefix="/players", tags=["players"])
 #             who were not in the initial favorites compile.
 
 _FAVORITE_APIFOOTBALL_IDS: list[str] = [
-    "278",    # Kylian Mbappé (FRA)        — slot 0
-    "1100",   # Erling Haaland (NOR)       — slot 1
-    "306",    # Mohamed Salah (EGY)        — slot 3
-    "154",    # Lionel Messi (ARG)         — slot 4
-    "762",    # Vinícius Júnior (BRA)      — slot 5
-    "386828", # Lamine Yamal (ESP)         — slot 6
-    "978",    # Kai Havertz (GER)          — slot 7
-    "377122", # Endrick (BRA)              — slot 8
-    "247",    # Cody Gakpo (NED)           — slot 9
-    "51617",  # Darwin Núñez (URU)         — slot 10
-    "2489",   # Luis Díaz (COL)            — slot 11
-    "18979",  # Viktor Gyökeres (SWE)      — slot 13
-    "1496",   # Raphinha (BRA)             — slot 14
+    "278",    # Kylian Mbappé (FRA)     — slot 0
+    "1100",   # Erling Haaland (NOR)    — slot 1
+    "129718", # Jude Bellingham (ENG)   — slot 2
+    "184",    # Harry Kane (ENG)        — slot 3
+    "154",    # Lionel Messi (ARG)      — slot 4
+    "762",    # Vinícius Júnior (BRA)   — slot 5
+    "386828", # Lamine Yamal (ESP)      — slot 6
+    "978",    # Kai Havertz (GER)       — slot 7
+    "377122", # Endrick (BRA)           — slot 8
+    "51617",  # Darwin Núñez (URU)      — slot 9
+    "2489",   # Luis Díaz (COL)         — slot 10
+    "276",    # Neymar (BRA)            — slot 11
+    "18979",  # Viktor Gyökeres (SWE)   — slot 12
+    "1496",   # Raphinha (BRA)          — slot 13
 ]
 
-# Slot numbers must NOT collide with _FAVORITE_ID_ORDER values above.
-_FAVORITE_NAME_SLOTS: list[tuple[str, str, int]] = [
-    ("Bellingham", "eng",  2),  # Jude Bellingham (ENG)  — slot 2
-    ("Neymar",     "bra", 12),  # Neymar (BRA)           — slot 12
-]
+_FAVORITE_NAME_SLOTS: list[tuple[str, str, int]] = []  # all players found by exact API-Football ID
 
 _FAVORITE_ID_ORDER: dict[str, int] = {
     api_id: slot
-    for api_id, slot in zip(
-        _FAVORITE_APIFOOTBALL_IDS,
-        [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14],
-    )
+    for api_id, slot in zip(_FAVORITE_APIFOOTBALL_IDS, range(14))
 }
 
 

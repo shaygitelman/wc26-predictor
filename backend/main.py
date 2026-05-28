@@ -200,22 +200,94 @@ async def _bootstrap_group_fixtures() -> None:
 _GOLDEN_BOOT_FAVORITES: dict[str, str] = {
     "278":    "fra",   # Mbappé
     "1100":   "nor",   # Haaland
-    "184":    "eng",   # Bellingham (ID stale for Kane, team still correct)
-    "306":    "egy",   # Mohamed Salah
+    "129718": "eng",   # Bellingham
+    "184":    "eng",   # Kane (manually seeded — not in WC2026 API squad)
     "154":    "arg",   # Messi
     "762":    "bra",   # Vinícius Júnior
     "386828": "esp",   # Lamine Yamal
     "978":    "ger",   # Havertz
     "377122": "bra",   # Endrick
-    "247":    "ned",   # Gakpo
     "51617":  "uru",   # Darwin Núñez
     "2489":   "col",   # Díaz
+    "276":    "bra",   # Neymar
     "18979":  "swe",   # Gyökeres
     "1496":   "bra",   # Raphinha
 }
 
 
 _MIN_PLAYERS_PER_TEAM = 15  # re-sync a team if it has fewer than this many players
+
+
+async def _seed_manual_players() -> None:
+    """Ensure star players absent from WC2026 API squad data exist in the DB.
+
+    Harry Kane is confirmed for England but API-Football's WC2026 squad endpoint
+    omits him; we seed him directly from his stable club API-Football ID (184).
+    Idempotent: checks by external_ids->>'apifootball' first, then by name+team.
+    """
+    import json as _json
+    import uuid as _uuid
+    from core.database import SessionLocal
+
+    manual_players = [
+        {
+            "apifootball_id": "184",
+            "team_id": "eng",
+            "name": "H. Kane",
+            "position": "FWD",
+            "shirt_number": 9,
+            "photo_url": "https://media.api-sports.io/football/players/184.png",
+        },
+    ]
+
+    try:
+        async with SessionLocal() as db:
+            for p in manual_players:
+                exists = await db.scalar(
+                    text("SELECT id FROM players WHERE external_ids->>'apifootball' = :af_id"),
+                    {"af_id": p["apifootball_id"]},
+                )
+                if exists:
+                    log.info("SEED: %s (af=%s) already in DB", p["name"], p["apifootball_id"])
+                    continue
+                by_name = await db.scalar(
+                    text("SELECT id FROM players WHERE team_id = :tid AND name = :name"),
+                    {"tid": p["team_id"], "name": p["name"]},
+                )
+                if by_name:
+                    await db.execute(
+                        text(
+                            "UPDATE players "
+                            "SET external_ids = jsonb_set(external_ids, '{apifootball}', to_jsonb(:af_id::text), true) "
+                            "WHERE id = :id"
+                        ),
+                        {"id": by_name, "af_id": p["apifootball_id"]},
+                    )
+                    log.info("SEED: patched external_ids for %s", p["name"])
+                else:
+                    await db.execute(
+                        text(
+                            "INSERT INTO players "
+                            "(id, team_id, name, position, shirt_number, photo_url, external_ids, updated_at) "
+                            "VALUES (:id, :team_id, :name, :position, :shirt_number, :photo_url, :ext::jsonb, NOW())"
+                        ),
+                        {
+                            "id": str(_uuid.uuid4()),
+                            "team_id": p["team_id"],
+                            "name": p["name"],
+                            "position": p["position"],
+                            "shirt_number": p["shirt_number"],
+                            "photo_url": p["photo_url"],
+                            "ext": _json.dumps({"apifootball": p["apifootball_id"]}),
+                        },
+                    )
+                    log.info(
+                        "SEED: inserted %s (af=%s) for team=%s",
+                        p["name"], p["apifootball_id"], p["team_id"],
+                    )
+            await db.commit()
+    except Exception as exc:
+        log.error("SEED: manual player seed FAILED — %s", exc, exc_info=True)
 
 
 async def _bootstrap_critical_players() -> None:
@@ -449,6 +521,7 @@ async def lifespan(app: FastAPI):
     await _bootstrap_teams()             # 48 WC2026 teams from config
     await _bootstrap_group_fixtures()    # 72 group fixtures (skips if no API key)
     await _bootstrap_knockout_matches()  # 32 knockout placeholder matches
+    await _seed_manual_players()         # Kane + any other stars absent from WC2026 API squads
     await _bootstrap_critical_players()  # Golden Boot candidate players (skips if no key)
     asyncio.create_task(_bootstrap_all_players())  # remaining 36 teams in background
 

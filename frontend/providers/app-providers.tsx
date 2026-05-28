@@ -12,17 +12,21 @@ interface Props {
 }
 
 export function AppProviders({ children, initialUser }: Props) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+
+  const inner = (
+    <ThemeProvider attribute="class" defaultTheme="dark">
+      <AuthProvider initialUser={initialUser}>
+        {children}
+      </AuthProvider>
+    </ThemeProvider>
+  )
 
   return (
     <PostHogProvider>
-      <GoogleOAuthProvider clientId={clientId}>
-        <ThemeProvider attribute="class" defaultTheme="dark">
-          <AuthProvider initialUser={initialUser}>
-            {children}
-          </AuthProvider>
-        </ThemeProvider>
-      </GoogleOAuthProvider>
+      {clientId
+        ? <GoogleOAuthProvider clientId={clientId}>{inner}</GoogleOAuthProvider>
+        : inner}
     </PostHogProvider>
   )
 }

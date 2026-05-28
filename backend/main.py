@@ -86,6 +86,86 @@ _DEFAULT_LEAGUE_NAME = 'MatchPoint26 World League'
 _DEFAULT_INVITE_CODE = 'WORLD001'
 
 
+async def _bootstrap_teams() -> None:
+    """Seed all 48 WC 2026 teams from authoritative config on first boot.
+
+    Idempotent — ON CONFLICT DO NOTHING on primary key (lowercase code).
+    Skips entirely when 48 rows already exist so steady-state restarts are free.
+    Allows the tournament-picks team picker to work immediately without any
+    admin action after a fresh database deployment.
+    """
+    from datetime import datetime, timezone
+    from core.database import SessionLocal
+    from core.wc2026_config import GROUPS, APIFOOTBALL_ID_TO_CODE
+    from models.team import Team
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    log.info("BOOTSTRAP: checking teams")
+    try:
+        async with SessionLocal() as db:
+            count = (await db.execute(text("SELECT COUNT(*) FROM teams"))).scalar() or 0
+            if count >= 48:
+                log.info("BOOTSTRAP: teams already seeded (%d rows), skipping", count)
+                return
+
+            code_to_api_id: dict[str, str] = {v: k for k, v in APIFOOTBALL_ID_TO_CODE.items()}
+            inserted = 0
+            for g, slots in GROUPS.items():
+                for (code, name, flag_url) in slots:
+                    ext_id = code_to_api_id.get(code)
+                    ext_ids: dict = {"apifootball": ext_id} if ext_id else {}
+                    await db.execute(
+                        pg_insert(Team)
+                        .values(
+                            id=code.lower(),
+                            name=name,
+                            short_code=code,
+                            flag_url=flag_url,
+                            logo_url=None,
+                            group_name=g,
+                            is_confirmed=True,
+                            external_ids=ext_ids,
+                            updated_at=datetime.now(timezone.utc),
+                        )
+                        .on_conflict_do_nothing(index_elements=["id"])
+                    )
+                    inserted += 1
+
+            await db.commit()
+            log.info("BOOTSTRAP: seeded %d teams from config (was %d before)", inserted, count)
+    except Exception as exc:
+        log.error("BOOTSTRAP: team seeding FAILED — %s", exc, exc_info=True)
+
+
+async def _bootstrap_knockout_matches() -> None:
+    """Seed WC 2026 knockout placeholder matches if none exist yet.
+
+    Idempotent — WC2026SeedService uses ON CONFLICT DO NOTHING on external_id.
+    Group-stage fixtures are NOT seeded here — they come from the provider sync
+    (POST /admin/sync/fixtures requires APIFOOTBALL_KEY).
+    """
+    from core.database import SessionLocal
+    from services.wc2026_seed import WC2026SeedService
+
+    log.info("BOOTSTRAP: checking knockout match placeholders")
+    try:
+        async with SessionLocal() as db:
+            count = (await db.execute(
+                text("SELECT COUNT(*) FROM matches WHERE external_id LIKE 'manual-wc2026-%'")
+            )).scalar() or 0
+            if count > 0:
+                log.info("BOOTSTRAP: knockout placeholders already present (%d rows), skipping", count)
+                return
+
+            result = await WC2026SeedService(db).seed()
+            log.info(
+                "BOOTSTRAP: knockout seeding done — created=%d skipped=%d errors=%s",
+                result.created, result.skipped, result.errors or "none",
+            )
+    except Exception as exc:
+        log.error("BOOTSTRAP: knockout match seeding FAILED — %s", exc, exc_info=True)
+
+
 async def _bootstrap_default_league() -> None:
     """Guarantee the default league and all user memberships exist.
 
@@ -155,12 +235,11 @@ async def _bootstrap_default_league() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Migrations are run by `alembic upgrade head` in the startCommand
-    # (render.yaml / deploy scripts) BEFORE uvicorn starts, so they are
-    # guaranteed complete here.  Running them again inside a
-    # ThreadPoolExecutor + asyncio.run() would dispose the shared engine
-    # from a foreign event loop, corrupting the asyncpg connection pool.
-    await _bootstrap_default_league()
+    # Migrations run via `alembic upgrade head` in start.sh BEFORE uvicorn,
+    # so all tables are guaranteed to exist by the time we reach here.
+    await _bootstrap_default_league()    # world league + user memberships
+    await _bootstrap_teams()             # 48 WC2026 teams from config
+    await _bootstrap_knockout_matches()  # 32 knockout placeholder matches
 
     yield
 

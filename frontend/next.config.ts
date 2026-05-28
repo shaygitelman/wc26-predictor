@@ -49,7 +49,7 @@ export default withSentryConfig(nextConfig, {
   // ── Ad-blocker bypass ─────────────────────────────────────────
   // Routes Sentry traffic through our own domain so ad-blockers and
   // mobile privacy browsers don't silently drop events.
-  tunnelRoute: '/monitoring-tunnel',
+  tunnelRoute: process.env.NEXT_PUBLIC_SENTRY_DSN ? '/monitoring-tunnel' : undefined,
 
   automaticVercelMonitors: false,   // we don't use Vercel cron monitors
 })

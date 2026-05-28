@@ -8,10 +8,14 @@ export async function GET() {
   const token = store.get(SESSION_COOKIE)?.value
   if (!token) return Response.json([], { status: 200 })
 
-  const res = await fetch(`${API_BASE}/predictions/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-    next: { revalidate: 0 },
-  })
-  const data = await res.json()
-  return Response.json(data, { status: res.ok ? 200 : res.status })
+  try {
+    const res = await fetch(`${API_BASE}/predictions/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      next: { revalidate: 0 },
+    })
+    const data = await res.json()
+    return Response.json(data, { status: res.ok ? 200 : res.status })
+  } catch {
+    return Response.json({ error: 'Backend unavailable' }, { status: 503 })
+  }
 }

@@ -14,12 +14,16 @@ export async function GET() {
   const auth = await bearerHeader()
   if (!auth) return Response.json([], { status: 200 })
 
-  const res = await fetch(`${API_BASE}/leagues/me`, {
-    headers: { ...auth },
-    cache: 'no-store',
-  })
-  const data = await res.json()
-  return Response.json(data, { status: res.ok ? 200 : res.status })
+  try {
+    const res = await fetch(`${API_BASE}/leagues/me`, {
+      headers: { ...auth },
+      cache: 'no-store',
+    })
+    const data = await res.json()
+    return Response.json(data, { status: res.ok ? 200 : res.status })
+  } catch {
+    return Response.json({ error: 'Backend unavailable' }, { status: 503 })
+  }
 }
 
 // POST /api/leagues — create a new league
@@ -30,12 +34,16 @@ export async function POST(req: Request) {
   const { name } = await req.json()
   if (!name?.trim()) return Response.json({ error: 'Name is required' }, { status: 400 })
 
-  const res = await fetch(`${API_BASE}/leagues`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...auth },
-    body: JSON.stringify({ name: name.trim() }),
-    cache: 'no-store',
-  })
-  const data = await res.json()
-  return Response.json(data, { status: res.ok ? 201 : res.status })
+  try {
+    const res = await fetch(`${API_BASE}/leagues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ name: name.trim() }),
+      cache: 'no-store',
+    })
+    const data = await res.json()
+    return Response.json(data, { status: res.ok ? 201 : res.status })
+  } catch {
+    return Response.json({ error: 'Backend unavailable' }, { status: 503 })
+  }
 }

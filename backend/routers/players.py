@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -11,27 +11,50 @@ from models.team import Team
 
 router = APIRouter(prefix="/players", tags=["players"])
 
-# API-Football IDs for ~15 likely top-scorer candidates at WC 2026
-_FAVORITE_APIFOOTBALL_IDS = [
-    "278",    # Mbappé (FRA)
-    "1100",   # Haaland (NOR)
-    "184",    # Kane (ENG)
-    "874",    # Cristiano Ronaldo (POR)
-    "154",    # Messi (ARG)
-    "762",    # Vinícius Júnior (BRA)
-    "386828", # Lamine Yamal (ESP)
-    "978",    # Kai Havertz (GER)
-    "2864",   # Alexander Isak (SWE)
-    "247",    # Cody Gakpo (NED)
-    "51617",  # Darwin Núñez (URU)
-    "2489",   # Luis Díaz (COL)
-    "10009",  # Rodrygo (BRA)
-    "18979",  # Viktor Gyökeres (SWE)
-    "1496",   # Raphinha (BRA)
+# ── Golden Boot favorites ─────────────────────────────────────────────────────
+#
+# Two-tier lookup so the list stays accurate across squad changes:
+#
+#   Tier 1 — API-Football player IDs (fast, exact).
+#             These are the 11 stars confirmed in WC 2026 squads via the
+#             initial player sync.
+#
+#   Tier 2 — (name_fragment, team_id, display_slot) tuples.
+#             Used as a supplement for stars who aren't matched by ID —
+#             either because the API-Football ID changed or because the player
+#             emerged after the initial favorites list was compiled.
+#             Replaces: Kane (ENG, retired), Ronaldo (POR, retired),
+#                       Isak (SWE, not in squad), Rodrygo (BRA, not in squad).
+
+_FAVORITE_APIFOOTBALL_IDS: list[str] = [
+    "278",    # Kylian Mbappé (FRA)        — slot 0
+    "1100",   # Erling Haaland (NOR)       — slot 1
+    "154",    # Lionel Messi (ARG)         — slot 4
+    "762",    # Vinícius Júnior (BRA)      — slot 5
+    "386828", # Lamine Yamal (ESP)         — slot 6
+    "978",    # Kai Havertz (GER)          — slot 7
+    "247",    # Cody Gakpo (NED)           — slot 9
+    "51617",  # Darwin Núñez (URU)         — slot 10
+    "2489",   # Luis Díaz (COL)            — slot 11
+    "18979",  # Viktor Gyökeres (SWE)      — slot 13
+    "1496",   # Raphinha (BRA)             — slot 14
 ]
 
-# Display order for favorites (same as list above)
-_FAVORITE_ORDER = {api_id: i for i, api_id in enumerate(_FAVORITE_APIFOOTBALL_IDS)}
+# Slot numbers must NOT collide with _FAVORITE_ID_ORDER values above.
+_FAVORITE_NAME_SLOTS: list[tuple[str, str, int]] = [
+    ("Bellingham", "eng", 2),  # Jude Bellingham (ENG) — replaces Kane
+    ("Ramos",      "por", 3),  # Gonçalo Ramos (POR)   — replaces Ronaldo
+    ("Elanga",     "swe", 8),  # Anthony Elanga (SWE)  — replaces Isak
+    ("Neymar",     "bra", 12), # Neymar (BRA)          — replaces Rodrygo
+]
+
+_FAVORITE_ID_ORDER: dict[str, int] = {
+    api_id: slot
+    for api_id, slot in zip(
+        _FAVORITE_APIFOOTBALL_IDS,
+        [0, 1, 4, 5, 6, 7, 9, 10, 11, 13, 14],
+    )
+}
 
 
 class PlayerOut(BaseModel):
@@ -64,8 +87,16 @@ class PlayerOut(BaseModel):
 
 @router.get("/favorites", response_model=list[PlayerOut])
 async def list_favorites(db: AsyncSession = Depends(get_db)) -> list[PlayerOut]:
-    """Returns the ~15 star players likely to contend for Golden Boot, in curated order."""
-    rows = (
+    """Returns ~15 star Golden Boot candidates in curated display order.
+
+    Two-pass query:
+      Pass 1 — exact API-Football player ID match (fast, stable).
+      Pass 2 — name-fragment + team_id match for players whose IDs changed
+               or who weren't in the initial favorites list.
+    Duplicates are removed; results are sorted by display slot number.
+    """
+    # Pass 1: by API-Football player ID
+    id_rows = (
         await db.execute(
             select(Player, Team)
             .outerjoin(Team, Team.id == Player.team_id)
@@ -75,13 +106,49 @@ async def list_favorites(db: AsyncSession = Depends(get_db)) -> list[PlayerOut]:
         )
     ).all()
 
-    def sort_key(row: tuple) -> int:
-        player, _ = row
-        ext_id = (player.external_ids or {}).get("apifootball", "")
-        return _FAVORITE_ORDER.get(ext_id, 999)
+    # Pass 2: name-based supplement (skipped if slot list is empty)
+    name_rows: list = []
+    if _FAVORITE_NAME_SLOTS:
+        seen_ids = {p.id for p, _ in id_rows}
+        conditions = [
+            and_(Player.name.ilike(f"%{name}%"), Player.team_id == team_id)
+            for name, team_id, _ in _FAVORITE_NAME_SLOTS
+        ]
+        extra_rows = (
+            await db.execute(
+                select(Player, Team)
+                .outerjoin(Team, Team.id == Player.team_id)
+                .where(or_(*conditions))
+            )
+        ).all()
+        # Keep only the first match per slot and deduplicate against pass-1 results
+        matched_slots: set[int] = set()
+        for row in extra_rows:
+            player, _ = row
+            if player.id in seen_ids:
+                continue
+            name_lower = player.name.lower()
+            for frag, tid, slot in _FAVORITE_NAME_SLOTS:
+                if frag.lower() in name_lower and player.team_id == tid and slot not in matched_slots:
+                    name_rows.append(row)
+                    matched_slots.add(slot)
+                    seen_ids.add(player.id)
+                    break
 
-    rows_sorted = sorted(rows, key=sort_key)
-    return [PlayerOut.from_row(player, team) for player, team in rows_sorted]
+    def _sort_key(row: tuple) -> int:
+        player, _ = row
+        api_id = (player.external_ids or {}).get("apifootball", "")
+        slot = _FAVORITE_ID_ORDER.get(api_id)
+        if slot is not None:
+            return slot
+        name_lower = player.name.lower()
+        for frag, _, frag_slot in _FAVORITE_NAME_SLOTS:
+            if frag.lower() in name_lower:
+                return frag_slot
+        return 999
+
+    all_rows = sorted(id_rows + name_rows, key=_sort_key)
+    return [PlayerOut.from_row(player, team) for player, team in all_rows]
 
 
 @router.get("", response_model=list[PlayerOut])

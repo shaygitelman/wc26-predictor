@@ -215,16 +215,21 @@ _GOLDEN_BOOT_FAVORITES: dict[str, str] = {
 }
 
 
+_MIN_PLAYERS_PER_TEAM = 15  # re-sync a team if it has fewer than this many players
+
+
 async def _bootstrap_critical_players() -> None:
-    """Sync player rosters for the Golden Boot candidate teams on first boot.
+    """Sync player rosters for the Golden Boot candidate teams.
 
-    Only syncs the ~9 distinct teams whose players appear in the favorites list
-    (BRA, FRA, ARG, ENG, NOR, POR, ESP, GER, SWE, NED, URU, COL) rather than
-    all 48 teams. This ensures the onboarding Golden Boot picker has real players
-    immediately after deployment without requiring a manual admin call.
+    Syncs the ~12 distinct teams whose players appear in the favorites list
+    (BRA, FRA, ARG, ENG, NOR, POR, ESP, GER, SWE, NED, URU, COL).
 
-    Each team = 1 API call (~0.2 s sleep). ~12 teams ≈ 6–10 s total.
-    Skipped entirely if players table already has rows or APIFOOTBALL_KEY is absent.
+    On each startup: re-syncs any critical team that has fewer than
+    _MIN_PLAYERS_PER_TEAM players, rather than skipping the moment any row
+    exists. This handles the case where squads are announced after the initial
+    sync and new players need to be picked up.
+
+    Each team = 1 API call. Skipped entirely if APIFOOTBALL_KEY is absent.
     """
     if not settings.apifootball_key:
         log.info("BOOTSTRAP: APIFOOTBALL_KEY not set — skipping player auto-sync")
@@ -234,18 +239,36 @@ async def _bootstrap_critical_players() -> None:
     from providers.apifootball import ApiFootballProvider
     from services.sync import SyncService
 
-    log.info("BOOTSTRAP: checking player data")
+    log.info("BOOTSTRAP: checking player data per critical team")
     try:
-        async with SessionLocal() as db:
-            count = (await db.execute(text("SELECT COUNT(*) FROM players"))).scalar() or 0
-            if count > 0:
-                log.info("BOOTSTRAP: players already seeded (%d rows), skipping", count)
-                return
-
         critical_teams = list(set(_GOLDEN_BOOT_FAVORITES.values()))
+
+        async with SessionLocal() as db:
+            # Find which critical teams are under the threshold
+            rows = (await db.execute(
+                text(
+                    "SELECT team_id, COUNT(*) AS cnt FROM players "
+                    "WHERE team_id = ANY(:ids) GROUP BY team_id"
+                ),
+                {"ids": critical_teams},
+            )).all()
+            counts = {r[0]: r[1] for r in rows}
+
+        teams_to_sync = [
+            t for t in critical_teams
+            if counts.get(t, 0) < _MIN_PLAYERS_PER_TEAM
+        ]
+
+        if not teams_to_sync:
+            log.info(
+                "BOOTSTRAP: all %d critical teams have ≥%d players, skipping",
+                len(critical_teams), _MIN_PLAYERS_PER_TEAM,
+            )
+            return
+
         log.info(
-            "BOOTSTRAP: no players found — syncing %d critical teams: %s",
-            len(critical_teams), sorted(critical_teams),
+            "BOOTSTRAP: syncing %d under-threshold teams: %s",
+            len(teams_to_sync), sorted(teams_to_sync),
         )
         svc = SyncService(
             provider=ApiFootballProvider(settings.apifootball_key),
@@ -253,7 +276,7 @@ async def _bootstrap_critical_players() -> None:
             season="2026",
         )
         async with SessionLocal() as db:
-            result = await svc.sync_players(db, team_ids=critical_teams)
+            result = await svc.sync_players(db, team_ids=teams_to_sync)
             log.info(
                 "BOOTSTRAP: player sync done — records=%d status=%s errors=%s",
                 result.records_affected, result.status, result.errors or "none",

@@ -95,7 +95,7 @@ export default function TournamentPage() {
       setFavorites(Array.isArray(favList) ? favList : [])
 
       if (pick) {
-        setWinnerId(pick.winnerId ?? undefined)
+        setWinnerId(pick.winnerId?.toLowerCase() ?? undefined)
         setScorerId(pick.topScorerId ?? undefined)
         setIsLocked(pick.isLocked)
         setLockTime(pick.lockTime ?? undefined)
@@ -159,7 +159,7 @@ export default function TournamentPage() {
     if (!canSave || saveState !== 'idle') return
     setSaveState('saving'); setSaveError('')
     try {
-      const payload = { winnerId: winnerId ?? null, topScorerId: scorerId ?? null }
+      const payload = { winnerId: winnerId?.toLowerCase() ?? null, topScorerId: scorerId ?? null }
       const res = await fetch('/api/tournament/picks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

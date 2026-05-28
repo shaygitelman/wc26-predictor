@@ -225,20 +225,34 @@ export function MatchesClient({ initialMatches, initialPredictions, initialStand
   const [predictions, setPredictions] = useState<Prediction[]>(initialPredictions)
   const [filter,      setFilter]      = useState<FilterValue>('all')
 
-  const lastFocusFetchRef = useRef(0)
+  const lastFetchRef = useRef(0)
 
   useEffect(() => {
-    function onFocus() {
+    function refreshPredictions() {
       const now = Date.now()
-      if (now - lastFocusFetchRef.current < 10_000) return  // 10s cooldown
-      lastFocusFetchRef.current = now
+      if (now - lastFetchRef.current < 5_000) return  // 5s cooldown
+      lastFetchRef.current = now
       fetch('/api/predictions/me')
         .then(r => r.ok ? r.json() : null)
         .then(ps => { if (ps) setPredictions(ps) })
         .catch(() => {})
     }
+
+    // On mount (covers Link/router.push navigation to this page)
+    refreshPredictions()
+
+    // On window regain focus (user switches apps and returns)
+    function onFocus() { refreshPredictions() }
+
+    // On browser back/forward from bfcache (e.persisted = true)
+    function onPageShow(e: PageTransitionEvent) { if (e.persisted) refreshPredictions() }
+
     window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pageshow', onPageShow)
+    }
   }, [])
 
   const liveCount    = initialMatches.filter(m => m.status === 'live').length

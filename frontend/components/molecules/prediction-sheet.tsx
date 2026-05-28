@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { X, Check, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ROUND_POINTS } from '@/lib/constants'
@@ -27,6 +28,7 @@ export function PredictionSheet({
   trigger,
 }: PredictionSheetProps) {
   const hasExisting = existingHome !== undefined
+  const router = useRouter()
 
   const [isOpen,    setIsOpen]    = useState(false)
   const [homeScore, setHomeScore] = useState(existingHome ?? 1)
@@ -58,6 +60,7 @@ export function PredictionSheet({
         awayScore,
       })
       onSaved?.(prediction)
+      router.refresh()
       setStatus('saved')
       setTimeout(() => { setIsOpen(false); setStatus('idle') }, 900)
     } catch (err) {

@@ -80,8 +80,9 @@ async def complete_onboarding(
     """
     pick = await _get_or_create_pick(user.id, db)
 
-    pick.winner_team_code = body.winner_team_code or None
-    pick.top_scorer_id    = body.top_scorer_id    or None
+    # Normalize winner_team_code to lowercase to match team.id in the DB
+    pick.winner_team_code = (body.winner_team_code or "").lower() or None
+    pick.top_scorer_id    = body.top_scorer_id or None
     if pick.winner_team_code or pick.top_scorer_id:
         pick.submitted_at = datetime.now(timezone.utc)
 
@@ -174,9 +175,9 @@ async def upsert_tournament_pick(
     )
 
     # Always update both fields so clearing (sending null) works correctly.
-    # `or None` converts empty string "" to None as well.
-    pick.winner_team_code = body.winner_team_code or None
-    pick.top_scorer_id    = body.top_scorer_id    or None
+    # Normalize to lowercase to match team.id (DB primary key is lowercase code).
+    pick.winner_team_code = (body.winner_team_code or "").lower() or None
+    pick.top_scorer_id    = body.top_scorer_id or None
 
     if pick.winner_team_code or pick.top_scorer_id:
         pick.submitted_at = datetime.now(timezone.utc)

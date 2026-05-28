@@ -27,7 +27,7 @@ export async function PUT(req: Request) {
 
   const body = await req.json()
   const payload = {
-    winner_team_code: body.winnerId   ?? null,
+    winner_team_code: body.winnerId?.toLowerCase() ?? null,
     top_scorer_id:    body.topScorerId ?? null,
   }
 

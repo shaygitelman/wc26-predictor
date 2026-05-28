@@ -12,7 +12,8 @@ interface TournamentPicksCardProps {
 
 export function TournamentPicksCard({ pick, teams }: TournamentPicksCardProps) {
   const hasPicks = pick.winnerId || pick.topScorerId
-  const winner   = teams.find(t => t.id === pick.winnerId)
+  const winnerId = pick.winnerId?.toLowerCase()
+  const winner   = teams.find(t => t.id === winnerId)
 
   return (
     <Link

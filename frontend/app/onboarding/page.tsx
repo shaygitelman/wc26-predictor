@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Check, ChevronRight, Loader2 } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
@@ -39,12 +39,12 @@ function Confetti() {
   const pieces = useMemo(() =>
     Array.from({ length: 55 }, (_, i) => ({
       id:       i,
-      left:     Math.random() * 100,
-      delay:    Math.random() * 1.8,
-      duration: 2.5 + Math.random() * 2,
-      color:    CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
-      size:     6 + Math.floor(Math.random() * 8),
-      sway:     0.8 + Math.random() * 1.2,
+      left:     (i * 1.8182 + 7) % 100,
+      delay:    (i * 0.0327) % 1.8,
+      duration: 2.5 + (i * 0.0364) % 2,
+      color:    CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      size:     6 + (i % 8),
+      sway:     0.8 + (i * 0.02) % 1.2,
     })), [])
 
   return (
@@ -570,7 +570,7 @@ function safeNext(raw: string | null): string {
   return raw
 }
 
-export default function OnboardingPage() {
+function OnboardingPageInner() {
   const { user, isLoading, refreshUser } = useAuth()
   const router       = useRouter()
   const searchParams = useSearchParams()
@@ -698,7 +698,6 @@ export default function OnboardingPage() {
     navigateOrPrompt(next)
   }, [next, refreshUser, navigateOrPrompt])
 
-  // Guard: if not authenticated, don't render
   if (isLoading || !user) return null
 
   return (
@@ -753,5 +752,13 @@ export default function OnboardingPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense>
+      <OnboardingPageInner />
+    </Suspense>
   )
 }

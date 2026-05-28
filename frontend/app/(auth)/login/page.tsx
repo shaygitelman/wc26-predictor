@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth } from '@/providers/auth-provider'
@@ -8,7 +8,7 @@ import type { AuthUser } from '@/types/auth'
 
 type State = 'idle' | 'loading' | 'error'
 
-export default function LoginPage() {
+function LoginPageContent() {
   const [state,  setState]  = useState<State>('idle')
   const [errMsg, setErrMsg] = useState('')
   const router       = useRouter()
@@ -136,6 +136,14 @@ export default function LoginPage() {
       </p>
 
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginPageContent />
+    </Suspense>
   )
 }
 

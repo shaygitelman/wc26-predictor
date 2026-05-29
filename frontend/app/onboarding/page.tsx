@@ -11,6 +11,7 @@ import {
   trackOnboardingCompleted,
 } from '@/lib/analytics'
 import { InstallPrompt, type BeforeInstallPromptEvent } from '@/components/install-prompt'
+import { apiFetch } from '@/lib/api-client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -643,7 +644,7 @@ function OnboardingPageInner() {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch('/api/tournament/onboarding', {
+      const res = await apiFetch('/api/tournament/onboarding', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ winner_team_code: winner.code, top_scorer_id: scorer.id }),
@@ -688,7 +689,7 @@ function OnboardingPageInner() {
     if (inviteMatch) {
       setJoining(true)
       try {
-        const res = await fetch('/api/leagues/join', {
+        const res = await apiFetch('/api/leagues/join', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ inviteCode: inviteMatch[1] }),

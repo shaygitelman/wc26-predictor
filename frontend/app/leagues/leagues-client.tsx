@@ -7,6 +7,7 @@ import { LeagueCard } from '@/components/molecules/league-card'
 import { SectionHeader } from '@/components/molecules/section-header'
 import type { League } from '@/types/league'
 import { trackLeagueCreated, trackLeagueJoined } from '@/lib/analytics'
+import { apiFetch } from '@/lib/api-client'
 
 type SheetMode   = 'create' | 'join' | null
 type SheetStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -54,7 +55,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
     if (!name || name.length < 2) { setCreateError('Name must be at least 2 characters.'); return }
     setCreateStatus('loading'); setCreateError('')
     try {
-      const res  = await fetch('/api/leagues', {
+      const res  = await apiFetch('/api/leagues', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ name }),
@@ -80,7 +81,7 @@ export function LeaguesClient({ initialLeagues }: { initialLeagues: League[] }) 
     if (!code) { setJoinError('Enter an invite code.'); return }
     setJoinStatus('loading'); setJoinError('')
     try {
-      const res  = await fetch('/api/leagues/join', {
+      const res  = await apiFetch('/api/leagues/join', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ inviteCode: code }),

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Lock, MapPin, Calendar, Check } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
 import { cn, formatMatchDate, formatKickoffTime } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { TeamFlag } from '@/components/atoms/team-flag'
@@ -248,7 +249,7 @@ function InlinePredictionHero({
     setStatus('saving')
     setErr('')
     try {
-      const res = await fetch(`/api/predictions/${match.id}`, {
+      const res = await apiFetch(`/api/predictions/${match.id}`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ predictedHome: home, predictedAway: away }),

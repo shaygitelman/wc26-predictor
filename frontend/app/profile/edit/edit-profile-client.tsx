@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiFetch } from '@/lib/api-client'
 import { ArrowLeft, Check, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { UserAvatar } from '@/components/atoms/user-avatar'
@@ -62,7 +63,7 @@ export function EditProfileClient({ user }: { user: User }) {
     if (!isDirty || usernameError || saveStatus === 'saving' || saveStatus === 'saved') return
     setSaveStatus('saving'); setSaveError('')
     try {
-      const res = await fetch('/api/users/me', {
+      const res = await apiFetch('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

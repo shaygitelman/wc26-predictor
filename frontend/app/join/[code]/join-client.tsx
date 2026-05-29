@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiFetch } from '@/lib/api-client'
 import { Users, Trophy, Loader2, Share2 } from 'lucide-react'
 import { trackLeagueJoined } from '@/lib/analytics'
 
@@ -24,7 +25,7 @@ export function JoinClient({ name, memberCount, creatorUsername, inviteCode, ini
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/leagues/join', {
+      const res = await apiFetch('/api/leagues/join', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ inviteCode }),

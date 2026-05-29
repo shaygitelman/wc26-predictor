@@ -5,6 +5,7 @@ import {
   EyeOff, Globe, TrendingUp, Clock, Star, UserPlus,
   type LucideIcon,
 } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 
 export interface PrivacySettings {
@@ -26,7 +27,7 @@ export function PrivacyClient({ initialSettings }: { initialSettings: PrivacySet
     setError('')
 
     try {
-      const res = await fetch('/api/users/me/privacy', {
+      const res = await apiFetch('/api/users/me/privacy', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ [key]: newVal }),

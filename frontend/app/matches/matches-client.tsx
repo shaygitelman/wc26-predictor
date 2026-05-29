@@ -8,6 +8,7 @@ import { MatchCard } from '@/components/molecules/match-card'
 import { LiveDot } from '@/components/atoms/live-dot'
 import { formatMatchDate } from '@/lib/utils'
 import type { Match } from '@/types/match'
+import { apiFetch } from '@/lib/api-client'
 import type { Prediction } from '@/types/prediction'
 import type { ApiGroupStandings, ApiTeamStanding } from '@/types/standings'
 
@@ -232,7 +233,7 @@ export function MatchesClient({ initialMatches, initialPredictions, initialStand
       const now = Date.now()
       if (now - lastFetchRef.current < 5_000) return  // 5s cooldown
       lastFetchRef.current = now
-      fetch('/api/predictions/me')
+      apiFetch('/api/predictions/me')
         .then(r => r.ok ? r.json() : null)
         .then(ps => { if (ps) setPredictions(ps) })
         .catch(() => {})

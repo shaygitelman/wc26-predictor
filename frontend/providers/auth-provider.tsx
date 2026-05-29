@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import type { AuthUser } from '@/types/auth'
 import { AUTH_ROUTES } from '@/lib/constants'
 import { identifyUser, resetIdentity } from '@/lib/analytics'
+import { setOnUnauthorized } from '@/lib/api-client'
 import * as Sentry from '@sentry/nextjs'
 
 interface AuthContextValue {
@@ -38,6 +39,20 @@ export function AuthProvider({
   const userRef = useRef(user)
   useEffect(() => { userRef.current = user }, [user])
 
+  // Register the global 401 interceptor used by apiFetch() in client components.
+  // Fires when any authenticated API call comes back with 401 (expired session).
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      const pathname = window.location.pathname
+      // Don't redirect if already on an auth page — prevents infinite loops
+      // when e.g. /api/auth/me itself returns 401.
+      if (AUTH_ROUTES.some((r: string) => pathname.startsWith(r))) return
+      setUser(null)
+      setIsLoading(false)
+      window.location.href = '/login'
+    })
+  }, [])
+
   useEffect(() => {
     if (initialUser !== undefined) {
       if (initialUser) {
@@ -66,17 +81,25 @@ export function AuthProvider({
 
   // Bfcache guard: when the browser restores a page from the back-forward
   // cache (Back/Forward navigation after logout), re-validate the session.
-  // If the user logged out in the meantime, redirect to /login immediately
-  // instead of showing a stale authenticated page.
+  // We immediately clear auth state on restore so stale authenticated content
+  // is never visible — then restore it if the session is still valid.
   useEffect(() => {
     function handlePageShow(ev: PageTransitionEvent) {
       if (!ev.persisted) return        // normal load, not a bfcache restore
       if (!userRef.current) return     // anonymous page — no session to check
+      // Optimistically clear to prevent stale auth content flash
+      setUser(null)
+      setIsLoading(true)
       fetch('/api/auth/me')
         .then(r => r.ok ? r.json() : null)
         .catch(() => null)
         .then(data => {
-          if (!data?.user) window.location.replace('/login')
+          if (data?.user) {
+            setUser(data.user)
+            setIsLoading(false)
+          } else {
+            window.location.replace('/login')
+          }
         })
     }
     window.addEventListener('pageshow', handlePageShow)

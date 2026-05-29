@@ -7,6 +7,7 @@ import { ContextHeader } from '@/components/layout/context-header'
 import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { useAuth } from '@/providers/auth-provider'
+import { apiFetch } from '@/lib/api-client'
 import type { League, LeagueStanding } from '@/types/league'
 import { trackInviteLinkCopied } from '@/lib/analytics'
 
@@ -241,7 +242,7 @@ export function LeagueDetailClient({
   const handleDelete = async () => {
     setActionBusy(true)
     try {
-      const res = await fetch(`/api/leagues/${league.id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/leagues/${league.id}`, { method: 'DELETE' })
       if (res.ok || res.status === 204) {
         setModal(null)
         showToast('League deleted.', 'success')
@@ -264,7 +265,7 @@ export function LeagueDetailClient({
   const handleLeave = async () => {
     setActionBusy(true)
     try {
-      const res = await fetch(`/api/leagues/${league.id}/leave`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/leagues/${league.id}/leave`, { method: 'DELETE' })
       if (res.ok || res.status === 204) {
         setModal(null)
         showToast('You have left the league.', 'success')

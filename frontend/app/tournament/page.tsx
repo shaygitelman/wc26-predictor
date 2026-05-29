@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Check, Lock, Search, X, Star, Clock } from 'lucide-react'
+import { Check, Lock, Search, X, Star, Clock, AlertCircle } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { TeamFlag } from '@/components/atoms/team-flag'
@@ -73,17 +74,33 @@ export default function TournamentPage() {
   const [isLocked,       setIsLocked]       = useState(false)
   const [lockTime,       setLockTime]       = useState<string | undefined>()
   const [loading,        setLoading]        = useState(true)
+  const [fetchError,     setFetchError]     = useState(false)
   const [saveState,      setSaveState]      = useState<SaveState>('idle')
   const [saveError,      setSaveError]      = useState('')
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/teams').then(r => r.ok ? r.json() : []),
-      fetch('/api/tournament/picks').then(r => r.ok ? r.json() : null),
-      fetch('/api/players/favorites').then(r => r.ok ? r.json() : []),
-    ]).then(([teamList, pick, favList]: [TeamDetail[], TournamentPick | null, Player[]]) => {
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setFetchError(false)
+    try {
+      const [teamsRes, picksRes, favsRes] = await Promise.all([
+        apiFetch('/api/teams'),
+        apiFetch('/api/tournament/picks'),
+        apiFetch('/api/players/favorites'),
+      ])
+
+      if (!teamsRes.ok || !favsRes.ok) {
+        console.error('[tournament] load error: teams=%d favs=%d picks=%d',
+          teamsRes.status, favsRes.status, picksRes.status)
+        setFetchError(true)
+        return
+      }
+
+      const teamList: TeamDetail[]          = await teamsRes.json().catch(() => [])
+      const pick: TournamentPick | null     = picksRes.ok ? await picksRes.json().catch(() => null) : null
+      const favList: Player[]               = await favsRes.json().catch(() => [])
+
       const derived: Team[] = (Array.isArray(teamList) ? teamList : []).map(t => ({
         id:        t.id,
         name:      t.name,
@@ -100,7 +117,6 @@ export default function TournamentPage() {
         setIsLocked(pick.isLocked)
         setLockTime(pick.lockTime ?? undefined)
 
-        // Hydrate selected player from embedded scorer data in pick response
         if (pick.scorer) {
           setSelectedPlayer({
             id:            pick.scorer.id,
@@ -112,8 +128,15 @@ export default function TournamentPage() {
           })
         }
       }
-    }).catch(() => {}).finally(() => setLoading(false))
+    } catch (err) {
+      console.error('[tournament] load failed', err)
+      setFetchError(true)
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => { loadData() }, [loadData])
 
   const runSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
@@ -123,7 +146,7 @@ export default function TournamentPage() {
     }
     setIsSearching(true)
     try {
-      const res = await fetch(`/api/players?search=${encodeURIComponent(q.trim())}`)
+      const res = await apiFetch(`/api/players?search=${encodeURIComponent(q.trim())}`)
       const data: Player[] = res.ok ? await res.json() : []
       setSearchResults(data)
     } catch {
@@ -160,7 +183,7 @@ export default function TournamentPage() {
     setSaveState('saving'); setSaveError('')
     try {
       const payload = { winnerId: winnerId?.toLowerCase() ?? null, topScorerId: scorerId ?? null }
-      const res = await fetch('/api/tournament/picks', {
+      const res = await apiFetch('/api/tournament/picks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -201,6 +224,32 @@ export default function TournamentPage() {
         <ContextHeader title="Tournament Picks" back="/profile" />
         <div className="flex flex-1 items-center justify-center">
           <div className="size-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
+  if (fetchError) {
+    return (
+      <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+        <ContextHeader title="Tournament Picks" back="/profile" />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-card border border-border rounded-2xl p-8 flex flex-col gap-4 items-center text-center shadow-xl">
+            <AlertCircle className="size-10 text-destructive" strokeWidth={1.5} />
+            <div>
+              <p className="text-lg font-bold text-foreground">Couldn&apos;t Load Picks</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                There was a problem reaching the server. Check your connection and try again.
+              </p>
+            </div>
+            <button
+              onClick={loadData}
+              className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm
+                hover:opacity-90 active:scale-[0.98] transition-all"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     )

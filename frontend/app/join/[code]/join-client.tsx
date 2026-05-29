@@ -10,12 +10,13 @@ interface Props {
   memberCount:     number
   creatorUsername: string
   inviteCode:      string
+  initialError?:   string | null
 }
 
-export function JoinClient({ name, memberCount, creatorUsername, inviteCode }: Props) {
+export function JoinClient({ name, memberCount, creatorUsername, inviteCode, initialError = null }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
+  const [error,   setError]   = useState<string | null>(initialError)
 
   const inviteUrl = typeof window !== 'undefined' ? `${window.location.origin}/join/${inviteCode}` : ''
 

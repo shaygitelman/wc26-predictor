@@ -12,13 +12,17 @@ export async function POST(req: Request) {
   const { inviteCode } = await req.json()
   if (!inviteCode?.trim()) return Response.json({ error: 'Invite code is required' }, { status: 400 })
 
-  const res = await fetch(`${API_BASE}/leagues/join`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    // FastAPI schema uses snake_case invite_code
-    body: JSON.stringify({ invite_code: inviteCode.trim().toUpperCase() }),
-    cache: 'no-store',
-  })
-  const data = await res.json()
-  return Response.json(data, { status: res.ok ? 200 : res.status })
+  try {
+    const res = await fetch(`${API_BASE}/leagues/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      // FastAPI schema uses snake_case invite_code
+      body: JSON.stringify({ invite_code: inviteCode.trim().toUpperCase() }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({}))
+    return Response.json(data, { status: res.ok ? 200 : res.status })
+  } catch {
+    return Response.json({ detail: 'Could not reach server. Please try again.' }, { status: 502 })
+  }
 }

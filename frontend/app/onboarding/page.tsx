@@ -312,38 +312,48 @@ function ScorerStep({
   const [search,    setSearch]    = useState('')
   const [players,   setPlayers]   = useState<Player[]>([])
   const [loading,   setLoading]   = useState(true)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef     = useRef<AbortController | null>(null)
 
   // Load favorites on mount
   useEffect(() => {
-    fetch('/api/players/favorites')
+    const ac = new AbortController()
+    fetch('/api/players/favorites', { signal: ac.signal })
       .then(r => r.ok ? r.json() : [])
       .then(setPlayers)
-      .catch(() => setPlayers([]))
+      .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
       .finally(() => setLoading(false))
+    return () => ac.abort()
   }, [])
 
-  // Debounced search
+  // Debounced search with abort-on-stale
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
+    abortRef.current?.abort()
+
     if (!search.trim()) {
       setLoading(true)
-      fetch('/api/players/favorites')
+      const ac = new AbortController()
+      abortRef.current = ac
+      fetch('/api/players/favorites', { signal: ac.signal })
         .then(r => r.ok ? r.json() : [])
         .then(setPlayers)
-        .catch(() => setPlayers([]))
+        .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
         .finally(() => setLoading(false))
-      return
+      return () => ac.abort()
     }
+
+    const ac = new AbortController()
+    abortRef.current = ac
     debounceRef.current = setTimeout(() => {
       setLoading(true)
-      fetch(`/api/players?search=${encodeURIComponent(search)}`)
+      fetch(`/api/players?search=${encodeURIComponent(search)}`, { signal: ac.signal })
         .then(r => r.ok ? r.json() : [])
         .then(setPlayers)
-        .catch(() => setPlayers([]))
+        .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
         .finally(() => setLoading(false))
     }, 300)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    return () => { clearTimeout(debounceRef.current!); ac.abort() }
   }, [search])
 
   return (

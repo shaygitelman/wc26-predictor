@@ -13,5 +13,6 @@ export async function POST() {
     maxAge:   0,
     path:     '/',
   })
+  console.log('[auth] logout')
   return Response.json({ ok: true })
 }

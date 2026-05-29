@@ -32,6 +32,16 @@ export function trackSignIn(method: 'google') {
   capture('user_signed_in', { method })
 }
 
+export function trackLoginPageViewed(props: { hasInviteContext: boolean }) {
+  capture('login_page_viewed', props)
+}
+
+// ── Invite funnel ─────────────────────────────────────────────────────────────
+
+export function trackInviteContextShown(props: { leagueName: string; memberCount: number }) {
+  capture('invite_context_shown', props)
+}
+
 // ── Onboarding events ─────────────────────────────────────────────────────────
 
 export function trackOnboardingStarted() {

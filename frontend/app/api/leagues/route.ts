@@ -42,6 +42,7 @@ export async function POST(req: Request) {
       cache: 'no-store',
     })
     const data = await res.json()
+    if (res.ok) console.log('[leagues] created id=%s name=%s', data.id, data.name)
     return Response.json(data, { status: res.ok ? 201 : res.status })
   } catch {
     return Response.json({ error: 'Backend unavailable' }, { status: 503 })

@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useGoogleLogin, useGoogleOAuth } from '@react-oauth/google'
 import { Trophy, Users } from 'lucide-react'
 import type { AuthUser } from '@/types/auth'
+import { trackSignIn, trackLoginPageViewed, trackInviteContextShown } from '@/lib/analytics'
 
 interface LeaguePreview {
   name:            string
@@ -72,12 +73,22 @@ function LoginPageContent() {
 
   const inviteCode = /^\/join\/([A-Za-z0-9]+)$/.exec(next)?.[1] ?? null
   const [leaguePreview, setLeaguePreview] = useState<LeaguePreview | null>(null)
+
+  useEffect(() => {
+    trackLoginPageViewed({ hasInviteContext: !!inviteCode })
+  }, [inviteCode])
+
   useEffect(() => {
     if (!inviteCode) return
     fetch(`/api/leagues/preview/${inviteCode}`)
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
-      .then(data => setLeaguePreview(data ?? null))
+      .then((data: LeaguePreview | null) => {
+        if (data) {
+          setLeaguePreview(data)
+          trackInviteContextShown({ leagueName: data.name, memberCount: data.memberCount })
+        }
+      })
   }, [inviteCode])
 
   async function handleGoogleSuccess(accessToken: string) {
@@ -94,6 +105,7 @@ function LoginPageContent() {
         throw new Error(data.error ?? 'Sign-in failed')
       }
       const { user }: { user: AuthUser & { onboarding_completed?: boolean } } = await res.json()
+      trackSignIn('google')
       // Hard navigation: destroys client state so RootLayout re-runs server-side
       // with the new session cookie, giving AuthProvider a fresh initialUser on
       // mount. Same pattern as logout — avoids stale RSC payloads and the

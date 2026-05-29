@@ -35,5 +35,6 @@ export async function POST(req: Request) {
   const store = await cookies()
   store.set(SESSION_COOKIE, access_token, cookieOptions(isDev))
 
+  console.log('[tournament] onboarding_complete')
   return Response.json({ ok: true })
 }

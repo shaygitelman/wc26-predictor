@@ -9,6 +9,7 @@ import {
   trackOnboardingStarted,
   trackOnboardingStep,
   trackOnboardingCompleted,
+  trackLeagueJoined,
 } from '@/lib/analytics'
 import { InstallPrompt, type BeforeInstallPromptEvent } from '@/components/install-prompt'
 import { apiFetch } from '@/lib/api-client'
@@ -722,6 +723,7 @@ function OnboardingPageInner() {
         })
         if (res.ok) {
           const data = await res.json()
+          trackLeagueJoined({ source: 'onboarding_auto' })
           setJoining(false)
           navigateOrPrompt(`/leagues/${data.id}`)
           return

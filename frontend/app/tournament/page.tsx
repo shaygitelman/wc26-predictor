@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Check, Lock, Search, X, Star, Clock, AlertCircle } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { trackTournamentPicksSaved } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { TeamFlag } from '@/components/atoms/team-flag'
@@ -209,6 +210,7 @@ export default function TournamentPage() {
       } else {
         setSelectedPlayer(null)
       }
+      trackTournamentPicksSaved({ pickedWinner: !!data.winnerId, pickedScorer: !!data.topScorerId })
       setSaveState('saved')
       setTimeout(() => setSaveState('idle'), 1800)
     } catch (err) {

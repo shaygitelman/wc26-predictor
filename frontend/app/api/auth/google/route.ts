@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     }
 
     const { user, access_token } = await backendRes.json()
+    console.log('[auth] sign_in user=%s', user.id ?? user.sub ?? 'unknown')
 
     // 3. Store the FastAPI JWT directly as the session cookie.
     //    The proxy and /api/auth/me both verify it with the shared JWT_SECRET.

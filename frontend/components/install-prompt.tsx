@@ -134,26 +134,43 @@ export function InstallPrompt({ deferredPrompt, onDone }: Props) {
 
           {/* CTA buttons */}
           <div className="w-full flex flex-col gap-2.5 mt-0.5">
-            {platform === 'android-pwa' && (
-              <button
-                onClick={handleInstall}
-                disabled={installing}
-                className="w-full h-[52px] rounded-2xl bg-primary text-primary-foreground font-bold text-[15px]
-                  flex items-center justify-center gap-2
-                  shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all
-                  disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {installing ? 'Installing…' : 'Install App'}
-              </button>
+            {/* Primary CTA — always Continue for iOS/manual; Install for Android PWA */}
+            {platform === 'android-pwa' ? (
+              <>
+                <button
+                  onClick={handleInstall}
+                  disabled={installing}
+                  className="w-full h-[52px] rounded-2xl bg-primary text-primary-foreground font-bold text-[15px]
+                    flex items-center justify-center gap-2
+                    shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all
+                    disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {installing ? 'Installing…' : 'Install App'}
+                </button>
+                <button
+                  onClick={handleDone}
+                  className="w-full h-12 rounded-2xl text-sm font-semibold text-foreground/70
+                    border border-white/[0.10] bg-white/[0.03]
+                    hover:bg-white/[0.07] active:scale-[0.98] transition-all"
+                >
+                  Continue to MatchPoint26
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleDone}
+                  className="w-full h-[52px] rounded-2xl bg-primary text-primary-foreground font-bold text-[15px]
+                    flex items-center justify-center
+                    shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all"
+                >
+                  Continue to MatchPoint26
+                </button>
+                <p className="text-xs text-muted-foreground/50 text-center leading-relaxed px-4">
+                  Follow the steps above to add the app, then tap Continue.
+                </p>
+              </>
             )}
-            <button
-              onClick={handleDone}
-              className="w-full h-12 rounded-2xl text-sm font-semibold text-muted-foreground/80
-                border border-white/[0.08]
-                hover:bg-white/[0.04] active:scale-[0.98] transition-all"
-            >
-              {platform === 'android-pwa' ? 'Continue to App' : "I'll add it later"}
-            </button>
           </div>
 
         </div>

@@ -13,9 +13,13 @@ interface Props {
 }
 
 export function AppProviders({ children, initialUser, googleClientId }: Props) {
+  // Server prop is always correct at runtime; build-time inline is the fallback
+  // for any edge case (logout remount, hydration timing) where the prop arrives empty.
+  const clientId = googleClientId || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''
+
   return (
     <PostHogProvider>
-      <GoogleOAuthProvider clientId={googleClientId}>
+      <GoogleOAuthProvider clientId={clientId}>
         <ThemeProvider attribute="class" defaultTheme="dark">
           <AuthProvider initialUser={initialUser}>
             {children}

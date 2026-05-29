@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { useGoogleLogin } from '@react-oauth/google'
+import { useGoogleLogin, useGoogleOAuth } from '@react-oauth/google'
 import type { AuthUser } from '@/types/auth'
 
 /** Reject non-relative or protocol-relative URLs to prevent open-redirect. */
@@ -13,6 +13,48 @@ function safeNext(raw: string | null): string {
 }
 
 type State = 'idle' | 'loading' | 'error'
+
+// ─── innermost layer: only mounted when clientId is confirmed non-empty ───────
+// This is the ONLY component that calls useGoogleLogin. Keeping it isolated
+// guarantees initTokenClient is never called with an empty client_id because
+// its parent (GoogleLoginGuard) won't render it until clientId is available.
+function GoogleLoginButton({
+  onSuccess,
+  onError,
+  loading,
+}: {
+  onSuccess: (accessToken: string) => void
+  onError:   () => void
+  loading:   boolean
+}) {
+  const login = useGoogleLogin({
+    onSuccess: response => onSuccess(response.access_token),
+    onError,
+  })
+  return <GoogleButton onClick={() => login()} loading={loading} />
+}
+
+// ─── guard layer: reads clientId from context, blocks mount if empty ──────────
+// useGoogleOAuth() returns the live context value from GoogleOAuthProvider.
+// If clientId is empty the button is rendered disabled and no SDK call is made.
+function GoogleLoginGuard({
+  onSuccess,
+  onError,
+  loading,
+}: {
+  onSuccess: (accessToken: string) => void
+  onError:   () => void
+  loading:   boolean
+}) {
+  const { clientId } = useGoogleOAuth()
+  if (!clientId) {
+    if (typeof window !== 'undefined') {
+      console.error('[GoogleAuth] clientId is empty — Google sign-in unavailable. Check GOOGLE_CLIENT_ID env var in Vercel.')
+    }
+    return <GoogleButton onClick={() => {}} loading={false} disabled={true} />
+  }
+  return <GoogleLoginButton onSuccess={onSuccess} onError={onError} loading={loading} />
+}
 
 function LoginPageContent() {
   const [state,  setState]  = useState<State>('idle')
@@ -48,11 +90,6 @@ function LoginPageContent() {
       setErrMsg(err instanceof Error ? err.message : 'Something went wrong')
     }
   }
-
-  const login = useGoogleLogin({
-    onSuccess: response => handleGoogleSuccess(response.access_token),
-    onError:   ()       => { setState('error'); setErrMsg('Google sign-in was cancelled or failed.') },
-  })
 
   return (
     <div className="w-full max-w-sm flex flex-col items-center gap-9">
@@ -122,8 +159,9 @@ function LoginPageContent() {
         className="w-full flex flex-col gap-3 animate-enter-up"
         style={{ animationDelay: '140ms', animationFillMode: 'backwards' }}
       >
-        <GoogleButton
-          onClick={() => { setState('idle'); setErrMsg(''); login() }}
+        <GoogleLoginGuard
+          onSuccess={handleGoogleSuccess}
+          onError={() => { setState('error'); setErrMsg('Google sign-in was cancelled or failed.') }}
           loading={state === 'loading'}
         />
         {state === 'error' && (
@@ -154,17 +192,18 @@ export default function LoginPage() {
   )
 }
 
-function GoogleButton({ onClick, loading }: { onClick: () => void; loading: boolean }) {
+function GoogleButton({ onClick, loading, disabled }: { onClick: () => void; loading: boolean; disabled?: boolean }) {
+  const isDisabled = loading || disabled
   return (
     <button
       onClick={onClick}
-      disabled={loading}
+      disabled={isDisabled}
       className={[
         'w-full flex items-center justify-center gap-3',
         'bg-white/[0.05] border border-white/[0.12]',
         'rounded-2xl px-5 py-[18px]',
         'transition-all duration-200',
-        loading
+        isDisabled
           ? 'opacity-60 cursor-not-allowed'
           : 'hover:bg-white/[0.08] hover:border-primary/40 active:scale-[0.98]',
       ].join(' ')}

@@ -487,15 +487,17 @@ function PlayerRow({ player, isSelected, onSelect }: { player: Player; isSelecte
 // ─── Step 3: Celebration ──────────────────────────────────────────────────────
 
 function CelebrationStep({
-  winner:        winnerTeam,
-  scorer:        scorerPlayer,
+  winner:          winnerTeam,
+  scorer:          scorerPlayer,
   onEnter,
   joining,
+  inviteLeagueName,
 }: {
-  winner:   Team
-  scorer:   Player
-  onEnter:  () => void
-  joining?: boolean
+  winner:            Team
+  scorer:            Player
+  onEnter:           () => void
+  joining?:          boolean
+  inviteLeagueName?: string | null
 }) {
   return (
     <div className="relative flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-6">
@@ -553,6 +555,17 @@ function CelebrationStep({
           </div>
         </div>
 
+        {inviteLeagueName && (
+          <div className="w-full max-w-xs flex items-center gap-2.5 px-3.5 py-2.5 bg-primary/[0.07] border border-primary/15 rounded-xl">
+            <span className="text-base leading-none">🏆</span>
+            <p className="text-xs text-muted-foreground leading-snug">
+              You&apos;ll join{' '}
+              <span className="font-semibold text-foreground">{inviteLeagueName}</span>{' '}
+              after this.
+            </p>
+          </div>
+        )}
+
         <button
           onClick={onEnter}
           disabled={joining}
@@ -563,6 +576,8 @@ function CelebrationStep({
         >
           {joining ? (
             <><Loader2 className="size-5 animate-spin" /> Joining league…</>
+          ) : inviteLeagueName ? (
+            <>Enter &amp; Join League <ChevronRight className="size-5" strokeWidth={2.5} /></>
           ) : (
             <>Enter MatchPoint26 <ChevronRight className="size-5" strokeWidth={2.5} /></>
           )}
@@ -598,8 +613,19 @@ function OnboardingPageInner() {
   const [showInstallPrompt,    setShowInstallPrompt]    = useState(false)
   const [installDest,          setInstallDest]          = useState('/')
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [inviteLeagueName,     setInviteLeagueName]     = useState<string | null>(null)
 
   useEffect(() => { trackOnboardingStarted() }, [])
+
+  // Fetch invite league name so we can show context in the celebration step
+  useEffect(() => {
+    const inviteCode = /^\/join\/([A-Za-z0-9]+)$/.exec(next)?.[1]
+    if (!inviteCode) return
+    fetch(`/api/leagues/preview/${inviteCode}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then((d: { name?: string } | null) => { if (d?.name) setInviteLeagueName(d.name) })
+  }, [next])
 
   // Capture the browser's native PWA install prompt for Android Chrome.
   // Must be registered early — the event fires once on page load.
@@ -757,6 +783,7 @@ function OnboardingPageInner() {
             scorer={scorer}
             onEnter={handleEnter}
             joining={joining}
+            inviteLeagueName={inviteLeagueName}
           />
         )}
       </div>

@@ -1,9 +1,17 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useGoogleLogin, useGoogleOAuth } from '@react-oauth/google'
+import { Trophy, Users } from 'lucide-react'
 import type { AuthUser } from '@/types/auth'
+
+interface LeaguePreview {
+  name:            string
+  memberCount:     number
+  creatorUsername: string
+  inviteCode:      string
+}
 
 /** Reject non-relative or protocol-relative URLs to prevent open-redirect. */
 function safeNext(raw: string | null): string {
@@ -61,6 +69,16 @@ function LoginPageContent() {
   const [errMsg, setErrMsg] = useState('')
   const searchParams = useSearchParams()
   const next         = safeNext(searchParams.get('next'))
+
+  const inviteCode = /^\/join\/([A-Za-z0-9]+)$/.exec(next)?.[1] ?? null
+  const [leaguePreview, setLeaguePreview] = useState<LeaguePreview | null>(null)
+  useEffect(() => {
+    if (!inviteCode) return
+    fetch(`/api/leagues/preview/${inviteCode}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(data => setLeaguePreview(data ?? null))
+  }, [inviteCode])
 
   async function handleGoogleSuccess(accessToken: string) {
     setState('loading')
@@ -153,6 +171,37 @@ function LoginPageContent() {
           </p>
         </div>
       </div>
+
+      {/* ── Invite context banner ───────────────────────── */}
+      {leaguePreview && (
+        <div className="w-full -mt-3 animate-enter-up" style={{ animationFillMode: 'backwards' }}>
+          <div className="w-full bg-card border border-primary/25 rounded-2xl overflow-hidden shadow-lg">
+            <div className="h-0.5 w-full bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
+            <div className="px-4 pt-3.5 pb-2 flex items-start gap-3">
+              <div className="mt-0.5 size-9 rounded-xl bg-primary/10 border border-primary/15 flex items-center justify-center flex-shrink-0">
+                <Trophy className="size-[18px] text-primary" strokeWidth={1.5} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-2xs font-bold tracking-[0.12em] uppercase text-primary/70 mb-0.5">
+                  You&apos;ve been invited
+                </p>
+                <p className="text-sm font-black text-foreground leading-snug truncate">
+                  {leaguePreview.name}
+                </p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Users className="size-3 text-muted-foreground/50 flex-shrink-0" />
+                  <p className="text-2xs text-muted-foreground/70">
+                    by {leaguePreview.creatorUsername} · {leaguePreview.memberCount} member{leaguePreview.memberCount !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <p className="px-4 pb-3.5 text-xs text-muted-foreground/60 leading-relaxed">
+              Sign in or create an account and you&apos;ll be added to this league automatically.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Auth CTA ────────────────────────────────────── */}
       <div

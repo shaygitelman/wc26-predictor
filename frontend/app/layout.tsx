@@ -92,12 +92,15 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   const initialUser    = await getSessionUser()
-  // Read from the server-side process env so the value is always available at
-  // runtime regardless of whether it was inlined into the client bundle at
-  // build time.  Passing it as a prop avoids the NEXT_PUBLIC_ build-time
-  // inlining dependency that silently produces '' when the var wasn't present
-  // during the build.
-  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ''
+  // NEXT_PUBLIC_* vars are replaced by webpack at BUILD TIME (even in Server
+  // Components), so if the var wasn't present during the Vercel build the
+  // bundle contains "".  GOOGLE_CLIENT_ID (no prefix) is never touched by
+  // webpack and is always read from the real runtime process.env — use it as
+  // the primary source, with the NEXT_PUBLIC_ build-time inline as fallback.
+  const googleClientId =
+    process.env.GOOGLE_CLIENT_ID ??
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ??
+    ''
 
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>

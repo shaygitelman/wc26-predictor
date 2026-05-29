@@ -125,7 +125,7 @@ export default function TournamentPage() {
     try {
       const res = await fetch(`/api/players?search=${encodeURIComponent(q.trim())}`)
       const data: Player[] = res.ok ? await res.json() : []
-      setSearchResults(data.slice(0, 50))
+      setSearchResults(data)
     } catch {
       setSearchResults([])
     } finally {

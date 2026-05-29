@@ -219,52 +219,37 @@ _MIN_PLAYERS_PER_TEAM = 15  # re-sync a team if it has fewer than this many play
 
 
 async def _seed_manual_players() -> None:
-    """Ensure star players absent from WC2026 API squad data exist in the DB.
+    """Guarantee all 14 Golden Boot favorites exist in the DB on every boot.
 
-    Harry Kane is confirmed for England but API-Football's WC2026 squad endpoint
-    omits him; we seed him directly from his stable club API-Football ID (184).
-    Idempotent: checks by external_ids->>'apifootball' first, then by name+team.
+    Idempotent — keyed on external_ids->>'apifootball'.  For each seed entry:
+      • Row already exists with correct fields → skip (no write).
+      • Row exists but missing position/photo/shirt_number → patch only the gaps.
+      • Row does not exist → INSERT with full data.
+
+    API sync (sync_players) will later overwrite name/position/shirt_number with
+    live API-Football values; this seed is the safety net for players the API
+    squad endpoint omits (e.g. Kane in WC2026 squads).
     """
     import json as _json
     import uuid as _uuid
     from core.database import SessionLocal
+    from core.player_seeds import GOLDEN_BOOT_PLAYER_SEEDS, _photo
 
-    manual_players = [
-        {
-            "apifootball_id": "184",
-            "team_id": "eng",
-            "name": "H. Kane",
-            "position": "FWD",
-            "shirt_number": 9,
-            "photo_url": "https://media.api-sports.io/football/players/184.png",
-        },
-    ]
-
+    seeded = updated = skipped = 0
     try:
         async with SessionLocal() as db:
-            for p in manual_players:
-                exists = await db.scalar(
-                    text("SELECT id FROM players WHERE external_ids->>'apifootball' = :af_id"),
-                    {"af_id": p["apifootball_id"]},
-                )
-                if exists:
-                    log.info("SEED: %s (af=%s) already in DB", p["name"], p["apifootball_id"])
-                    continue
-                by_name = await db.scalar(
-                    text("SELECT id FROM players WHERE team_id = :tid AND name = :name"),
-                    {"tid": p["team_id"], "name": p["name"]},
-                )
-                if by_name:
-                    await db.execute(
-                        text(
-                            "UPDATE players "
-                            "SET external_ids = jsonb_set(external_ids, '{apifootball}', to_jsonb(:af_id::text), true) "
-                            "WHERE id = :id"
-                        ),
-                        {"id": by_name, "af_id": p["apifootball_id"]},
-                    )
-                    log.info("SEED: patched external_ids for %s", p["name"])
-                else:
+            for p in GOLDEN_BOOT_PLAYER_SEEDS:
+                af_id     = p["apifootball_id"]
+                photo_url = _photo(af_id)
+                row = (await db.execute(
+                    text(
+                        "SELECT id, position, photo_url, shirt_number "
+                        "FROM players WHERE external_ids->>'apifootball' = :af_id"
+                    ),
+                    {"af_id": af_id},
+                )).fetchone()
+
+                if row is None:
                     await db.execute(
                         text(
                             "INSERT INTO players "
@@ -272,22 +257,99 @@ async def _seed_manual_players() -> None:
                             "VALUES (:id, :team_id, :name, :position, :shirt_number, :photo_url, :ext::jsonb, NOW())"
                         ),
                         {
-                            "id": str(_uuid.uuid4()),
-                            "team_id": p["team_id"],
-                            "name": p["name"],
-                            "position": p["position"],
+                            "id":           str(_uuid.uuid4()),
+                            "team_id":      p["team_id"],
+                            "name":         p["name"],
+                            "position":     p["position"],
                             "shirt_number": p["shirt_number"],
-                            "photo_url": p["photo_url"],
-                            "ext": _json.dumps({"apifootball": p["apifootball_id"]}),
+                            "photo_url":    photo_url,
+                            "ext":          _json.dumps({"apifootball": af_id}),
                         },
                     )
-                    log.info(
-                        "SEED: inserted %s (af=%s) for team=%s",
-                        p["name"], p["apifootball_id"], p["team_id"],
-                    )
+                    log.info("SEED: created %s (af=%s team=%s)", p["name"], af_id, p["team_id"])
+                    seeded += 1
+                else:
+                    player_id, pos, photo, shirt = row
+                    patches: dict = {}
+                    if not pos:      patches["position"]     = p["position"]
+                    if not photo:    patches["photo_url"]    = photo_url
+                    if shirt is None and p["shirt_number"] is not None:
+                        patches["shirt_number"] = p["shirt_number"]
+                    if patches:
+                        set_clause = ", ".join(f"{k} = :{k}" for k in patches)
+                        await db.execute(
+                            text(f"UPDATE players SET {set_clause}, updated_at = NOW() WHERE id = :id"),
+                            {"id": player_id, **patches},
+                        )
+                        log.info("SEED: patched %s (af=%s) fields=%s", p["name"], af_id, list(patches))
+                        updated += 1
+                    else:
+                        skipped += 1
+
             await db.commit()
+        log.info(
+            "SEED: Golden Boot players done — created=%d updated=%d skipped=%d",
+            seeded, updated, skipped,
+        )
     except Exception as exc:
         log.error("SEED: manual player seed FAILED — %s", exc, exc_info=True)
+
+
+async def _verify_golden_boot_players() -> None:
+    """Log a verification table confirming every Golden Boot favorite is selectable.
+
+    Checks three independent things for each player:
+      1. Row exists in players table with correct external_id.
+      2. team_id matches the expected national team.
+      3. photo_url and position are set (required for UI rendering).
+
+    Emits a single WARNING if any player fails any check, so the log scan
+    `grep GOLDEN_BOOT_VERIFY` reveals the full audit at a glance.
+    """
+    from core.database import SessionLocal
+    from core.player_seeds import GOLDEN_BOOT_PLAYER_SEEDS
+
+    try:
+        async with SessionLocal() as db:
+            rows = (await db.execute(
+                text(
+                    "SELECT p.external_ids->>'apifootball' AS af_id, "
+                    "       p.id, p.name, p.team_id, p.position, p.photo_url "
+                    "FROM players p "
+                    "WHERE p.external_ids->>'apifootball' = ANY(:ids)"
+                ),
+                {"ids": [s["apifootball_id"] for s in GOLDEN_BOOT_PLAYER_SEEDS]},
+            )).fetchall()
+
+        found = {r[0]: r for r in rows}  # af_id → row
+
+        all_ok   = True
+        results  = []
+        for seed in GOLDEN_BOOT_PLAYER_SEEDS:
+            af_id    = seed["apifootball_id"]
+            row      = found.get(af_id)
+            if row is None:
+                results.append(f"  MISSING  af={af_id} name={seed['name']} team={seed['team_id']}")
+                all_ok = False
+                continue
+            _, pid, name, team_id, position, photo_url = row
+            issues = []
+            if team_id != seed["team_id"]:
+                issues.append(f"team_id={team_id!r} want={seed['team_id']!r}")
+            if not position:
+                issues.append("position=None")
+            if not photo_url:
+                issues.append("photo_url=None")
+            status = "OK     " if not issues else "PARTIAL"
+            if issues:
+                all_ok = False
+            results.append(f"  {status}  af={af_id} name={name!r} {' '.join(issues)}")
+
+        header = "GOLDEN_BOOT_VERIFY — all players selectable" if all_ok else "GOLDEN_BOOT_VERIFY — PROBLEMS FOUND"
+        log_fn  = log.info if all_ok else log.warning
+        log_fn("%s\n%s", header, "\n".join(results))
+    except Exception as exc:
+        log.error("GOLDEN_BOOT_VERIFY: verification query FAILED — %s", exc, exc_info=True)
 
 
 async def _bootstrap_critical_players() -> None:
@@ -521,8 +583,9 @@ async def lifespan(app: FastAPI):
     await _bootstrap_teams()             # 48 WC2026 teams from config
     await _bootstrap_group_fixtures()    # 72 group fixtures (skips if no API key)
     await _bootstrap_knockout_matches()  # 32 knockout placeholder matches
-    await _seed_manual_players()         # Kane + any other stars absent from WC2026 API squads
-    await _bootstrap_critical_players()  # Golden Boot candidate players (skips if no key)
+    await _seed_manual_players()         # all 14 Golden Boot favorites (no API key needed)
+    await _verify_golden_boot_players()  # log verification: confirms each is selectable
+    await _bootstrap_critical_players()  # sync full squads for Golden Boot teams (needs API key)
     asyncio.create_task(_bootstrap_all_players())  # remaining 36 teams in background
 
     yield

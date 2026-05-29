@@ -1,16 +1,19 @@
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import get_db
+from core.player_seeds import GOLDEN_BOOT_PLAYER_SEEDS, _photo
 from core.scorer import score_match
 from core.wc2026_config import APIFOOTBALL_ID_TO_CODE, GROUPS
 from models.match import Match
+from models.player import Player
 from models.sync_log import SyncLog
 from models.team import Team
 from providers.apifootball import ApiFootballProvider
@@ -627,3 +630,211 @@ async def delete_test_users(db: AsyncSession = Depends(get_db)) -> dict:
     ))
     await db.commit()
     return {"deleted": result.rowcount}
+
+
+# ── Player audit ──────────────────────────────────────────────────
+
+@router.get(
+    "/stats/players",
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Audit player database: counts per team, missing roster teams, "
+        "Golden Boot favorites check, and Harry Kane diagnosis."
+    ),
+)
+async def player_stats_audit(db: AsyncSession = Depends(get_db)) -> dict:
+    seed_ids = [s["apifootball_id"] for s in GOLDEN_BOOT_PLAYER_SEEDS]
+
+    all_teams = (await db.execute(select(Team).order_by(Team.short_code))).scalars().all()
+
+    count_rows = (
+        await db.execute(
+            select(Player.team_id, func.count(Player.id).label("cnt"))
+            .group_by(Player.team_id)
+        )
+    ).all()
+    counts_by_team: dict[str, int] = {r.team_id: r.cnt for r in count_rows}
+    total_players = sum(counts_by_team.values())
+
+    team_rows   = []
+    no_players  = []
+    incomplete  = []
+    for team in all_teams:
+        ext_id = (team.external_ids or {}).get("apifootball")
+        cnt    = counts_by_team.get(team.id, 0)
+        team_rows.append({
+            "team_id":            team.id,
+            "name":               team.name,
+            "short_code":         team.short_code,
+            "player_count":       cnt,
+            "has_apifootball_id": bool(ext_id),
+            "apifootball_id":     ext_id,
+        })
+        if cnt == 0:
+            no_players.append({"team_id": team.id, "name": team.name, "has_apifootball_id": bool(ext_id)})
+        elif cnt < 20:
+            incomplete.append({"team_id": team.id, "name": team.name, "count": cnt})
+
+    fav_rows = (
+        await db.execute(
+            select(Player)
+            .where(Player.external_ids["apifootball"].as_string().in_(seed_ids))
+        )
+    ).scalars().all()
+    found_by_api_id: dict[str, dict] = {
+        (p.external_ids or {}).get("apifootball"): {
+            "player_id": p.id,
+            "name":      p.name,
+            "team_id":   p.team_id,
+            "position":  p.position,
+        }
+        for p in fav_rows
+    }
+
+    favorites_audit = []
+    for i, seed in enumerate(GOLDEN_BOOT_PLAYER_SEEDS):
+        api_id = seed["apifootball_id"]
+        info   = found_by_api_id.get(api_id)
+        favorites_audit.append({
+            "slot":           i,
+            "label":          f"{seed['name']} ({seed['team_id'].upper()})",
+            "apifootball_id": api_id,
+            "found":          info is not None,
+            **(info or {"player_id": None, "name": None, "team_id": None, "position": None}),
+        })
+
+    eng_team = next((t for t in all_teams if t.id == "eng"), None)
+    kane_diagnosis = {
+        "england_team_exists":        eng_team is not None,
+        "england_has_apifootball_id": bool(eng_team and (eng_team.external_ids or {}).get("apifootball")),
+        "england_apifootball_id":     (eng_team.external_ids or {}).get("apifootball") if eng_team else None,
+        "england_player_count":       counts_by_team.get("eng", 0),
+        "kane_in_db":                 "184" in found_by_api_id,
+        "kane_record":                found_by_api_id.get("184"),
+        "verdict": (
+            "FOUND — Kane is in DB and favorites query will return him"
+            if "184" in found_by_api_id
+            else (
+                "MISSING — England team exists but sync_players was never run or the API "
+                "squads endpoint didn't return Kane. Run POST /admin/seed/players to guarantee "
+                "Kane is seeded, or POST /admin/sync/players?teams=eng to re-sync."
+                if (eng_team and (eng_team.external_ids or {}).get("apifootball"))
+                else "MISSING — England team record lacks apifootball external_id; sync_players will skip it."
+            )
+        ),
+    }
+
+    return {
+        "summary": {
+            "total_teams":              len(all_teams),
+            "total_players":            total_players,
+            "teams_with_0_players":     len(no_players),
+            "teams_with_lt_20_players": len(incomplete),
+            "favorites_found":          sum(1 for f in favorites_audit if f["found"]),
+            "favorites_missing":        sum(1 for f in favorites_audit if not f["found"]),
+        },
+        "kane_diagnosis":   kane_diagnosis,
+        "favorites_audit":  favorites_audit,
+        "teams_no_players": no_players,
+        "teams_incomplete": incomplete,
+        "all_teams":        team_rows,
+    }
+
+
+# ── Manual player seed ────────────────────────────────────────────
+# Source of truth is core/player_seeds.py — imported above.
+
+
+class PlayerSeedResponse(BaseModel):
+    seeded:  int
+    updated: int
+    skipped: int
+    errors:  list[str] = []
+    players: list[dict] = []
+
+
+@router.post(
+    "/seed/players",
+    response_model=PlayerSeedResponse,
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Upsert the 14 Golden Boot favorite players by API-Football ID. "
+        "Idempotent — the same logic runs automatically on every startup."
+    ),
+)
+async def seed_players(db: AsyncSession = Depends(get_db)) -> PlayerSeedResponse:
+    """
+    Guarantees all 14 Golden Boot favorite players exist in the DB.
+    Identical logic to the startup bootstrap — use this as a manual
+    recovery endpoint after a database reset.
+    """
+    seeded      = 0
+    updated     = 0
+    skipped     = 0
+    errors: list[str]  = []
+    players_out: list[dict] = []
+
+    for seed in GOLDEN_BOOT_PLAYER_SEEDS:
+        api_id    = seed["apifootball_id"]
+        photo_url = _photo(api_id)
+        try:
+            existing = (
+                await db.execute(
+                    select(Player).where(
+                        Player.external_ids["apifootball"].as_string() == api_id
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if existing is None:
+                db.add(Player(
+                    id           = str(uuid.uuid4()),
+                    team_id      = seed["team_id"],
+                    name         = seed["name"],
+                    position     = seed["position"],
+                    shirt_number = seed.get("shirt_number"),
+                    photo_url    = photo_url,
+                    external_ids = {"apifootball": api_id},
+                    updated_at   = datetime.now(timezone.utc),
+                ))
+                seeded += 1
+                action    = "created"
+                player_id = "(new)"
+            else:
+                changed = False
+                if existing.team_id != seed["team_id"]:
+                    existing.team_id = seed["team_id"]
+                    changed = True
+                if not existing.position:
+                    existing.position = seed["position"]
+                    changed = True
+                if not existing.photo_url:
+                    existing.photo_url = photo_url
+                    changed = True
+                if existing.shirt_number is None and seed.get("shirt_number") is not None:
+                    existing.shirt_number = seed["shirt_number"]
+                    changed = True
+                if changed:
+                    existing.updated_at = datetime.now(timezone.utc)
+                    updated += 1
+                    action = "updated"
+                else:
+                    skipped += 1
+                    action = "skipped"
+                player_id = existing.id
+
+            players_out.append({
+                "apifootball_id": api_id,
+                "name":           seed["name"],
+                "team_id":        seed["team_id"],
+                "action":         action,
+                "player_id":      player_id,
+            })
+        except Exception as exc:
+            errors.append(f"{seed['name']} ({api_id}): {exc}")
+
+    await db.commit()
+    return PlayerSeedResponse(
+        seeded=seeded, updated=updated, skipped=skipped,
+        errors=errors, players=players_out,
+    )

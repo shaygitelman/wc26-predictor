@@ -230,69 +230,66 @@ async def _seed_manual_players() -> None:
     live API-Football values; this seed is the safety net for players the API
     squad endpoint omits (e.g. Kane in WC2026 squads).
     """
-    import json as _json
     import uuid as _uuid
+    from datetime import datetime, timezone
+    from sqlalchemy import select
     from core.database import SessionLocal
     from core.player_seeds import GOLDEN_BOOT_PLAYER_SEEDS, _photo
+    from models.player import Player
 
     seeded = updated = skipped = 0
-    try:
-        async with SessionLocal() as db:
-            for p in GOLDEN_BOOT_PLAYER_SEEDS:
-                af_id     = p["apifootball_id"]
-                photo_url = _photo(af_id)
-                row = (await db.execute(
-                    text(
-                        "SELECT id, position, photo_url, shirt_number "
-                        "FROM players WHERE external_ids->>'apifootball' = :af_id"
-                    ),
-                    {"af_id": af_id},
-                )).fetchone()
-
-                if row is None:
+    async with SessionLocal() as db:
+        for p in GOLDEN_BOOT_PLAYER_SEEDS:
+            af_id     = p["apifootball_id"]
+            photo_url = _photo(af_id)
+            try:
+                existing = (
                     await db.execute(
-                        text(
-                            "INSERT INTO players "
-                            "(id, team_id, name, position, shirt_number, photo_url, external_ids, updated_at) "
-                            "VALUES (:id, :team_id, :name, :position, :shirt_number, :photo_url, :ext::jsonb, NOW())"
-                        ),
-                        {
-                            "id":           str(_uuid.uuid4()),
-                            "team_id":      p["team_id"],
-                            "name":         p["name"],
-                            "position":     p["position"],
-                            "shirt_number": p["shirt_number"],
-                            "photo_url":    photo_url,
-                            "ext":          _json.dumps({"apifootball": af_id}),
-                        },
+                        select(Player).where(
+                            Player.external_ids["apifootball"].as_string() == af_id
+                        )
                     )
+                ).scalar_one_or_none()
+
+                if existing is None:
+                    db.add(Player(
+                        id           = str(_uuid.uuid4()),
+                        team_id      = p["team_id"],
+                        name         = p["name"],
+                        position     = p["position"],
+                        shirt_number = p.get("shirt_number"),
+                        photo_url    = photo_url,
+                        external_ids = {"apifootball": af_id},
+                        updated_at   = datetime.now(timezone.utc),
+                    ))
+                    await db.flush()
                     log.info("SEED: created %s (af=%s team=%s)", p["name"], af_id, p["team_id"])
                     seeded += 1
                 else:
-                    player_id, pos, photo, shirt = row
-                    patches: dict = {}
-                    if not pos:      patches["position"]     = p["position"]
-                    if not photo:    patches["photo_url"]    = photo_url
-                    if shirt is None and p["shirt_number"] is not None:
-                        patches["shirt_number"] = p["shirt_number"]
-                    if patches:
-                        set_clause = ", ".join(f"{k} = :{k}" for k in patches)
-                        await db.execute(
-                            text(f"UPDATE players SET {set_clause}, updated_at = NOW() WHERE id = :id"),
-                            {"id": player_id, **patches},
-                        )
-                        log.info("SEED: patched %s (af=%s) fields=%s", p["name"], af_id, list(patches))
+                    changed = False
+                    if not existing.position:
+                        existing.position = p["position"]
+                        changed = True
+                    if not existing.photo_url:
+                        existing.photo_url = photo_url
+                        changed = True
+                    if existing.shirt_number is None and p.get("shirt_number") is not None:
+                        existing.shirt_number = p["shirt_number"]
+                        changed = True
+                    if changed:
+                        existing.updated_at = datetime.now(timezone.utc)
+                        log.info("SEED: patched %s (af=%s)", p["name"], af_id)
                         updated += 1
                     else:
                         skipped += 1
+            except Exception as exc:
+                log.error("SEED: failed for %s (af=%s) — %s", p["name"], af_id, exc, exc_info=True)
 
-            await db.commit()
-        log.info(
-            "SEED: Golden Boot players done — created=%d updated=%d skipped=%d",
-            seeded, updated, skipped,
-        )
-    except Exception as exc:
-        log.error("SEED: manual player seed FAILED — %s", exc, exc_info=True)
+        await db.commit()
+    log.info(
+        "SEED: Golden Boot players done — created=%d updated=%d skipped=%d",
+        seeded, updated, skipped,
+    )
 
 
 async def _verify_golden_boot_players() -> None:

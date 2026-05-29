@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, Check, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,7 @@ import { TeamFlag } from '@/components/atoms/team-flag'
 import type { Match } from '@/types/match'
 import type { Prediction } from '@/types/prediction'
 import { trackPredictionSubmitted } from '@/lib/analytics'
+import { apiFetch } from '@/lib/api-client'
 
 interface PredictionSheetProps {
   match: Match
@@ -35,6 +36,7 @@ export function PredictionSheet({
   const [awayScore, setAwayScore] = useState(existingAway ?? 0)
   const [status,    setStatus]    = useState<SheetStatus>('idle')
   const [errorMsg,  setErrorMsg]  = useState('')
+  const submittingRef = useRef(false)
 
   const canPredict = match.status === 'scheduled'
 
@@ -42,10 +44,12 @@ export function PredictionSheet({
   const close = () => { if (status !== 'saving') { setIsOpen(false); setStatus('idle') } }
 
   const confirm = async () => {
+    if (submittingRef.current) return   // synchronous double-submit guard
+    submittingRef.current = true
     setStatus('saving')
     setErrorMsg('')
     try {
-      const res = await fetch(`/api/predictions/${match.id}`, {
+      const res = await apiFetch(`/api/predictions/${match.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ predictedHome: homeScore, predictedAway: awayScore }),
@@ -66,6 +70,8 @@ export function PredictionSheet({
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to save. Try again.')
       setStatus('error')
+    } finally {
+      submittingRef.current = false
     }
   }
 

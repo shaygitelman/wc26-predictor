@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Lock, MapPin, Calendar, Check } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Lock, MapPin, Calendar, Check, Clock } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { cn, formatMatchDate, formatKickoffTime } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
@@ -30,6 +30,9 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
   const isFinished = match.status === 'finished'
   const isLive     = match.status === 'live'
   const hasPick    = !!prediction
+
+  const { isLocked: clientLocked, countdown, isUrgent } = useLockCountdown(match.scheduledAt)
+  const showCountdown = match.status === 'scheduled' && !!countdown
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
@@ -60,9 +63,33 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
           </div>
         </div>
 
+        {/* Lock countdown banner — only for scheduled matches within 24h */}
+        {showCountdown && (
+          <div className={cn(
+            'relative mx-5 mb-1 flex items-center gap-2.5 rounded-xl px-4 py-2.5 border',
+            isUrgent
+              ? 'bg-red-500/8 border-red-500/20'
+              : 'bg-amber-500/8 border-amber-500/20',
+          )}>
+            <Clock className={cn('size-4 flex-shrink-0', isUrgent ? 'text-red-400' : 'text-amber-500')} />
+            <p className="text-xs text-foreground">
+              {isUrgent ? 'Locking soon — ' : 'Picks lock in '}
+              <span className={cn('font-black', isUrgent ? 'text-red-400' : 'text-amber-500')}>
+                {countdown}
+              </span>
+            </p>
+          </div>
+        )}
+
         {/* ── Hero main content ── */}
         {match.status === 'scheduled' && !hasPick ? (
-          <InlinePredictionHero match={match} onSaved={setPrediction} />
+          <InlinePredictionHero
+            match={match}
+            onSaved={setPrediction}
+            clientLocked={clientLocked}
+            countdown={countdown}
+            isUrgent={isUrgent}
+          />
         ) : (
           <div className="relative px-5">
 
@@ -158,6 +185,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
           hasPick={hasPick}
           isLive={isLive}
           isFinished={isFinished}
+          clientLocked={clientLocked}
           onSaved={setPrediction}
         />
 
@@ -235,17 +263,26 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
 function InlinePredictionHero({
   match,
   onSaved,
+  clientLocked = false,
+  countdown,
+  isUrgent = false,
 }: {
-  match:   Match
-  onSaved: (p: Prediction) => void
+  match:         Match
+  onSaved:       (p: Prediction) => void
+  clientLocked?: boolean
+  countdown?:    string | null
+  isUrgent?:     boolean
 }) {
   const [home,   setHome]   = useState(1)
   const [away,   setAway]   = useState(0)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [err,    setErr]    = useState('')
+  const submittingRef = useRef(false)
   const pts = ROUND_POINTS[match.round] ?? ROUND_POINTS.group
 
   const confirm = async () => {
+    if (submittingRef.current) return   // synchronous double-submit guard
+    submittingRef.current = true
     setStatus('saving')
     setErr('')
     try {
@@ -268,10 +305,41 @@ function InlinePredictionHero({
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed. Try again.')
       setStatus('error')
+    } finally {
+      submittingRef.current = false
     }
   }
 
   const busy = status === 'saving' || status === 'saved'
+
+  // When client-side lock time has passed, show a locked state
+  if (clientLocked) {
+    return (
+      <div className="relative px-5 pb-4">
+        <div className="flex items-end justify-between pb-5">
+          <div className="flex flex-col items-center gap-2.5 flex-1">
+            <TeamFlag team={match.homeTeam} size="2xl" />
+            <span className="text-[13px] font-bold text-foreground text-center leading-tight max-w-[90px]">
+              {match.homeTeam.name}
+            </span>
+          </div>
+          <div className="flex-shrink-0 pb-2">
+            <span className="text-[11px] font-semibold text-muted-foreground/30 tracking-widest uppercase">vs</span>
+          </div>
+          <div className="flex flex-col items-center gap-2.5 flex-1">
+            <TeamFlag team={match.awayTeam} size="2xl" />
+            <span className="text-[13px] font-bold text-foreground text-center leading-tight max-w-[90px]">
+              {match.awayTeam.name}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-2.5 py-4 rounded-2xl border border-amber-500/25 bg-amber-500/5">
+          <Lock className="size-4 text-amber-500" strokeWidth={2} />
+          <span className="text-sm font-bold text-amber-500">Predictions are locked</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative px-5 pb-2">
@@ -320,6 +388,21 @@ function InlinePredictionHero({
         <span className="text-border/60 text-sm">·</span>
         <PointTier label="Wrong" pts={0} />
       </div>
+
+      {/* Urgency badge — shown in final hour */}
+      {countdown && (
+        <div className={cn(
+          'flex items-center justify-center gap-1.5 mb-3 py-1.5 rounded-xl border',
+          isUrgent
+            ? 'bg-red-500/8 border-red-500/20'
+            : 'bg-amber-500/8 border-amber-500/20',
+        )}>
+          <Clock className={cn('size-3', isUrgent ? 'text-red-400' : 'text-amber-500')} />
+          <span className={cn('text-[11px] font-bold', isUrgent ? 'text-red-400' : 'text-amber-500')}>
+            Locks in {countdown}
+          </span>
+        </div>
+      )}
 
       {/* Lock-in button */}
       <button
@@ -479,14 +562,16 @@ function PredictionStrip({
   hasPick,
   isLive,
   isFinished,
+  clientLocked,
   onSaved,
 }: {
-  match:      Match
-  prediction: Prediction | undefined
-  hasPick:    boolean
-  isLive:     boolean
-  isFinished: boolean
-  onSaved:    (p: Prediction) => void
+  match:        Match
+  prediction:   Prediction | undefined
+  hasPick:      boolean
+  isLive:       boolean
+  isFinished:   boolean
+  clientLocked: boolean
+  onSaved:      (p: Prediction) => void
 }) {
   if (!hasPick) return null
 
@@ -548,6 +633,26 @@ function PredictionStrip({
     )
   }
 
+  // ── Scheduled + has pick + client-side locked — show pick without edit ──
+  if (clientLocked) {
+    return (
+      <div className="relative border-t border-border/25 px-5 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Lock className="size-3.5 text-amber-500 flex-shrink-0" strokeWidth={2.5} />
+          <div>
+            <p className="text-[10px] font-medium text-muted-foreground/55 mb-0.5">Your pick · Locked</p>
+            <p className="text-[22px] font-black tabular text-foreground leading-none">
+              {prediction!.predictedHome}–{prediction!.predictedAway}
+            </p>
+          </div>
+        </div>
+        <span className="text-[10px] font-bold tracking-[0.08em] uppercase px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
+          Pre-match
+        </span>
+      </div>
+    )
+  }
+
   // ── Scheduled + has pick — prominent edit panel ──
   return (
     <div className="relative border-t border-border/20 px-5 py-4">
@@ -589,6 +694,34 @@ function PredictionStrip({
       />
     </div>
   )
+}
+
+// ─── Lock countdown hook ──────────────────────────────────────
+
+const LOCK_OFFSET_MS = 5 * 60 * 1000  // backend locks 5 min before kickoff
+
+function useLockCountdown(scheduledAt: string) {
+  const lockMs = new Date(scheduledAt).getTime() - LOCK_OFFSET_MS
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 10_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const diff     = lockMs - now
+  const isLocked = diff <= 0
+  const isUrgent = !isLocked && diff <= 60 * 60 * 1000    // within 1 hour
+  const inWindow = !isLocked && diff <= 24 * 60 * 60 * 1000  // within 24 hours
+
+  let countdown: string | null = null
+  if (inWindow) {
+    const h = Math.floor(diff / 3_600_000)
+    const m = Math.floor((diff % 3_600_000) / 60_000)
+    countdown = h > 0 ? `${h}h ${m}m` : `${m}m`
+  }
+
+  return { isLocked, countdown, isUrgent }
 }
 
 // ─── InfoRow ─────────────────────────────────────────────────

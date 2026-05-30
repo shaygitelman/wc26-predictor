@@ -844,3 +844,267 @@ async def seed_players(db: AsyncSession = Depends(get_db)) -> PlayerSeedResponse
         seeded=seeded, updated=updated, skipped=skipped,
         errors=errors, players=players_out,
     )
+
+
+# ── Tournament scoring ────────────────────────────────────────────
+
+class TournamentResultIn(BaseModel):
+    winner_team_code: str | None = None
+    top_scorer_id:    str | None = None
+    notes:            str | None = None
+
+
+class TournamentResultOut(BaseModel):
+    id:               str
+    winner_team_code: str | None
+    top_scorer_id:    str | None
+    set_at:           str
+    set_by:           str | None
+    notes:            str | None
+
+
+class TournamentPreviewUser(BaseModel):
+    user_id:             str
+    winner_pick:         str | None
+    scorer_pick:         str | None
+    winner_pts_current:  int
+    scorer_pts_current:  int
+    winner_pts_new:      int
+    scorer_pts_new:      int
+    winner_delta:        int
+    scorer_delta:        int
+    total_delta:         int
+
+
+class TournamentScoringPreviewOut(BaseModel):
+    actual_winner_code:     str | None
+    actual_scorer_id:       str | None
+    is_first_run:           bool
+    users_affected_winner:  int
+    users_affected_scorer:  int
+    winner_pts_total_delta: int
+    scorer_pts_total_delta: int
+    users_winning_winner:   int
+    users_winning_scorer:   int
+    users:                  list[TournamentPreviewUser]
+
+
+class TournamentScoringApplyIn(BaseModel):
+    winner_team_code: str | None = None
+    top_scorer_id:    str | None = None
+    notes:            str | None = None
+
+
+class TournamentScoringResultOut(BaseModel):
+    run_id:                 str
+    run_at:                 str
+    actual_winner_code:     str | None
+    actual_scorer_id:       str | None
+    winner_pts_delta:       int
+    scorer_pts_delta:       int
+    users_affected_winner:  int
+    users_affected_scorer:  int
+    is_correction:          bool
+    leagues_reranked:       int
+
+
+class TournamentScoringRunOut(BaseModel):
+    id:                    str
+    run_at:                str
+    winner_team_code:      str | None
+    top_scorer_id:         str | None
+    winner_pts_delta:      int
+    scorer_pts_delta:      int
+    users_affected_winner: int
+    users_affected_scorer: int
+    is_correction:         bool
+    notes:                 str | None
+
+
+@router.get(
+    "/tournament/results",
+    response_model=TournamentResultOut | None,
+    dependencies=[Depends(_verify_admin)],
+    summary="Get the current official tournament result (winner + Golden Boot)",
+)
+async def get_tournament_result(db: AsyncSession = Depends(get_db)) -> TournamentResultOut | None:
+    from services.tournament_scoring import get_current_result
+    result = await get_current_result(db)
+    if result is None:
+        return None
+    return TournamentResultOut(
+        id               = result.id,
+        winner_team_code = result.winner_team_code,
+        top_scorer_id    = result.top_scorer_id,
+        set_at           = result.set_at.isoformat(),
+        set_by           = result.set_by,
+        notes            = result.notes,
+    )
+
+
+@router.post(
+    "/tournament/results",
+    response_model=TournamentResultOut,
+    dependencies=[Depends(_verify_admin)],
+    summary="Record the official tournament winner and/or Golden Boot player",
+)
+async def set_tournament_result(
+    body: TournamentResultIn,
+    x_admin_key: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+) -> TournamentResultOut:
+    from services.tournament_scoring import set_official_result
+    result = await set_official_result(
+        winner_team_code = body.winner_team_code,
+        top_scorer_id    = body.top_scorer_id,
+        db               = db,
+        set_by           = x_admin_key[:8] + "...",  # partial key as audit identity
+        notes            = body.notes,
+    )
+    return TournamentResultOut(
+        id               = result.id,
+        winner_team_code = result.winner_team_code,
+        top_scorer_id    = result.top_scorer_id,
+        set_at           = result.set_at.isoformat(),
+        set_by           = result.set_by,
+        notes            = result.notes,
+    )
+
+
+@router.get(
+    "/tournament/scoring/preview",
+    response_model=TournamentScoringPreviewOut,
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Preview what would happen if tournament scoring ran now. "
+        "Pass winner_team_code and/or top_scorer_id as query params. "
+        "No writes — safe to call repeatedly."
+    ),
+)
+async def preview_tournament_scoring(
+    winner_team_code: str | None = None,
+    top_scorer_id:    str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> TournamentScoringPreviewOut:
+    from services.tournament_scoring import preview_tournament_scoring as _preview
+    preview = await _preview(winner_team_code, top_scorer_id, db)
+    return TournamentScoringPreviewOut(
+        actual_winner_code     = preview.actual_winner_code,
+        actual_scorer_id       = preview.actual_scorer_id,
+        is_first_run           = preview.is_first_run,
+        users_affected_winner  = preview.users_affected_winner,
+        users_affected_scorer  = preview.users_affected_scorer,
+        winner_pts_total_delta = preview.winner_pts_total_delta,
+        scorer_pts_total_delta = preview.scorer_pts_total_delta,
+        users_winning_winner   = preview.users_winning_winner,
+        users_winning_scorer   = preview.users_winning_scorer,
+        users=[
+            TournamentPreviewUser(
+                user_id            = u.user_id,
+                winner_pick        = u.winner_pick,
+                scorer_pick        = u.scorer_pick,
+                winner_pts_current = u.winner_pts_current,
+                scorer_pts_current = u.scorer_pts_current,
+                winner_pts_new     = u.winner_pts_new,
+                scorer_pts_new     = u.scorer_pts_new,
+                winner_delta       = u.winner_delta,
+                scorer_delta       = u.scorer_delta,
+                total_delta        = u.total_delta,
+            )
+            for u in preview.users
+        ],
+    )
+
+
+@router.post(
+    "/tournament/scoring/apply",
+    response_model=TournamentScoringResultOut,
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Apply (or correct) tournament pick scoring. "
+        "Idempotent — safe to run multiple times with the same inputs. "
+        "Corrects previous scoring automatically when winner/scorer changes."
+    ),
+)
+async def apply_tournament_scoring(
+    body: TournamentScoringApplyIn,
+    db: AsyncSession = Depends(get_db),
+) -> TournamentScoringResultOut:
+    from services.tournament_scoring import apply_tournament_scoring as _apply
+    result = await _apply(
+        winner_team_code = body.winner_team_code,
+        top_scorer_id    = body.top_scorer_id,
+        db               = db,
+        notes            = body.notes,
+    )
+    return TournamentScoringResultOut(
+        run_id                = result.run_id,
+        run_at                = result.run_at.isoformat(),
+        actual_winner_code    = result.actual_winner_code,
+        actual_scorer_id      = result.actual_scorer_id,
+        winner_pts_delta      = result.winner_pts_delta,
+        scorer_pts_delta      = result.scorer_pts_delta,
+        users_affected_winner = result.users_affected_winner,
+        users_affected_scorer = result.users_affected_scorer,
+        is_correction         = result.is_correction,
+        leagues_reranked      = result.leagues_reranked,
+    )
+
+
+@router.post(
+    "/tournament/scoring/rebuild",
+    response_model=TournamentScoringResultOut,
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Rebuild tournament scoring from the stored official result. "
+        "Re-applies the most-recent TournamentResult row. "
+        "Useful after manual DB corrections or disaster recovery."
+    ),
+)
+async def rebuild_tournament_scoring(db: AsyncSession = Depends(get_db)) -> TournamentScoringResultOut:
+    from services.tournament_scoring import rebuild_tournament_standings
+    try:
+        result = await rebuild_tournament_standings(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return TournamentScoringResultOut(
+        run_id                = result.run_id,
+        run_at                = result.run_at.isoformat(),
+        actual_winner_code    = result.actual_winner_code,
+        actual_scorer_id      = result.actual_scorer_id,
+        winner_pts_delta      = result.winner_pts_delta,
+        scorer_pts_delta      = result.scorer_pts_delta,
+        users_affected_winner = result.users_affected_winner,
+        users_affected_scorer = result.users_affected_scorer,
+        is_correction         = result.is_correction,
+        leagues_reranked      = result.leagues_reranked,
+    )
+
+
+@router.get(
+    "/tournament/scoring/log",
+    response_model=list[TournamentScoringRunOut],
+    dependencies=[Depends(_verify_admin)],
+    summary="Audit log of all tournament scoring runs",
+)
+async def tournament_scoring_log(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> list[TournamentScoringRunOut]:
+    from services.tournament_scoring import list_scoring_runs
+    runs = await list_scoring_runs(db, limit=limit)
+    return [
+        TournamentScoringRunOut(
+            id                    = r.id,
+            run_at                = r.run_at.isoformat(),
+            winner_team_code      = r.winner_team_code,
+            top_scorer_id         = r.top_scorer_id,
+            winner_pts_delta      = r.winner_pts_delta,
+            scorer_pts_delta      = r.scorer_pts_delta,
+            users_affected_winner = r.users_affected_winner,
+            users_affected_scorer = r.users_affected_scorer,
+            is_correction         = r.is_correction,
+            notes                 = r.notes,
+        )
+        for r in runs
+    ]

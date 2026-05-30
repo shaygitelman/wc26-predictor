@@ -244,7 +244,7 @@ class TestUpsertLockEnforcement:
             )
 
         assert result.isLocked is False
-        assert pick.winner_team_code == "BRA"
+        assert pick.winner_team_code == "bra"  # router normalizes to lowercase for team.id FK
 
     def test_423_is_not_4xx_client_error_alias(self):
         """423 Locked is a distinct code — not 400 or 403."""

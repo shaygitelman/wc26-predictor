@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.database import Base
@@ -17,6 +17,10 @@ class TournamentPick(Base):
 
     winner_team_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     top_scorer_id:    Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # Points awarded after tournament ends. NULL = not yet scored; 0 = wrong; 12 = correct.
+    winner_points_awarded: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scorer_points_awarded: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_locked:    Mapped[bool]            = mapped_column(Boolean, default=False, nullable=False)

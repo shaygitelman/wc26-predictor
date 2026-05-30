@@ -238,7 +238,7 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
             <PersonalityBadge personality={safePersonality} label={safePersonalityLabel} />
           </div>
           {safeConfidence !== 'low' && (
-            <div className="flex-shrink-0 ml-2">
+            <div className="hidden sm:flex items-center flex-shrink-0 ml-2">
               <ConfidenceChip confidence={safeConfidence} />
             </div>
           )}
@@ -439,7 +439,7 @@ function EvidencePills({ source }: { source: string }) {
   const pills = parseSourcePills(source)
   if (pills.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-1 mt-1.5">
+    <div className="hidden sm:flex flex-wrap gap-1 mt-1.5">
       {pills.map((pill, i) => (
         <span
           key={i}
@@ -662,7 +662,7 @@ function DataTransparencyFooter({
         : 'Pre-tournament data only'
 
   return (
-    <div className="px-4 py-2 border-t border-border/30 flex items-center justify-center gap-1.5">
+    <div className="px-4 py-2 border-t border-border/30 flex items-start justify-center gap-1.5">
       <Sparkles className="size-[9px] text-muted-foreground/25 flex-shrink-0" strokeWidth={2} />
       <p className="text-[9.5px] text-muted-foreground/35 text-center leading-relaxed">
         AI analysis · {provenanceNote} · May not reflect late lineup changes

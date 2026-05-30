@@ -30,7 +30,12 @@ export function AuthProvider({
   initialUser?: AuthUser | null
 }) {
   const [user,      setUser]      = useState<AuthUser | null>(initialUser ?? null)
-  const [isLoading, setIsLoading] = useState(initialUser === undefined)
+  // isLoading stays true until we have a definitive auth state.
+  // When initialUser is a real user object (SSR decoded the JWT), we already
+  // have the answer — no fetch needed, no loading state.
+  // When initialUser is null (SSR JWT decode failed) or undefined (legacy),
+  // we must fetch /api/auth/me to discover the real state.
+  const [isLoading, setIsLoading] = useState(!initialUser)
   const router   = useRouter()
   const pathname = usePathname()
 
@@ -54,17 +59,20 @@ export function AuthProvider({
   }, [])
 
   useEffect(() => {
-    if (initialUser !== undefined) {
-      if (initialUser) {
-        identifyUser(initialUser.sub, {
-          email:    initialUser.email,
-          username: initialUser.username ?? '',
-          name:     initialUser.name,
-        })
-        Sentry.setUser({ id: initialUser.sub, username: initialUser.username ?? undefined })
-      }
+    if (initialUser) {
+      // SSR decoded a valid user from the JWT — skip the round-trip entirely.
+      identifyUser(initialUser.sub, {
+        email:    initialUser.email,
+        username: initialUser.username ?? '',
+        name:     initialUser.name,
+      })
+      Sentry.setUser({ id: initialUser.sub, username: initialUser.username ?? undefined })
       return
     }
+    // initialUser is null (SSR JWT decode failed, e.g. JWT_SECRET unavailable on
+    // this function instance) or undefined (no SSR hydration). Always verify via
+    // the API so a failed SSR decode never leaves the client permanently stuck
+    // with user=null and no recovery path.
     fetch('/api/auth/me')
       .then(r => r.ok ? r.json() : null)
       .then(data => {

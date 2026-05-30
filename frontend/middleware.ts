@@ -28,22 +28,27 @@ async function hasValidSession(request: NextRequest): Promise<boolean> {
 }
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
+  const { pathname, search } = request.nextUrl
 
   const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
   const valid    = await hasValidSession(request)
 
   if (!valid && !isPublic) {
     // No valid session — redirect to login before any protected page renders.
-    // Preserve the destination so the user lands back here after signing in.
+    // Preserve the full destination (pathname + query string) so the user
+    // lands back at the exact URL after signing in.
     const url = new URL('/login', request.url)
-    if (pathname !== '/') url.searchParams.set('next', pathname)
+    const dest = pathname + (search || '')
+    if (dest !== '/') url.searchParams.set('next', dest)
     return NextResponse.redirect(url)
   }
 
   if (valid && isPublic) {
-    // Already authenticated — send to home instead of showing the login page.
-    return NextResponse.redirect(new URL('/', request.url))
+    // Already authenticated — honour the ?next= param if present (e.g. a
+    // shared login?next=/join/ABC link); otherwise send to home.
+    const next = request.nextUrl.searchParams.get('next')
+    const safe = next && next.startsWith('/') && !next.startsWith('//') ? next : '/'
+    return NextResponse.redirect(new URL(safe, request.url))
   }
 
   return NextResponse.next()

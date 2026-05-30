@@ -703,26 +703,27 @@ async def player_stats_audit(db: AsyncSession = Depends(get_db)) -> dict:
             **(info or {"player_id": None, "name": None, "team_id": None, "position": None}),
         })
 
-    eng_team = next((t for t in all_teams if t.id == "eng"), None)
-    kane_diagnosis = {
-        "england_team_exists":        eng_team is not None,
-        "england_has_apifootball_id": bool(eng_team and (eng_team.external_ids or {}).get("apifootball")),
-        "england_apifootball_id":     (eng_team.external_ids or {}).get("apifootball") if eng_team else None,
-        "england_player_count":       counts_by_team.get("eng", 0),
-        "kane_in_db":                 "184" in found_by_api_id,
-        "kane_record":                found_by_api_id.get("184"),
-        "verdict": (
-            "FOUND — Kane is in DB and favorites query will return him"
-            if "184" in found_by_api_id
-            else (
-                "MISSING — England team exists but sync_players was never run or the API "
-                "squads endpoint didn't return Kane. Run POST /admin/seed/players to guarantee "
-                "Kane is seeded, or POST /admin/sync/players?teams=eng to re-sync."
-                if (eng_team and (eng_team.external_ids or {}).get("apifootball"))
-                else "MISSING — England team record lacks apifootball external_id; sync_players will skip it."
-            )
-        ),
-    }
+    def _player_diagnosis(team_id: str, player_name: str, api_id: str) -> dict:
+        team = next((t for t in all_teams if t.id == team_id), None)
+        return {
+            f"{team_id}_team_exists":        team is not None,
+            f"{team_id}_has_apifootball_id": bool(team and (team.external_ids or {}).get("apifootball")),
+            f"{team_id}_apifootball_id":     (team.external_ids or {}).get("apifootball") if team else None,
+            f"{team_id}_player_count":       counts_by_team.get(team_id, 0),
+            f"{player_name.lower().replace(' ', '_')}_in_db": api_id in found_by_api_id,
+            f"{player_name.lower().replace(' ', '_')}_record": found_by_api_id.get(api_id),
+            "verdict": (
+                f"FOUND — {player_name} is in DB and favorites query will return him"
+                if api_id in found_by_api_id
+                else (
+                    f"MISSING — {team_id.upper()} team exists but sync_players was never run or the API "
+                    f"squads endpoint didn't return {player_name}. Run POST /admin/seed/players to guarantee "
+                    f"{player_name} is seeded, or POST /admin/sync/players?teams={team_id} to re-sync."
+                    if (team and (team.external_ids or {}).get("apifootball"))
+                    else f"MISSING — {team_id.upper()} team record lacks apifootball external_id; sync_players will skip it."
+                )
+            ),
+        }
 
     return {
         "summary": {
@@ -733,11 +734,12 @@ async def player_stats_audit(db: AsyncSession = Depends(get_db)) -> dict:
             "favorites_found":          sum(1 for f in favorites_audit if f["found"]),
             "favorites_missing":        sum(1 for f in favorites_audit if not f["found"]),
         },
-        "kane_diagnosis":   kane_diagnosis,
-        "favorites_audit":  favorites_audit,
-        "teams_no_players": no_players,
-        "teams_incomplete": incomplete,
-        "all_teams":        team_rows,
+        "ronaldo_diagnosis": _player_diagnosis("por", "Cristiano Ronaldo", "874"),
+        "kane_diagnosis":    _player_diagnosis("eng", "Harry Kane", "184"),
+        "favorites_audit":   favorites_audit,
+        "teams_no_players":  no_players,
+        "teams_incomplete":  incomplete,
+        "all_teams":         team_rows,
     }
 
 
@@ -804,6 +806,10 @@ async def seed_players(db: AsyncSession = Depends(get_db)) -> PlayerSeedResponse
                 changed = False
                 if existing.team_id != seed["team_id"]:
                     existing.team_id = seed["team_id"]
+                    changed = True
+                # Always prefer the seed's full name over an abbreviated API name
+                if existing.name != seed["name"]:
+                    existing.name = seed["name"]
                     changed = True
                 if not existing.position:
                     existing.position = seed["position"]

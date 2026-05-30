@@ -12,12 +12,17 @@ export async function GET(_req: Request, { params }: Params) {
   const token = store.get(SESSION_COOKIE)?.value
   if (!token) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const res = await fetch(`${API_BASE}/leagues/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store',
-  })
-  const data = await res.json()
-  return Response.json(data, { status: res.ok ? 200 : res.status })
+  try {
+    const res = await fetch(`${API_BASE}/leagues/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({}))
+    return Response.json(data, { status: res.ok ? 200 : res.status })
+  } catch (err) {
+    console.error('[leagues] GET network error id=%s', id, err)
+    return Response.json({ error: 'Backend unavailable' }, { status: 503 })
+  }
 }
 
 // DELETE /api/leagues/[id] — delete league (owner only)
@@ -27,11 +32,16 @@ export async function DELETE(_req: Request, { params }: Params) {
   const token = store.get(SESSION_COOKIE)?.value
   if (!token) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const res = await fetch(`${API_BASE}/leagues/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.status === 204) return new Response(null, { status: 204 })
-  const data = await res.json().catch(() => ({ error: 'Unknown error' }))
-  return Response.json(data, { status: res.status })
+  try {
+    const res = await fetch(`${API_BASE}/leagues/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.status === 204) return new Response(null, { status: 204 })
+    const data = await res.json().catch(() => ({ error: 'Unknown error' }))
+    return Response.json(data, { status: res.status })
+  } catch (err) {
+    console.error('[leagues] DELETE network error id=%s', id, err)
+    return Response.json({ error: 'Backend unavailable' }, { status: 503 })
+  }
 }

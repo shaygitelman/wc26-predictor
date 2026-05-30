@@ -12,12 +12,18 @@ export async function GET(_req: Request, { params }: Params) {
   const token = store.get(SESSION_COOKIE)?.value
   if (!token) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const res = await fetch(`${API_BASE}/predictions/${matchId}/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-    next: { revalidate: 0 },
-  })
-  const data = await res.json()
-  return Response.json(data, { status: res.status })
+  try {
+    const res = await fetch(`${API_BASE}/predictions/${matchId}/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      next: { revalidate: 0 },
+    })
+    const data = await res.json().catch(() => ({}))
+    return Response.json(data, { status: res.status })
+  } catch (err) {
+    console.error('[predictions] GET network error match=%s', matchId, err)
+    Sentry.captureException(err, { extra: { matchId } })
+    return Response.json({ error: 'Could not reach server. Please try again.' }, { status: 502 })
+  }
 }
 
 export async function POST(req: Request, { params }: Params) {

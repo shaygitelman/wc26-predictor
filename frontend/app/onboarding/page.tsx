@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Check, ChevronRight, Loader2 } from 'lucide-react'
+import { Search, Check, ChevronRight, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { cn } from '@/lib/utils'
 import {
@@ -320,7 +320,7 @@ function ScorerStep({
   // Load favorites on mount
   useEffect(() => {
     const ac = new AbortController()
-    fetch('/api/players/favorites', { signal: ac.signal })
+    apiFetch('/api/players/favorites', { signal: ac.signal })
       .then(r => r.ok ? r.json() : [])
       .then(setPlayers)
       .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
@@ -337,7 +337,7 @@ function ScorerStep({
       setLoading(true)
       const ac = new AbortController()
       abortRef.current = ac
-      fetch('/api/players/favorites', { signal: ac.signal })
+      apiFetch('/api/players/favorites', { signal: ac.signal })
         .then(r => r.ok ? r.json() : [])
         .then(setPlayers)
         .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
@@ -349,7 +349,7 @@ function ScorerStep({
     abortRef.current = ac
     debounceRef.current = setTimeout(() => {
       setLoading(true)
-      fetch(`/api/players?search=${encodeURIComponent(search)}`, { signal: ac.signal })
+      apiFetch(`/api/players?search=${encodeURIComponent(search)}`, { signal: ac.signal })
         .then(r => r.ok ? r.json() : [])
         .then(setPlayers)
         .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
@@ -610,6 +610,8 @@ function OnboardingPageInner() {
   const [submitting,           setSubmitting]           = useState(false)
   const [joining,              setJoining]              = useState(false)
   const [error,                setError]                = useState<string | null>(null)
+  const [teamsLoading,         setTeamsLoading]         = useState(true)
+  const [teamsError,           setTeamsError]           = useState(false)
   const [isLocked,             setIsLocked]             = useState(false)
   const [showInstallPrompt,    setShowInstallPrompt]    = useState(false)
   const [installDest,          setInstallDest]          = useState('/')
@@ -654,17 +656,28 @@ function OnboardingPageInner() {
     }
   }, [user, isLoading, router, next])
 
+  const loadTeams = useCallback(async () => {
+    setTeamsLoading(true)
+    setTeamsError(false)
+    try {
+      const r = await apiFetch('/api/tournament/teams')
+      const data = r.ok ? await r.json() : []
+      setTeams(data)
+    } catch {
+      setTeamsError(true)
+    } finally {
+      setTeamsLoading(false)
+    }
+  }, [])
+
   // Fetch teams + lock status in parallel
   useEffect(() => {
-    fetch('/api/tournament/teams')
-      .then(r => r.ok ? r.json() : [])
-      .then(setTeams)
-      .catch(() => setTeams([]))
+    loadTeams()
     fetch('/api/tournament/lock-status')
       .then(r => r.ok ? r.json() : null)
       .then((d: { isLocked?: boolean } | null) => { if (d?.isLocked) setIsLocked(true) })
       .catch(() => {})
-  }, [])
+  }, [loadTeams])
 
   const handleSubmit = useCallback(async () => {
     if (!winner || !scorer) return
@@ -760,13 +773,39 @@ function OnboardingPageInner() {
         {step === 0 && <WelcomeStep onNext={() => goToStep(1)} isLocked={isLocked} />}
 
         {step === 1 && (
-          <WinnerStep
-            teams={teams}
-            selected={winner}
-            onSelect={setWinner}
-            onNext={() => goToStep(2)}
-            isLocked={isLocked}
-          />
+          teamsError ? (
+            <div className="flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-6">
+              <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
+                <AlertCircle className="size-12 text-destructive" />
+                <div>
+                  <h2 className="text-xl font-black text-foreground">Couldn&apos;t load teams</h2>
+                  <p className="text-sm text-muted-foreground mt-2 max-w-xs">
+                    There was a problem connecting to the server. Check your connection and try again.
+                  </p>
+                </div>
+                <button
+                  onClick={loadTeams}
+                  className="flex items-center gap-2 h-11 px-6 rounded-2xl bg-primary text-primary-foreground
+                    text-sm font-black shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all"
+                >
+                  <RefreshCw className="size-4" />
+                  Try Again
+                </button>
+              </div>
+            </div>
+          ) : teamsLoading ? (
+            <div className="flex items-center justify-center min-h-dvh">
+              <Loader2 className="size-6 text-muted-foreground animate-spin" />
+            </div>
+          ) : (
+            <WinnerStep
+              teams={teams}
+              selected={winner}
+              onSelect={setWinner}
+              onNext={() => goToStep(2)}
+              isLocked={isLocked}
+            />
+          )
         )}
 
         {step === 2 && (

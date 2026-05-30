@@ -198,6 +198,7 @@ async def _bootstrap_group_fixtures() -> None:
 # Kept here (not in routers/players.py) so bootstrap can sync exactly these teams
 # without importing the router.
 _GOLDEN_BOOT_FAVORITES: dict[str, str] = {
+    "874":    "por",   # Ronaldo (manually seeded — not in WC2026 API squad)
     "278":    "fra",   # Mbappé
     "1100":   "nor",   # Haaland
     "129718": "eng",   # Bellingham
@@ -212,6 +213,8 @@ _GOLDEN_BOOT_FAVORITES: dict[str, str] = {
     "276":    "bra",   # Neymar
     "18979":  "swe",   # Gyökeres
     "1496":   "bra",   # Raphinha
+    "10009":  "bra",   # Rodrygo (manually seeded — not in WC2026 API squad)
+    "631":    "eng",   # Phil Foden (seeded for full-name search)
 }
 
 
@@ -267,6 +270,11 @@ async def _seed_manual_players() -> None:
                     seeded += 1
                 else:
                     changed = False
+                    # Always prefer the seed's full name over an abbreviated API name.
+                    # "J. Bellingham" → "Jude Bellingham"; idempotent when names match.
+                    if existing.name != p["name"]:
+                        existing.name = p["name"]
+                        changed = True
                     if not existing.position:
                         existing.position = p["position"]
                         changed = True
@@ -446,14 +454,17 @@ async def _bootstrap_all_players() -> None:
             )).all()
             counts = {r[0]: r[1] for r in rows}
 
-        teams_to_sync = [t for t in all_wc26_teams if counts.get(t, 0) == 0]
+        teams_to_sync = [t for t in all_wc26_teams if counts.get(t, 0) < _MIN_PLAYERS_PER_TEAM]
 
         if not teams_to_sync:
-            log.info("BACKGROUND: all %d WC2026 teams already have players", len(all_wc26_teams))
+            log.info(
+                "BACKGROUND: all %d WC2026 teams have ≥%d players, skipping",
+                len(all_wc26_teams), _MIN_PLAYERS_PER_TEAM,
+            )
             return
 
         log.info(
-            "BACKGROUND: syncing %d teams with 0 players: %s",
+            "BACKGROUND: syncing %d under-threshold teams: %s",
             len(teams_to_sync), sorted(teams_to_sync),
         )
         svc = SyncService(

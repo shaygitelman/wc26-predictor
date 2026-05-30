@@ -327,8 +327,11 @@ class SyncService:
 
                     existing = existing_by_ext.get(p.external_id)
                     if existing:
-                        existing.team_id       = team.id
-                        existing.name          = p.name
+                        existing.team_id = team.id
+                        # Preserve longer names (full names from seeds) over abbreviated
+                        # API forms (e.g. keep "Jude Bellingham" over "J. Bellingham").
+                        if len(p.name) >= len(existing.name or ''):
+                            existing.name = p.name
                         existing.position      = p.position
                         existing.shirt_number  = p.shirt_number
                         existing.photo_url     = p.photo_url

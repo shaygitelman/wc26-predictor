@@ -1,8 +1,9 @@
+import unicodedata
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -24,28 +25,52 @@ router = APIRouter(prefix="/players", tags=["players"])
 #             who were not in the initial favorites compile.
 
 _FAVORITE_APIFOOTBALL_IDS: list[str] = [
-    "278",    # Kylian Mbappé (FRA)     — slot 0
-    "1100",   # Erling Haaland (NOR)    — slot 1
-    "129718", # Jude Bellingham (ENG)   — slot 2
-    "184",    # Harry Kane (ENG)        — slot 3
-    "154",    # Lionel Messi (ARG)      — slot 4
-    "762",    # Vinícius Júnior (BRA)   — slot 5
-    "386828", # Lamine Yamal (ESP)      — slot 6
-    "978",    # Kai Havertz (GER)       — slot 7
-    "377122", # Endrick (BRA)           — slot 8
-    "51617",  # Darwin Núñez (URU)      — slot 9
-    "2489",   # Luis Díaz (COL)         — slot 10
-    "276",    # Neymar (BRA)            — slot 11
-    "18979",  # Viktor Gyökeres (SWE)   — slot 12
-    "1496",   # Raphinha (BRA)          — slot 13
+    "874",    # Cristiano Ronaldo (POR) — slot 0
+    "278",    # Kylian Mbappé (FRA)     — slot 1
+    "1100",   # Erling Haaland (NOR)    — slot 2
+    "129718", # Jude Bellingham (ENG)   — slot 3
+    "184",    # Harry Kane (ENG)        — slot 4
+    "154",    # Lionel Messi (ARG)      — slot 5
+    "762",    # Vinícius Júnior (BRA)   — slot 6
+    "386828", # Lamine Yamal (ESP)      — slot 7
+    "978",    # Kai Havertz (GER)       — slot 8
+    "377122", # Endrick (BRA)           — slot 9
+    "51617",  # Darwin Núñez (URU)      — slot 10
+    "2489",   # Luis Díaz (COL)         — slot 11
+    "276",    # Neymar (BRA)            — slot 12
+    "18979",  # Viktor Gyökeres (SWE)   — slot 13
+    "1496",   # Raphinha (BRA)          — slot 14
+    "10009",  # Rodrygo (BRA)           — slot 15
+    "631",    # Phil Foden (ENG)        — slot 16
 ]
 
 _FAVORITE_NAME_SLOTS: list[tuple[str, str, int]] = []  # all players found by exact API-Football ID
 
 _FAVORITE_ID_ORDER: dict[str, int] = {
     api_id: slot
-    for api_id, slot in zip(_FAVORITE_APIFOOTBALL_IDS, range(14))
+    for api_id, slot in zip(_FAVORITE_APIFOOTBALL_IDS, range(17))
 }
+
+
+_LATIN_EXTRA = str.maketrans({
+    # Characters that don't decompose via NFD but still need normalisation
+    'Ø': 'O', 'ø': 'o', 'Å': 'A', 'å': 'a',
+    'Æ': 'Ae', 'æ': 'ae', 'Ð': 'D', 'ð': 'd',
+    'Þ': 'Th', 'þ': 'th', 'Ł': 'L', 'ł': 'l', 'ß': 'ss',
+})
+
+
+def _deaccent(s: str) -> str:
+    """Strip diacritics from a search term (Python-side, covers most Latin scripts).
+
+    PostgreSQL's unaccent() handles the DB column side.  This function covers the
+    search-term side so users can type 'Odegaard', 'Mbappe', 'Vinicius', etc.
+    """
+    s = s.translate(_LATIN_EXTRA)
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', s)
+        if unicodedata.category(c) != 'Mn'
+    )
 
 
 class PlayerOut(BaseModel):
@@ -159,7 +184,10 @@ async def list_players(
     if position:
         q = q.where(Player.position == position.upper())
     if search:
-        q = q.where(Player.name.ilike(f"%{search}%"))
+        # unaccent() normalises both sides so "Mbappe" matches "Mbappé",
+        # "Vinicius" matches "Vinícius Júnior", "Odegaard" matches "Martin Ødegaard", etc.
+        plain = _deaccent(search)
+        q = q.where(func.unaccent(Player.name).ilike(f"%{plain}%"))
 
     rows = (await db.execute(q)).all()
     return [PlayerOut.from_row(player, team) for player, team in rows]

@@ -237,11 +237,11 @@ export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
             </span>
             <PersonalityBadge personality={safePersonality} label={safePersonalityLabel} />
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-            {generatedAt && <DataFreshness generatedAt={generatedAt} />}
-            {safeVolatility >= 7 && <VolatilityTag score={safeVolatility} />}
-            <ConfidenceChip confidence={safeConfidence} />
-          </div>
+          {safeConfidence !== 'low' && (
+            <div className="flex-shrink-0 ml-2">
+              <ConfidenceChip confidence={safeConfidence} />
+            </div>
+          )}
         </div>
 
         {/* ── Debug overlay (only when DEBUG_AI_INSIGHTS=true) ── */}
@@ -361,7 +361,7 @@ function PersonalityBadge({ personality, label }: { personality: MatchPersonalit
   const { cls } = PERSONALITY_BADGE[personality]
   return (
     <span className={cn(
-      'text-[9px] font-black tracking-[0.08em] uppercase px-1.5 py-[2px] rounded border flex-shrink-0',
+      'text-[9px] font-black tracking-[0.08em] uppercase px-1.5 py-[2px] rounded border flex-shrink-0 max-w-[100px] truncate',
       cls,
     )}>
       {label}

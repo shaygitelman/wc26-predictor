@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search, Check, ChevronRight, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Search, Check, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { cn } from '@/lib/utils'
 import {
@@ -97,7 +97,6 @@ function ProgressDots({ step, total }: { step: number; total: number }) {
 function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-8">
-      {/* Brand icon */}
       <div className="relative flex items-center justify-center animate-in zoom-in-50 duration-700">
         <div
           className="absolute pointer-events-none"
@@ -142,7 +141,9 @@ function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: bool
         </button>
         <p className="text-2xs text-muted-foreground/50 mt-3">2 quick picks · takes under a minute</p>
         <p className="text-2xs text-muted-foreground/40 mt-1">
-          {isLocked ? 'The tournament has started — your picks lock on submission.' : 'You can change your picks anytime before the tournament starts.'}
+          {isLocked
+            ? 'The tournament has started — your picks lock on submission.'
+            : 'You can change your picks anytime before the tournament starts.'}
         </p>
       </div>
     </div>
@@ -151,6 +152,38 @@ function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: bool
 
 // ─── Step 1: Tournament Winner ────────────────────────────────────────────────
 
+function WinnerStepSkeleton() {
+  return (
+    <div className="flex flex-col min-h-dvh">
+      <div className="px-5 pt-12 pb-4 bg-background/95 backdrop-blur-sm sticky top-0 z-10">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-2 rounded-full bg-primary animate-pulse" />
+          <div className="w-2 h-2 rounded-full bg-primary/20 animate-pulse" />
+        </div>
+        <div className="h-7 w-52 bg-surface-elevated rounded-lg mt-3 animate-pulse" />
+        <div className="h-4 w-64 bg-surface-elevated rounded mt-2 animate-pulse" />
+        <div className="h-10 bg-surface-elevated rounded-xl mt-4 animate-pulse" />
+      </div>
+      <div className="flex-1 overflow-y-auto px-5 pb-32">
+        {Array.from({ length: 6 }).map((_, g) => (
+          <div key={g} className="mb-5">
+            <div className="h-2.5 w-16 bg-surface-elevated rounded mb-2 animate-pulse" />
+            <div className="grid grid-cols-2 gap-2">
+              {[0, 1, 2, 3].map(i => (
+                <div
+                  key={i}
+                  className="h-[80px] bg-card rounded-2xl border border-border animate-pulse"
+                  style={{ animationDelay: `${(g * 4 + i) * 25}ms` }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function WinnerStep({
   teams,
   selected,
@@ -158,10 +191,10 @@ function WinnerStep({
   onNext,
   isLocked,
 }: {
-  teams:    Team[]
-  selected: Team | null
-  onSelect: (t: Team) => void
-  onNext:   () => void
+  teams:     Team[]
+  selected:  Team | null
+  onSelect:  (t: Team) => void
+  onNext:    () => void
   isLocked?: boolean
 }) {
   const [search, setSearch] = useState('')
@@ -171,7 +204,6 @@ function WinnerStep({
     return q ? teams.filter(t => t.name.toLowerCase().includes(q) || t.code.toLowerCase().includes(q)) : teams
   }, [teams, search])
 
-  // Group by group letter when not searching
   const grouped = useMemo(() => {
     if (search.trim()) return null
     const map: Record<string, Team[]> = {}
@@ -184,7 +216,6 @@ function WinnerStep({
 
   return (
     <div className="flex flex-col min-h-dvh">
-      {/* Fixed header */}
       <div className="px-5 pt-12 pb-4 bg-background/95 backdrop-blur-sm sticky top-0 z-10">
         <ProgressDots step={1} total={2} />
         <h1 className="text-2xl font-black text-foreground mt-3 leading-tight">
@@ -206,7 +237,6 @@ function WinnerStep({
         </div>
       </div>
 
-      {/* Scrollable team grid */}
       <div className="flex-1 overflow-y-auto px-5 pb-32">
         {grouped ? (
           Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([group, groupTeams]) => (
@@ -233,7 +263,6 @@ function WinnerStep({
         )}
       </div>
 
-      {/* Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-background via-background/95 to-transparent pt-8">
         <button
           onClick={onNext}
@@ -245,6 +274,7 @@ function WinnerStep({
         >
           {selected ? (
             <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={selected.flagUrl ?? ''} alt="" className="size-5 rounded-sm object-cover" />
               {selected.name} — Next
               <ChevronRight className="size-4" strokeWidth={2.5} />
@@ -252,7 +282,9 @@ function WinnerStep({
           ) : 'Pick a team to continue'}
         </button>
         <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">
-          {isLocked ? 'The tournament has started — your picks will be locked after submission.' : 'You can edit this pick before the tournament lock date.'}
+          {isLocked
+            ? 'The tournament has started — your picks will be locked after submission.'
+            : 'You can edit this pick before the tournament lock date.'}
         </p>
       </div>
     </div>
@@ -276,20 +308,14 @@ function TeamCard({ team, isSelected, onSelect }: { team: Team; isSelected: bool
         </span>
       )}
       {team.flagUrl ? (
-        <img
-          src={team.flagUrl}
-          alt={team.name}
-          className="w-12 h-8 object-cover rounded-md shadow-sm"
-        />
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={team.flagUrl} alt={team.name} className="w-12 h-8 object-cover rounded-md shadow-sm" />
       ) : (
         <div className="w-12 h-8 rounded-md bg-surface-elevated flex items-center justify-center text-xs font-bold text-muted-foreground">
           {team.code}
         </div>
       )}
-      <p className={cn(
-        'text-xs font-bold leading-tight',
-        isSelected ? 'text-primary' : 'text-foreground',
-      )}>
+      <p className={cn('text-xs font-bold leading-tight', isSelected ? 'text-primary' : 'text-foreground')}>
         {team.name}
       </p>
     </button>
@@ -298,51 +324,69 @@ function TeamCard({ team, isSelected, onSelect }: { team: Team; isSelected: bool
 
 // ─── Step 2: Golden Boot ──────────────────────────────────────────────────────
 
+function PlayerListSkeleton() {
+  return (
+    <div className="flex flex-col gap-1 pt-1">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 px-3 py-3 rounded-xl"
+          style={{ animationDelay: `${i * 40}ms` }}
+        >
+          <div className="size-11 rounded-xl bg-surface-elevated animate-pulse flex-shrink-0" />
+          <div className="flex-1 flex flex-col gap-1.5">
+            <div className="h-3.5 w-32 bg-surface-elevated rounded animate-pulse" />
+            <div className="h-3 w-20 bg-surface-elevated rounded animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ScorerStep({
   selected,
   onSelect,
   onSubmit,
   submitting,
+  submitError,
   isLocked,
+  initialPlayers,
+  initialPlayersLoading,
 }: {
-  selected:   Player | null
-  onSelect:   (p: Player) => void
-  onSubmit:   () => void
-  submitting: boolean
-  isLocked?:  boolean
+  selected:              Player | null
+  onSelect:              (p: Player) => void
+  onSubmit:              () => void
+  submitting:            boolean
+  submitError:           string | null
+  isLocked?:             boolean
+  initialPlayers:        Player[]
+  initialPlayersLoading: boolean
 }) {
-  const [search,    setSearch]    = useState('')
-  const [players,   setPlayers]   = useState<Player[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const abortRef     = useRef<AbortController | null>(null)
+  const [search,   setSearch]   = useState('')
+  const [players,  setPlayers]  = useState<Player[]>(initialPlayers)
+  const [loading,  setLoading]  = useState(initialPlayersLoading)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef    = useRef<AbortController | null>(null)
 
-  // Load favorites on mount
+  // Sync prefetched players once they arrive (prefetch may complete after step mounts)
   useEffect(() => {
-    const ac = new AbortController()
-    apiFetch('/api/players/favorites', { signal: ac.signal })
-      .then(r => r.ok ? r.json() : [])
-      .then(setPlayers)
-      .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
-      .finally(() => setLoading(false))
-    return () => ac.abort()
-  }, [])
+    if (!initialPlayersLoading && players.length === 0 && initialPlayers.length > 0) {
+      setPlayers(initialPlayers)
+      setLoading(false)
+    }
+  }, [initialPlayers, initialPlayersLoading, players.length])
 
-  // Debounced search with abort-on-stale
+  // Debounced search — only runs when user actively types
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
 
     if (!search.trim()) {
-      setLoading(true)
-      const ac = new AbortController()
-      abortRef.current = ac
-      apiFetch('/api/players/favorites', { signal: ac.signal })
-        .then(r => r.ok ? r.json() : [])
-        .then(setPlayers)
-        .catch(e => { if (e.name !== 'AbortError') setPlayers([]) })
-        .finally(() => setLoading(false))
-      return () => ac.abort()
+      // Return to the prefetched favorites list
+      setPlayers(initialPlayers)
+      setLoading(initialPlayersLoading)
+      return
     }
 
     const ac = new AbortController()
@@ -356,11 +400,10 @@ function ScorerStep({
         .finally(() => setLoading(false))
     }, 300)
     return () => { clearTimeout(debounceRef.current!); ac.abort() }
-  }, [search])
+  }, [search, initialPlayers, initialPlayersLoading])
 
   return (
     <div className="flex flex-col min-h-dvh">
-      {/* Fixed header */}
       <div className="px-5 pt-12 pb-4 bg-background/95 backdrop-blur-sm sticky top-0 z-10">
         <ProgressDots step={2} total={2} />
         <h1 className="text-2xl font-black text-foreground mt-3 leading-tight">
@@ -384,12 +427,9 @@ function ScorerStep({
         </div>
       </div>
 
-      {/* Player list */}
       <div className="flex-1 overflow-y-auto px-5 pb-32">
         {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="size-5 text-muted-foreground animate-spin" />
-          </div>
+          <PlayerListSkeleton />
         ) : players.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground py-8">No players found</p>
         ) : (
@@ -406,8 +446,14 @@ function ScorerStep({
         )}
       </div>
 
-      {/* Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-background via-background/95 to-transparent pt-8">
+        {/* Persistent inline error — stays visible until next submit attempt */}
+        {submitError && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2.5 bg-destructive/10 border border-destructive/30 rounded-xl">
+            <AlertCircle className="size-4 text-destructive flex-shrink-0" />
+            <p className="text-xs font-semibold text-destructive leading-snug">{submitError}</p>
+          </div>
+        )}
         <button
           onClick={onSubmit}
           disabled={!selected || submitting}
@@ -417,13 +463,18 @@ function ScorerStep({
             hover:opacity-90 active:scale-[0.98] transition-all"
         >
           {submitting ? (
-            <><Loader2 className="size-4 animate-spin" /> Saving picks…</>
+            <>
+              <span className="size-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+              Saving picks…
+            </>
           ) : selected ? (
             <>{selected.name} — Save My Picks</>
           ) : 'Pick a player to continue'}
         </button>
         <p className="text-center text-2xs text-muted-foreground/45 mt-2.5">
-          {isLocked ? 'The tournament has started — your picks will be locked after submission.' : 'You can edit this pick before the tournament lock date.'}
+          {isLocked
+            ? 'The tournament has started — your picks will be locked after submission.'
+            : 'You can edit this pick before the tournament lock date.'}
         </p>
       </div>
     </div>
@@ -448,22 +499,21 @@ function PlayerRow({ player, isSelected, onSelect }: { player: Player; isSelecte
           : 'hover:bg-surface-elevated border border-transparent',
       )}
     >
-      {/* Player photo */}
       <div className="size-11 rounded-xl overflow-hidden bg-surface-elevated flex-shrink-0">
         {player.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={player.photoUrl} alt={player.name} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-lg">👤</div>
         )}
       </div>
-
-      {/* Info */}
       <div className="flex-1 min-w-0">
         <p className={cn('text-sm font-bold truncate', isSelected ? 'text-primary' : 'text-foreground')}>
           {player.name}
         </p>
         <div className="flex items-center gap-1.5 mt-0.5">
           {player.teamFlagUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={player.teamFlagUrl} alt="" className="h-3 w-5 object-cover rounded-[2px]" />
           )}
           <span className="text-xs text-muted-foreground truncate">{player.teamName ?? '—'}</span>
@@ -474,8 +524,6 @@ function PlayerRow({ player, isSelected, onSelect }: { player: Player; isSelecte
           )}
         </div>
       </div>
-
-      {/* Selected indicator */}
       {isSelected && (
         <span className="size-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
           <Check className="size-3.5 text-primary-foreground" strokeWidth={3} />
@@ -519,7 +567,6 @@ function CelebrationStep({
           </p>
         </div>
 
-        {/* Picks summary card */}
         <div className="w-full max-w-xs bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
           <div className="h-0.5 w-full bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
           <div className="p-4 flex flex-col gap-3">
@@ -531,6 +578,7 @@ function CelebrationStep({
                 <p className="text-2xs text-muted-foreground font-medium">Tournament Winner</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {winnerTeam.flagUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={winnerTeam.flagUrl} alt="" className="h-4 w-6 object-cover rounded-[3px]" />
                   )}
                   <p className="text-sm font-bold text-foreground">{winnerTeam.name}</p>
@@ -543,6 +591,7 @@ function CelebrationStep({
             <div className="flex items-center gap-3">
               <div className="size-8 rounded-lg overflow-hidden bg-surface-elevated flex-shrink-0">
                 {scorerPlayer.photoUrl
+                  // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={scorerPlayer.photoUrl} alt="" className="w-full h-full object-cover" />
                   : <span className="text-lg flex items-center justify-center h-full">👟</span>
                 }
@@ -576,7 +625,10 @@ function CelebrationStep({
             disabled:opacity-70 disabled:cursor-not-allowed"
         >
           {joining ? (
-            <><Loader2 className="size-5 animate-spin" /> Joining league…</>
+            <>
+              <span className="size-5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+              Joining league…
+            </>
           ) : inviteLeagueName ? (
             <>Enter &amp; Join League <ChevronRight className="size-5" strokeWidth={2.5} /></>
           ) : (
@@ -590,7 +642,6 @@ function CelebrationStep({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-/** Only allow same-origin relative paths to prevent open-redirect. */
 function safeNext(raw: string | null): string {
   if (!raw) return '/'
   if (!raw.startsWith('/') || raw.startsWith('//')) return '/'
@@ -603,24 +654,30 @@ function OnboardingPageInner() {
   const searchParams = useSearchParams()
   const next         = safeNext(searchParams.get('next'))
 
-  const [step,                 setStep]                 = useState(0)
-  const [teams,                setTeams]                = useState<Team[]>([])
-  const [winner,               setWinner]               = useState<Team | null>(null)
-  const [scorer,               setScorer]               = useState<Player | null>(null)
-  const [submitting,           setSubmitting]           = useState(false)
-  const [joining,              setJoining]              = useState(false)
-  const [error,                setError]                = useState<string | null>(null)
-  const [teamsLoading,         setTeamsLoading]         = useState(true)
-  const [teamsError,           setTeamsError]           = useState(false)
-  const [isLocked,             setIsLocked]             = useState(false)
-  const [showInstallPrompt,    setShowInstallPrompt]    = useState(false)
-  const [installDest,          setInstallDest]          = useState('/')
+  const [step,    setStep]    = useState(0)
+  const [teams,   setTeams]   = useState<Team[]>([])
+  const [winner,  setWinner]  = useState<Team | null>(null)
+  const [scorer,  setScorer]  = useState<Player | null>(null)
+
+  const [submitting,  setSubmitting]  = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [joining,     setJoining]     = useState(false)
+
+  const [teamsLoading,  setTeamsLoading]  = useState(true)
+  const [teamsError,    setTeamsError]    = useState(false)
+
+  // Players are prefetched alongside teams so ScorerStep has data immediately
+  const [players,        setPlayers]        = useState<Player[]>([])
+  const [playersLoading, setPlayersLoading] = useState(true)
+
+  const [isLocked,              setIsLocked]              = useState(false)
+  const [showInstallPrompt,     setShowInstallPrompt]     = useState(false)
+  const [installDest,           setInstallDest]           = useState('/')
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [inviteLeagueName,     setInviteLeagueName]     = useState<string | null>(null)
+  const [inviteLeagueName,      setInviteLeagueName]      = useState<string | null>(null)
 
   useEffect(() => { trackOnboardingStarted() }, [])
 
-  // Fetch invite league name so we can show context in the celebration step
   useEffect(() => {
     const inviteCode = /^\/join\/([A-Za-z0-9]+)$/.exec(next)?.[1]
     if (!inviteCode) return
@@ -630,8 +687,6 @@ function OnboardingPageInner() {
       .then((d: { name?: string } | null) => { if (d?.name) setInviteLeagueName(d.name) })
   }, [next])
 
-  // Capture the browser's native PWA install prompt for Android Chrome.
-  // Must be registered early — the event fires once on page load.
   useEffect(() => {
     const handler = (e: Event) => {
       e.preventDefault()
@@ -649,7 +704,6 @@ function OnboardingPageInner() {
     if (names[s]) trackOnboardingStep(names[s])
   }, [])
 
-  // If already onboarded, go to the intended destination (not always '/')
   useEffect(() => {
     if (!isLoading && user?.onboardingCompleted) {
       router.replace(next)
@@ -670,19 +724,27 @@ function OnboardingPageInner() {
     }
   }, [])
 
-  // Fetch teams + lock status in parallel
+  // Fetch teams + lock status + players/favorites all in parallel on mount.
+  // Players are ready before the user ever reaches step 2.
   useEffect(() => {
     loadTeams()
+
     fetch('/api/tournament/lock-status')
       .then(r => r.ok ? r.json() : null)
       .then((d: { isLocked?: boolean } | null) => { if (d?.isLocked) setIsLocked(true) })
       .catch(() => {})
+
+    apiFetch('/api/players/favorites')
+      .then(r => r.ok ? r.json() : [])
+      .then((data: Player[]) => setPlayers(data))
+      .catch(() => setPlayers([]))
+      .finally(() => setPlayersLoading(false))
   }, [loadTeams])
 
   const handleSubmit = useCallback(async () => {
     if (!winner || !scorer) return
     setSubmitting(true)
-    setError(null)
+    setSubmitError(null)
     try {
       const res = await apiFetch('/api/tournament/onboarding', {
         method:  'POST',
@@ -691,21 +753,18 @@ function OnboardingPageInner() {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(data?.detail ?? 'Something went wrong. Please try again.')
+        setSubmitError(data?.detail ?? 'Something went wrong. Please try again.')
         return
       }
       trackOnboardingCompleted({ pickedWinner: !!winner, pickedScorer: !!scorer, hadInvite: /^\/join\//.test(next) })
       goToStep(3)
     } catch {
-      setError('Network error. Please try again.')
+      setSubmitError('Network error. Please try again.')
     } finally {
       setSubmitting(false)
     }
-  }, [winner, scorer])
+  }, [winner, scorer, next, goToStep])
 
-  // Show the install prompt once for mobile first-timers, then navigate.
-  // Hard navigation ensures the new page mounts with a fresh RootLayout SSR
-  // read of the updated session cookie (onboarding_completed: true).
   const navigateOrPrompt = useCallback((dest: string) => {
     const shouldPrompt = (() => {
       try {
@@ -742,7 +801,6 @@ function OnboardingPageInner() {
           return
         }
       } catch {}
-      // Auto-join failed — fall through to the join page for its error UI.
       setJoining(false)
     }
     navigateOrPrompt(next)
@@ -752,13 +810,6 @@ function OnboardingPageInner() {
 
   return (
     <div className="min-h-dvh bg-background">
-      {error && (
-        <div className="fixed top-4 left-4 right-4 z-50 bg-destructive text-destructive-foreground
-          text-sm font-semibold px-4 py-3 rounded-xl shadow-lg animate-in slide-in-from-top-2 duration-200">
-          {error}
-        </div>
-      )}
-
       {showInstallPrompt && (
         <InstallPrompt
           deferredPrompt={deferredInstallPrompt}
@@ -794,9 +845,7 @@ function OnboardingPageInner() {
               </div>
             </div>
           ) : teamsLoading ? (
-            <div className="flex items-center justify-center min-h-dvh">
-              <Loader2 className="size-6 text-muted-foreground animate-spin" />
-            </div>
+            <WinnerStepSkeleton />
           ) : (
             <WinnerStep
               teams={teams}
@@ -814,7 +863,10 @@ function OnboardingPageInner() {
             onSelect={setScorer}
             onSubmit={handleSubmit}
             submitting={submitting}
+            submitError={submitError}
             isLocked={isLocked}
+            initialPlayers={players}
+            initialPlayersLoading={playersLoading}
           />
         )}
 

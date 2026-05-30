@@ -1,0 +1,556 @@
+'use client'
+
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Check, Lock, Search, X, Star, Clock } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
+import { trackTournamentPicksSaved } from '@/lib/analytics'
+import { cn } from '@/lib/utils'
+import { ContextHeader } from '@/components/layout/context-header'
+import { TeamFlag } from '@/components/atoms/team-flag'
+import type { Team, TeamDetail, Player } from '@/types/match'
+import { TOURNAMENT_BONUS } from '@/lib/constants'
+import type { TournamentPick, ScorerInfo } from '@/types/tournament'
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
+function formatLockDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: 'long', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    })
+  } catch {
+    return iso
+  }
+}
+
+function useLockCountdown(lockTimeIso: string | undefined): string | null {
+  const [countdown, setCountdown] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!lockTimeIso) return
+    const lockMs = new Date(lockTimeIso).getTime()
+
+    function tick() {
+      const diff = lockMs - Date.now()
+      if (diff <= 0 || diff > 7 * 24 * 60 * 60 * 1000) {
+        setCountdown(null)
+        return
+      }
+      const days    = Math.floor(diff / 86_400_000)
+      const hours   = Math.floor((diff % 86_400_000) / 3_600_000)
+      const minutes = Math.floor((diff % 3_600_000) / 60_000)
+      if (days > 0)       setCountdown(`${days}d ${hours}h`)
+      else if (hours > 0) setCountdown(`${hours}h ${minutes}m`)
+      else                setCountdown(`${minutes}m`)
+    }
+
+    tick()
+    const id = setInterval(tick, 30_000)
+    return () => clearInterval(id)
+  }, [lockTimeIso])
+
+  return countdown
+}
+
+const POSITION_COLORS: Record<string, string> = {
+  FWD: 'bg-orange-500/15 text-orange-500',
+  MID: 'bg-blue-500/15 text-blue-500',
+  DEF: 'bg-green-500/15 text-green-500',
+  GK:  'bg-purple-500/15 text-purple-500',
+}
+
+function scorerFromPick(pick: TournamentPick): Player | null {
+  if (!pick.scorer) return null
+  const s: ScorerInfo = pick.scorer
+  return {
+    id:            s.id,
+    name:          s.name,
+    photoUrl:      s.photoUrl,
+    teamName:      s.teamName,
+    teamShortCode: s.teamShortCode,
+    teamFlagUrl:   s.teamFlagUrl,
+  }
+}
+
+interface Props {
+  rawTeams:         TeamDetail[]
+  initialPick:      TournamentPick | null
+  initialFavorites: Player[]
+}
+
+export function TournamentClient({ rawTeams, initialPick, initialFavorites }: Props) {
+  // Derive teams once — stable reference since rawTeams is server-provided
+  const teams: Team[] = rawTeams
+    .map(t => ({
+      id:        t.id,
+      name:      t.name,
+      shortCode: t.shortCode,
+      flagUrl:   t.flagUrl,
+      group:     t.groupName ?? undefined,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const [favorites,      setFavorites]      = useState<Player[]>(initialFavorites)
+  const [searchQuery,    setSearchQuery]    = useState('')
+  const [searchResults,  setSearchResults]  = useState<Player[]>([])
+  const [isSearching,    setIsSearching]    = useState(false)
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(
+    initialPick ? scorerFromPick(initialPick) : null
+  )
+  const [winnerId,  setWinnerId]  = useState<string | undefined>(
+    initialPick?.winnerId?.toLowerCase() ?? undefined
+  )
+  const [scorerId,  setScorerId]  = useState<string | undefined>(
+    initialPick?.topScorerId ?? undefined
+  )
+  const [isLocked,  setIsLocked]  = useState(initialPick?.isLocked ?? false)
+  const [lockTime,  setLockTime]  = useState<string | undefined>(
+    initialPick?.lockTime ?? undefined
+  )
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [saveError, setSaveError] = useState('')
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchRef     = useRef<HTMLInputElement>(null)
+
+  const runSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setSearchResults([])
+      setIsSearching(false)
+      return
+    }
+    setIsSearching(true)
+    try {
+      const res = await apiFetch(`/api/players?search=${encodeURIComponent(q.trim())}`)
+      const data: Player[] = res.ok ? await res.json() : []
+      setSearchResults(data)
+    } catch {
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }, [])
+
+  function handleSearchChange(value: string) {
+    setSearchQuery(value)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchTimeout.current = setTimeout(() => runSearch(value), 300)
+  }
+
+  function selectScorer(player: Player) {
+    if (isLocked) return
+    if (scorerId === player.id) {
+      setScorerId(undefined)
+      setSelectedPlayer(null)
+    } else {
+      setScorerId(player.id)
+      setSelectedPlayer(player)
+    }
+    setSearchQuery('')
+    setSearchResults([])
+  }
+
+  const countdown = useLockCountdown(isLocked ? undefined : lockTime)
+  const canSave   = !isLocked && (winnerId !== undefined || scorerId !== undefined)
+
+  async function handleSave() {
+    if (!canSave || saveState !== 'idle') return
+    setSaveState('saving')
+    setSaveError('')
+    try {
+      const payload = { winnerId: winnerId?.toLowerCase() ?? null, topScorerId: scorerId ?? null }
+      const res  = await apiFetch('/api/tournament/picks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.detail ?? data?.error ?? `Save failed (${res.status})`)
+
+      setWinnerId(data.winnerId ?? undefined)
+      setScorerId(data.topScorerId ?? undefined)
+      setIsLocked(data.isLocked)
+      setLockTime(data.lockTime ?? undefined)
+      if (data.scorer) {
+        setSelectedPlayer({
+          id:            data.scorer.id,
+          name:          data.scorer.name,
+          photoUrl:      data.scorer.photoUrl,
+          teamName:      data.scorer.teamName,
+          teamShortCode: data.scorer.teamShortCode,
+          teamFlagUrl:   data.scorer.teamFlagUrl,
+        })
+        setFavorites(prev =>
+          prev.some(f => f.id === data.scorer.id)
+            ? prev
+            : [{ ...data.scorer }, ...prev]
+        )
+      } else {
+        setSelectedPlayer(null)
+      }
+      trackTournamentPicksSaved({ pickedWinner: !!data.winnerId, pickedScorer: !!data.topScorerId })
+      setSaveState('saved')
+      setTimeout(() => setSaveState('idle'), 1800)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Something went wrong')
+      setSaveState('error')
+      setTimeout(() => setSaveState('idle'), 2500)
+    }
+  }
+
+  const showingSearchResults = searchQuery.trim().length > 0
+
+  return (
+    <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+      <ContextHeader title="Tournament Picks" back="/profile" />
+
+      <div className="flex flex-col gap-6 p-4">
+
+        {/* ── Lock banners ──────────────────────────────────── */}
+        {isLocked ? (
+          <div className="flex items-start gap-3 bg-surface-elevated rounded-xl border border-border p-4">
+            <Lock className="size-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Picks are locked</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {lockTime
+                  ? `Locked since ${formatLockDate(lockTime)}`
+                  : 'Tournament predictions locked at kickoff.'}
+              </p>
+            </div>
+          </div>
+        ) : countdown ? (
+          <div className="flex items-center gap-3 bg-amber-500/8 border border-amber-500/20 rounded-xl p-4">
+            <Clock className="size-5 text-amber-500 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Picks lock soon</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {`${countdown} until predictions are locked — edit before kickoff!`}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Points callout */}
+        <div className="flex gap-3">
+          <PointPill pts={TOURNAMENT_BONUS.WINNER}     label="Tournament Winner" />
+          <PointPill pts={TOURNAMENT_BONUS.TOP_SCORER} label="Top Goal Scorer" />
+        </div>
+
+        {/* ── Pick tournament winner ───────────────────────── */}
+        <section>
+          <SectionLabel>Pick Tournament Winner</SectionLabel>
+          {teams.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No teams available yet.</p>
+          ) : (
+            <div className="grid grid-cols-4 gap-2">
+              {teams.map(team => (
+                <TeamTile
+                  key={team.id}
+                  team={team}
+                  selected={winnerId === team.id}
+                  disabled={isLocked}
+                  onSelect={() => !isLocked && setWinnerId(id => id === team.id ? undefined : team.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Pick top scorer ──────────────────────────────── */}
+        <section className="flex flex-col gap-4">
+          <SectionLabel>Pick Top Goal Scorer</SectionLabel>
+
+          {selectedPlayer && (
+            <SelectedPlayerCard
+              player={selectedPlayer}
+              onClear={isLocked ? undefined : () => { setScorerId(undefined); setSelectedPlayer(null) }}
+            />
+          )}
+
+          {!isLocked && (
+            <>
+              {!showingSearchResults && favorites.length > 0 && (
+                <div>
+                  <p className="text-2xs font-bold tracking-[0.10em] uppercase text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Star className="size-3 fill-amber-400 text-amber-400" />
+                    Recommended Picks
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 snap-x snap-mandatory scrollbar-none">
+                    {favorites.map(player => (
+                      <FavoriteCard
+                        key={player.id}
+                        player={player}
+                        selected={scorerId === player.id}
+                        onSelect={() => selectScorer(player)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => handleSearchChange(e.target.value)}
+                  placeholder="Search all players…"
+                  className="w-full bg-surface-elevated border border-border rounded-xl pl-10 pr-10 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => { setSearchQuery(''); setSearchResults([]); searchRef.current?.focus() }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+
+              {showingSearchResults && (
+                <div className="flex flex-col gap-1">
+                  {isSearching ? (
+                    <div className="flex items-center justify-center py-6">
+                      <div className="size-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                    </div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="text-center py-6">
+                      <p className="text-sm text-muted-foreground">No players found for &ldquo;{searchQuery}&rdquo;</p>
+                    </div>
+                  ) : (
+                    searchResults.map(player => (
+                      <PlayerRow
+                        key={player.id}
+                        player={player}
+                        selected={scorerId === player.id}
+                        onSelect={() => selectScorer(player)}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+
+              {!selectedPlayer && !showingSearchResults && favorites.length === 0 && (
+                <div className="bg-card rounded-xl border border-border px-4 py-6 text-center">
+                  <p className="text-sm text-muted-foreground">Player rosters not yet available.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Check back closer to the tournament.</p>
+                </div>
+              )}
+            </>
+          )}
+
+          {isLocked && !selectedPlayer && (
+            <div className="bg-card rounded-xl border border-border px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">No top scorer selected.</p>
+            </div>
+          )}
+        </section>
+
+        {/* ── Save button ─────────────────────────────────── */}
+        {!isLocked && (
+          <>
+            <button
+              onClick={handleSave}
+              disabled={!canSave || saveState !== 'idle'}
+              className={cn(
+                'w-full rounded-xl py-4 font-bold text-[15px] transition-all duration-200',
+                saveState === 'saved'
+                  ? 'bg-status-won text-white'
+                  : saveState === 'error'
+                  ? 'bg-status-lost/80 text-white'
+                  : canSave
+                  ? 'bg-primary text-white active:scale-[0.98]'
+                  : 'bg-surface-elevated text-muted-foreground cursor-not-allowed',
+              )}
+            >
+              {saveState === 'saving' ? 'Saving…'
+                : saveState === 'saved'  ? '✓ Picks Saved!'
+                : saveState === 'error'  ? 'Save Failed — Tap to Retry'
+                : 'Save My Picks'}
+            </button>
+            {saveError && (
+              <p className="text-center text-xs text-status-lost -mt-3">{saveError}</p>
+            )}
+          </>
+        )}
+
+        <p className="text-center text-xs text-muted-foreground -mt-2">
+          {isLocked
+            ? 'Picks are permanently locked — final selections only'
+            : lockTime
+              ? `Picks lock on ${formatLockDate(lockTime)}`
+              : 'Picks lock when the first match kicks off'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Sub-components ──────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground mb-3">
+      {children}
+    </p>
+  )
+}
+
+function PointPill({ pts, label }: { pts: number; label: string }) {
+  return (
+    <div className="flex-1 bg-primary-muted border border-primary/20 rounded-xl p-3 text-center">
+      <p className="text-xl font-black text-primary tabular">+{pts}</p>
+      <p className="text-2xs text-muted-foreground font-medium leading-tight mt-0.5">{label}</p>
+    </div>
+  )
+}
+
+function TeamTile({
+  team, selected, disabled, onSelect,
+}: {
+  team: Team; selected: boolean; disabled: boolean; onSelect: () => void
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      disabled={disabled}
+      className={cn(
+        'flex flex-col items-center gap-1.5 rounded-xl border py-3 px-1 transition-all duration-150',
+        selected
+          ? 'border-primary bg-primary-muted ring-1 ring-primary/40 scale-[1.02]'
+          : 'border-border bg-card hover:border-primary/40',
+        disabled && 'opacity-60 cursor-not-allowed',
+      )}
+    >
+      <div className="relative">
+        <TeamFlag team={team} size="md" />
+        {selected && (
+          <span className="absolute -top-1 -right-1 size-4 rounded-full bg-primary flex items-center justify-center">
+            <Check className="size-2.5 text-white" strokeWidth={3} />
+          </span>
+        )}
+      </div>
+      <span className="text-2xs font-bold text-foreground">{team.shortCode}</span>
+    </button>
+  )
+}
+
+function PlayerPhoto({ src, name, size = 40 }: { src?: string; name: string; size?: number }) {
+  const [err, setErr] = useState(false)
+  if (!src || err) {
+    const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    return (
+      <span
+        className="rounded-full bg-surface-elevated flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0"
+        style={{ width: size, height: size }}
+      >
+        {initials}
+      </span>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src} alt={name} width={size} height={size}
+      onError={() => setErr(true)}
+      className="rounded-full object-cover flex-shrink-0"
+      style={{ width: size, height: size }}
+    />
+  )
+}
+
+function FlagImg({ url, code }: { url?: string; code: string }) {
+  if (!url) return (
+    <span className="text-2xs font-bold text-muted-foreground bg-surface-elevated rounded px-1">{code}</span>
+  )
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt={code} className="w-5 h-3.5 rounded-[2px] object-cover flex-shrink-0" />
+  )
+}
+
+function SelectedPlayerCard({ player, onClear }: { player: Player; onClear?: () => void }) {
+  return (
+    <div className="flex items-center gap-3 bg-primary-muted border border-primary/30 rounded-xl px-4 py-3 ring-1 ring-primary/20">
+      <PlayerPhoto src={player.photoUrl} name={player.name} size={44} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-foreground truncate">{player.name}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <FlagImg url={player.teamFlagUrl} code={player.teamShortCode ?? ''} />
+          <p className="text-xs text-muted-foreground truncate">{player.teamName}</p>
+          {player.position && (
+            <span className={cn('text-2xs font-bold px-1.5 py-0.5 rounded', POSITION_COLORS[player.position] ?? 'bg-muted text-muted-foreground')}>
+              {player.position}
+            </span>
+          )}
+        </div>
+      </div>
+      <Check className="size-5 text-primary flex-shrink-0" strokeWidth={2.5} />
+      {onClear && (
+        <button onClick={onClear} className="ml-1 text-muted-foreground hover:text-foreground flex-shrink-0">
+          <X className="size-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function FavoriteCard({ player, selected, onSelect }: { player: Player; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-all duration-150 snap-start flex-shrink-0 w-[80px]',
+        selected
+          ? 'border-primary bg-primary-muted ring-1 ring-primary/40'
+          : 'border-border bg-card hover:border-primary/40',
+      )}
+    >
+      <div className="relative">
+        <PlayerPhoto src={player.photoUrl} name={player.name} size={44} />
+        {selected && (
+          <span className="absolute -top-1 -right-1 size-4 rounded-full bg-primary flex items-center justify-center">
+            <Check className="size-2.5 text-white" strokeWidth={3} />
+          </span>
+        )}
+      </div>
+      <FlagImg url={player.teamFlagUrl} code={player.teamShortCode ?? ''} />
+      <p className="text-2xs font-bold text-foreground text-center leading-tight line-clamp-2">
+        {player.name.split(' ').slice(-1)[0]}
+      </p>
+    </button>
+  )
+}
+
+function PlayerRow({ player, selected, onSelect }: { player: Player; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-all duration-150 text-left w-full',
+        selected
+          ? 'border-primary bg-primary-muted ring-1 ring-primary/40'
+          : 'border-border bg-card hover:border-primary/40',
+      )}
+    >
+      <PlayerPhoto src={player.photoUrl} name={player.name} size={36} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-foreground truncate">{player.name}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <FlagImg url={player.teamFlagUrl} code={player.teamShortCode ?? ''} />
+          <p className="text-xs text-muted-foreground truncate">{player.teamName}</p>
+        </div>
+      </div>
+      {player.position && (
+        <span className={cn('text-2xs font-bold px-1.5 py-0.5 rounded flex-shrink-0', POSITION_COLORS[player.position] ?? 'bg-muted text-muted-foreground')}>
+          {player.position}
+        </span>
+      )}
+      {selected && (
+        <Check className="size-4 text-primary flex-shrink-0" strokeWidth={2.5} />
+      )}
+    </button>
+  )
+}

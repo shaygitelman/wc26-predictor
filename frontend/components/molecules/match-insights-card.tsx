@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Sparkles, Zap, TriangleAlert, Flame, BookOpen,
   Wind, ArrowRightLeft, Shield, Crosshair, Swords, Target,
@@ -17,9 +17,10 @@ import type {
 // ─── Props ───────────────────────────────────────────────────
 
 interface Props {
-  matchId:  string
-  homeTeam: { name: string; shortCode: string }
-  awayTeam: { name: string; shortCode: string }
+  matchId:      string
+  homeTeam:     { name: string; shortCode: string }
+  awayTeam:     { name: string; shortCode: string }
+  initialData?: MatchInsights | null
 }
 
 // ─── Personality config ───────────────────────────────────────
@@ -135,11 +136,18 @@ const FALLBACK_EDGE: MatchInsights['edge'] = {
 
 // ─── Main component ──────────────────────────────────────────
 
-export function MatchInsightsCard({ matchId, homeTeam, awayTeam }: Props) {
-  const [insights, setInsights] = useState<MatchInsights | null>(null)
-  const [status,   setStatus]   = useState<'loading' | 'ready' | 'error'>('loading')
+export function MatchInsightsCard({ matchId, homeTeam, awayTeam, initialData }: Props) {
+  const [insights, setInsights] = useState<MatchInsights | null>(initialData ?? null)
+  const [status,   setStatus]   = useState<'loading' | 'ready' | 'error'>(initialData ? 'ready' : 'loading')
+
+  const skipInitialFetch = useRef(!!initialData)
 
   useEffect(() => {
+    if (skipInitialFetch.current) {
+      skipInitialFetch.current = false
+      return
+    }
+
     const ctrl  = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 12000)
 

@@ -1,17 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { TableProperties } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ApiGroupStandings, ApiTeamStanding } from '@/types/standings'
 
 interface Props {
-  matchId:     string
-  homeCode:    string
-  awayCode:    string
-  matchStatus: string
-  group:       string
+  matchId:      string
+  homeCode:     string
+  awayCode:     string
+  matchStatus:  string
+  group:        string
+  initialData?: ApiGroupStandings
 }
 
 // Upgrade flagcdn.com URLs to high-DPI resolution (w160 = sharp at 2× retina)
@@ -20,11 +21,15 @@ function hqFlag(url: string | null | undefined): string | null {
   return url.includes('flagcdn.com') ? url.replace(/\/w\d+\//, '/w160/') : url
 }
 
-export function GroupStandingsCard({ matchId, homeCode, awayCode, matchStatus, group }: Props) {
-  const [data,   setData]   = useState<ApiGroupStandings | null>(null)
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+export function GroupStandingsCard({ matchId, homeCode, awayCode, matchStatus, group, initialData }: Props) {
+  const [data,   setData]   = useState<ApiGroupStandings | null>(initialData ?? null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>(initialData ? 'ready' : 'loading')
 
   const isLive = matchStatus === 'live'
+
+  // Ref tracks whether the first fetch should be skipped (SSR data already provided).
+  // For live matches the polling interval still fires every 60s to keep data fresh.
+  const skipInitialFetch = useRef(!!initialData)
 
   useEffect(() => {
     let cancelled = false
@@ -44,7 +49,10 @@ export function GroupStandingsCard({ matchId, homeCode, awayCode, matchStatus, g
         .catch(() => { if (!cancelled) setStatus('error') })
     }
 
-    load()
+    if (!skipInitialFetch.current) {
+      load()
+    }
+    skipInitialFetch.current = false  // reset so matchId changes always re-fetch
 
     if (isLive) {
       const iv = setInterval(load, 60_000)

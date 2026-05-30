@@ -18,14 +18,23 @@ import { ROUND_POINTS } from '@/lib/constants'
 import { ROUND_LABELS } from '@/types/match'
 import type { Match } from '@/types/match'
 import type { Prediction } from '@/types/prediction'
+import type { League, LeagueMemberPrediction } from '@/types/league'
+import type { ApiGroupStandings } from '@/types/standings'
+import type { MatchInsights } from '@/types/insights'
+import type { MatchFacts } from '@/types/match-facts'
 import { trackPredictionSubmitted } from '@/lib/analytics'
 
 interface MatchDetailViewProps {
-  match: Match
-  prediction?: Prediction
+  match:                  Match
+  prediction?:            Prediction
+  initialLeagues?:        League[]
+  initialPicks?:          LeagueMemberPrediction[]
+  initialGroupStandings?: ApiGroupStandings
+  initialInsights?:       MatchInsights
+  initialFacts?:          MatchFacts
 }
 
-export function MatchDetailView({ match, prediction: initialPrediction }: MatchDetailViewProps) {
+export function MatchDetailView({ match, prediction: initialPrediction, initialLeagues, initialPicks, initialGroupStandings, initialInsights, initialFacts }: MatchDetailViewProps) {
   const [prediction, setPrediction] = useState(initialPrediction)
   const isFinished = match.status === 'finished'
   const isLive     = match.status === 'live'
@@ -203,6 +212,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
             awayCode={match.awayTeam.shortCode}
             matchStatus={match.status}
             group={match.group}
+            initialData={initialGroupStandings}
           />
         )}
 
@@ -210,6 +220,7 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
           matchId={match.id}
           homeTeam={{ name: match.homeTeam.name, shortCode: match.homeTeam.shortCode }}
           awayTeam={{ name: match.awayTeam.name, shortCode: match.awayTeam.shortCode }}
+          initialData={initialInsights}
         />
 
         <MatchFactsCard
@@ -217,9 +228,15 @@ export function MatchDetailView({ match, prediction: initialPrediction }: MatchD
           homeTeam={{ name: match.homeTeam.name, shortCode: match.homeTeam.shortCode }}
           awayTeam={{ name: match.awayTeam.name, shortCode: match.awayTeam.shortCode }}
           round={match.round}
+          initialData={initialFacts}
         />
 
-        <LeaguePicksCard matchId={match.id} matchStatus={match.status} />
+        <LeaguePicksCard
+          matchId={match.id}
+          matchStatus={match.status}
+          initialLeagues={initialLeagues}
+          initialPicks={initialPicks}
+        />
 
         <section className="pt-3">
           <p className="text-[11px] font-black tracking-[0.14em] uppercase text-muted-foreground/50 mb-3 px-1">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { BarChart3, ChevronDown, ChevronUp, Flame, Trophy, AlertTriangle, ShieldAlert, ShieldCheck, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, PlayerStatus, TeamHistoricalStats, TeamFormEntry } from '@/types/match-facts'
@@ -8,10 +8,11 @@ import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, P
 // ─── Props ───────────────────────────────────────────────────
 
 interface Props {
-  matchId:  string
-  homeTeam: { name: string; shortCode: string }
-  awayTeam: { name: string; shortCode: string }
-  round:    string
+  matchId:      string
+  homeTeam:     { name: string; shortCode: string }
+  awayTeam:     { name: string; shortCode: string }
+  round:        string
+  initialData?: MatchFacts | null
 }
 
 // ─── Context banner config ────────────────────────────────────
@@ -36,13 +37,20 @@ const STATUS_CFG: Record<string, { label: string; dot: string; chip: string }> =
 
 // ─── Main component ──────────────────────────────────────────
 
-export function MatchFactsCard({ matchId, homeTeam, awayTeam }: Props) {
-  const [facts,      setFacts]     = useState<MatchFacts | null>(null)
-  const [status,     setStatus]    = useState<'loading' | 'ready' | 'error'>('loading')
+export function MatchFactsCard({ matchId, homeTeam, awayTeam, initialData }: Props) {
+  const [facts,      setFacts]     = useState<MatchFacts | null>(initialData ?? null)
+  const [status,     setStatus]    = useState<'loading' | 'ready' | 'error'>(initialData ? 'ready' : 'loading')
   const [squadOpen,  setSquadOpen] = useState(true)
   const [statsOpen,  setStatsOpen] = useState(true)
 
+  const skipInitialFetch = useRef(!!initialData)
+
   useEffect(() => {
+    if (skipInitialFetch.current) {
+      skipInitialFetch.current = false
+      return
+    }
+
     const ctrl  = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 15000)
 

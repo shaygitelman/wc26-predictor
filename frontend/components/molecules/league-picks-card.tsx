@@ -7,24 +7,38 @@ import type { League } from '@/types/league'
 import type { LeagueMemberPrediction } from '@/types/league'
 
 interface Props {
-  matchId:     string
-  matchStatus: string
+  matchId:          string
+  matchStatus:      string
+  initialLeagues?:  League[]
+  initialPicks?:    LeagueMemberPrediction[]
 }
 
 // ─── Main card ────────────────────────────────────────────────
 
-export function LeaguePicksCard({ matchId, matchStatus }: Props) {
-  const [leagues,        setLeagues]        = useState<League[]>([])
-  const [selectedId,     setSelectedId]     = useState<string | null>(null)
-  const [members,        setMembers]        = useState<LeagueMemberPrediction[]>([])
-  const [pageStatus,     setPageStatus]     = useState<'loading' | 'ready' | 'none' | 'error'>('loading')
+export function LeaguePicksCard({ matchId, matchStatus, initialLeagues, initialPicks }: Props) {
+  const [leagues,        setLeagues]        = useState<League[]>(initialLeagues ?? [])
+  const [selectedId,     setSelectedId]     = useState<string | null>(initialLeagues?.[0]?.id ?? null)
+  const [members,        setMembers]        = useState<LeagueMemberPrediction[]>(initialPicks ?? [])
+  const [pageStatus,     setPageStatus]     = useState<'loading' | 'ready' | 'none' | 'error'>(
+    initialLeagues !== undefined
+      ? (initialLeagues.length === 0 ? 'none' : 'ready')
+      : 'loading'
+  )
   const [membersLoading, setMembersLoading] = useState(false)
   const [membersError,   setMembersError]   = useState(false)
 
+  // Refs track whether SSR data was provided so the initial fetches are skipped.
+  // Using refs (not state) avoids triggering re-renders and keeps the logic
+  // isolated to the effect that consumes it.
+  const hasSSRLeagues = useRef(initialLeagues !== undefined)
+  const hasSSRPicks   = useRef(initialPicks !== undefined)
+
   const revealed = matchStatus !== 'scheduled'
 
-  // ── Step 1: load ALL league memberships ──────────────────
+  // ── Step 1: load ALL league memberships (skipped when SSR provided them) ─
   useEffect(() => {
+    if (hasSSRLeagues.current) return
+
     let cancelled = false
 
     fetch('/api/leagues', { cache: 'no-store' })
@@ -50,8 +64,14 @@ export function LeaguePicksCard({ matchId, matchStatus }: Props) {
   }, [matchId])
 
   // ── Step 2: load picks whenever the selected league changes ─
+  // Skips the very first fetch when SSR already provided picks for the initial league.
   useEffect(() => {
     if (!selectedId) return
+
+    if (hasSSRPicks.current) {
+      hasSSRPicks.current = false  // only skip once — tab switches fetch normally
+      return
+    }
 
     let cancelled = false
     setMembersLoading(true)

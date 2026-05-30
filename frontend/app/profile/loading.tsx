@@ -12,9 +12,9 @@ export default function ProfileLoading() {
           <div className="h-6 w-36 rounded bg-surface-elevated animate-pulse" />
           <div className="h-4 w-48 rounded bg-surface-elevated animate-pulse" />
         </div>
-        {/* Stats grid */}
-        <div className="grid grid-cols-4 gap-2">
-          {[0,1,2,3].map(i => (
+        {/* Stats grid — must match grid-cols-5 in profile/page.tsx */}
+        <div className="grid grid-cols-5 gap-2">
+          {[0,1,2,3,4].map(i => (
             <div key={i} className="h-[68px] bg-card rounded-xl border border-border animate-pulse" />
           ))}
         </div>

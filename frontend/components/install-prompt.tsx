@@ -149,9 +149,9 @@ export function InstallPrompt({ deferredPrompt, onDone }: Props) {
                 </button>
                 <button
                   onClick={handleDone}
-                  className="w-full h-12 rounded-2xl text-sm font-semibold text-foreground/70
-                    border border-white/[0.10] bg-white/[0.03]
-                    hover:bg-white/[0.07] active:scale-[0.98] transition-all"
+                  className="w-full h-[48px] rounded-2xl text-sm font-semibold text-foreground
+                    border border-white/[0.14] bg-white/[0.07]
+                    hover:bg-white/[0.11] active:scale-[0.98] transition-all"
                 >
                   Continue to MatchPoint26
                 </button>
@@ -167,7 +167,7 @@ export function InstallPrompt({ deferredPrompt, onDone }: Props) {
                   Continue to MatchPoint26
                 </button>
                 <p className="text-xs text-muted-foreground/50 text-center leading-relaxed px-4">
-                  Follow the steps above to add the app, then tap Continue.
+                  Install for faster access, or tap Continue to go straight in.
                 </p>
               </>
             )}

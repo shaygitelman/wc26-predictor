@@ -111,7 +111,7 @@ export default async function HomePage() {
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-right">
-              <p className="text-[22px] font-black text-primary tabular leading-none">
+              <p className="text-[22px] font-black text-gold tabular leading-none">
                 {s ? s.totalPoints : '—'}
               </p>
               <p className="text-2xs text-muted-foreground mt-0.5">pts</p>

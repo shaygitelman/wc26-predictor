@@ -52,7 +52,7 @@ export function LeaderboardRow({
     <div className={cn(
       'flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-colors',
       isCurrentUser
-        ? 'bg-primary-muted border-primary/30 shadow-primary-glow'
+        ? 'bg-gold-muted border-gold-border shadow-gold'
         : podium
           ? podium.card
           : 'bg-card border-border',
@@ -77,7 +77,7 @@ export function LeaderboardRow({
       {/* Username */}
       <span className={cn(
         'flex-1 font-semibold text-[15px] truncate',
-        isCurrentUser ? 'text-primary' : 'text-foreground',
+        isCurrentUser ? 'text-foreground' : 'text-foreground',
       )}>
         {username}
         {isCurrentUser && (
@@ -91,7 +91,7 @@ export function LeaderboardRow({
           'text-[17px] font-black tabular',
           points === null
             ? 'text-muted-foreground/30'
-            : podium ? podium.pts : isCurrentUser ? 'text-primary' : 'text-foreground',
+            : podium ? podium.pts : isCurrentUser ? 'text-gold' : 'text-foreground',
         )}>
           {points === null ? '—' : points.toLocaleString()}
         </span>

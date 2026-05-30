@@ -35,7 +35,7 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
                 ? 'bg-card border-status-lost/25'
                 : 'bg-card border-status-partial/25'
             : needsPick
-              ? 'bg-card border-primary/30 hover:border-primary/60 hover:shadow-primary-glow hover:scale-[1.01]'
+              ? 'bg-card border-gold/30 hover:border-gold/60 hover:shadow-gold hover:scale-[1.01]'
               : 'bg-card border-border hover:border-border/80 hover:shadow-raised',
         className,
       )}
@@ -65,7 +65,7 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
           <div className="h-[2px] bg-gradient-to-r from-transparent via-status-partial/60 to-transparent" />
         )
       ) : needsPick ? (
-        <div className="h-[3px] bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+        <div className="h-[3px] bg-gradient-to-r from-transparent via-gold/60 to-transparent" />
       ) : null}
 
       {/* ── Round + Status header ── */}

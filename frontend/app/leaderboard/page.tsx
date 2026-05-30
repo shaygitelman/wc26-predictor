@@ -59,10 +59,10 @@ export default async function LeaderboardPage() {
 
           {/* ── My rank banner (if outside top 3) ────────── */}
           {meRank && meRank > 3 && (
-            <div className="mx-4 mb-3 flex items-center gap-3 px-4 py-3 rounded-2xl bg-primary/[0.08] border border-primary/20">
-              <span className="text-sm font-black text-primary">#{meRank}</span>
+            <div className="mx-4 mb-3 flex items-center gap-3 px-4 py-3 rounded-2xl bg-gold-muted border border-gold-border">
+              <span className="text-sm font-black text-gold">#{meRank}</span>
               <p className="text-sm font-semibold text-foreground flex-1">Your ranking</p>
-              <span className="text-sm font-black text-primary">
+              <span className="text-sm font-black text-gold">
                 {entries.find(e => e.isMe)?.totalPoints ?? 0} pts
               </span>
             </div>
@@ -100,7 +100,7 @@ function PodiumSlot({
       />
       <p className={cn(
         'text-xs font-bold text-center truncate w-full px-1',
-        entry.isMe ? 'text-primary' : 'text-foreground',
+        entry.isMe ? 'text-gold' : 'text-foreground',
       )}>
         {entry.username}
       </p>
@@ -109,12 +109,12 @@ function PodiumSlot({
         'w-full rounded-t-lg flex items-center justify-center',
         height,
         highlight
-          ? 'bg-primary/20 border border-primary/30'
+          ? 'bg-gold-muted border border-gold-border'
           : 'bg-surface-elevated border border-border',
       )}>
         <span className={cn(
           'text-2xl font-black',
-          highlight ? 'text-primary' : 'text-muted-foreground',
+          highlight ? 'text-gold' : 'text-muted-foreground',
         )}>
           {entry.rank}
         </span>
@@ -129,13 +129,12 @@ function LeaderboardRow({ entry }: { entry: LeaderboardEntry }) {
     <div className={cn(
       'flex items-center gap-3 px-3 py-2.5 rounded-xl',
       entry.isMe
-        ? 'bg-primary/[0.08] border border-primary/20'
+        ? 'bg-gold-muted border border-gold-border'
         : 'hover:bg-surface-elevated',
     )}>
       <span className={cn(
         'w-7 text-center text-sm font-black flex-shrink-0',
-        isTop3     ? 'text-gold'    :
-        entry.isMe ? 'text-primary' : 'text-muted-foreground',
+        isTop3 || entry.isMe ? 'text-gold' : 'text-muted-foreground',
       )}>
         {entry.rank}
       </span>
@@ -147,16 +146,16 @@ function LeaderboardRow({ entry }: { entry: LeaderboardEntry }) {
       />
       <p className={cn(
         'flex-1 text-sm font-semibold truncate',
-        entry.isMe ? 'text-primary' : 'text-foreground',
+        entry.isMe ? 'text-foreground' : 'text-foreground',
       )}>
         {entry.username}
         {entry.isMe && (
-          <span className="ml-1.5 text-2xs font-bold text-primary/60">you</span>
+          <span className="ml-1.5 text-2xs font-bold text-gold/70">you</span>
         )}
       </p>
       <span className={cn(
         'text-sm font-black tabular flex-shrink-0',
-        entry.isMe ? 'text-primary' : 'text-foreground',
+        entry.isMe ? 'text-gold' : 'text-foreground',
       )}>
         {entry.totalPoints}
         <span className="text-2xs font-medium text-muted-foreground ml-0.5">pts</span>

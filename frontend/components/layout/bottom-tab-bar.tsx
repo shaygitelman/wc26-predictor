@@ -44,24 +44,24 @@ export function BottomTabBar() {
                 'relative flex flex-col items-center justify-center gap-1 flex-1 h-full',
                 'rounded-xl transition-all duration-200',
                 isActive
-                  ? 'text-primary'
+                  ? ''
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {/* Active indicator — wider pill with stronger glow */}
+              {/* Active indicator — wider pill with gold glow */}
               {isActive && (
-                <span className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-[3px] rounded-full bg-primary shadow-[0_0_16px_rgba(136,117,255,0.85)]" />
+                <span className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-[3px] rounded-full bg-gold shadow-[0_0_14px_rgba(240,168,12,0.80)]" />
               )}
               <Icon
                 className={cn(
                   'size-[22px] transition-all duration-200',
-                  isActive && 'scale-[1.15]',
+                  isActive ? 'text-gold scale-[1.15]' : '',
                 )}
                 strokeWidth={isActive ? 2.5 : 1.75}
               />
               <span className={cn(
                 'text-2xs tracking-wide transition-all duration-200',
-                isActive ? 'font-black text-primary' : 'font-medium text-muted-foreground',
+                isActive ? 'font-black text-gold' : 'font-medium text-muted-foreground',
               )}>
                 {label}
               </span>

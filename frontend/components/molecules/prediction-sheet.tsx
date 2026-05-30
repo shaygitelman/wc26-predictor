@@ -90,7 +90,7 @@ export function PredictionSheet({
           className={cn(
             'w-full flex items-center justify-center gap-2 rounded-xl py-4',
             'text-[15px] font-bold transition-all duration-150',
-            'bg-primary text-primary-foreground',
+            'bg-gold text-background',
             'hover:opacity-90 active:scale-[0.98]',
           )}
         >
@@ -173,7 +173,7 @@ export function PredictionSheet({
                 ? 'bg-status-won text-white'
                 : status === 'error'
                 ? 'bg-status-lost/20 text-status-lost border border-status-lost/30'
-                : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.98]',
+                : 'bg-gold text-background hover:opacity-90 active:scale-[0.98]',
               status === 'saving' && 'opacity-70 cursor-wait',
             )}
           >

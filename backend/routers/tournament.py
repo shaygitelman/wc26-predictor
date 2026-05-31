@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.limiter import limiter
 from core.security import create_access_token
 from core.wc2026_config import GROUPS
 from dependencies.auth import get_current_user
@@ -139,7 +140,9 @@ async def my_tournament_pick(
 
 
 @router.put("/picks/me", response_model=TournamentPickOut)
+@limiter.limit("20/minute")
 async def upsert_tournament_pick(
+    request: Request,
     body: TournamentPickUpdate,
     user: User = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),

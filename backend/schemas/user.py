@@ -73,6 +73,11 @@ class UserUpdateIn(BaseModel):
         return v or None
 
 
+class UserUpdateOut(BaseModel):
+    user:         UserProfileOut
+    access_token: str
+
+
 class UserStatsOut(BaseModel):
     totalPoints:        int
     globalRank:         int

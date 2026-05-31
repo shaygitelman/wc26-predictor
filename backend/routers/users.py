@@ -6,10 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.security import create_access_token
 from dependencies.auth import get_current_user
 from models.prediction import Prediction
 from models.user import User
-from schemas.user import LeaderboardEntry, PrivacySettingsIn, PrivacySettingsOut, UserProfileOut, UserStatsOut, UserUpdateIn
+from schemas.user import LeaderboardEntry, PrivacySettingsIn, PrivacySettingsOut, UserProfileOut, UserStatsOut, UserUpdateIn, UserUpdateOut
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +22,12 @@ async def get_me(user: User = Depends(get_current_user)) -> UserProfileOut:
     return UserProfileOut.from_orm(user)
 
 
-@router.patch("/me", response_model=UserProfileOut)
+@router.patch("/me", response_model=UserUpdateOut)
 async def update_me(
     body:   UserUpdateIn,
     user:   User         = Depends(get_current_user),
     db:     AsyncSession = Depends(get_db),
-) -> UserProfileOut:
+) -> UserUpdateOut:
     logger.info("PATCH /users/me — user=%s fields=%s", user.id, body.model_fields_set)
 
     # ── Username ─────────────────────────────────────────────
@@ -71,7 +72,17 @@ async def update_me(
             detail="Failed to save profile changes",
         ) from exc
 
-    return UserProfileOut.from_orm(user)
+    # Issue a fresh JWT so the session cookie reflects updated claims immediately
+    # (username, avatarId, etc.) without requiring logout/login.
+    token = create_access_token({
+        "sub":                  user.id,
+        "email":                user.email,
+        "username":             user.username,
+        "name":                 user.name,
+        "picture":              user.avatar_url,
+        "onboarding_completed": user.onboarding_completed,
+    })
+    return UserUpdateOut(user=UserProfileOut.from_orm(user), access_token=token)
 
 
 @router.get("/me/privacy", response_model=PrivacySettingsOut)

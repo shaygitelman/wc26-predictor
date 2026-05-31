@@ -1,11 +1,12 @@
 import logging
 import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.limiter import limiter
 from core.security import create_access_token
 from models.league import LeagueMember
 from models.user import User
@@ -36,7 +37,9 @@ async def _unique_username(base: str, db: AsyncSession) -> str:
 
 
 @router.post("/google", response_model=AuthResponse)
+@limiter.limit("10/minute")
 async def google_auth(
+    request: Request,
     payload: GoogleAuthRequest,
     db: AsyncSession = Depends(get_db),
 ) -> AuthResponse:

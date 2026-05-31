@@ -2,12 +2,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.limiter import limiter
 from dependencies.auth import get_current_user
 from models.match import Match
 from models.prediction import Prediction
@@ -47,7 +48,9 @@ async def my_prediction_for_match(
 
 
 @router.post("/{match_id}", response_model=PredictionOut, status_code=status.HTTP_200_OK)
+@limiter.limit("60/minute")
 async def upsert_prediction(
+    request:  Request,
     match_id: str,
     body:     PredictionCreate,
     user:     User = Depends(get_current_user),

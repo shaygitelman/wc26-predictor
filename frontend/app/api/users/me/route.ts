@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { SESSION_COOKIE } from '@/lib/session'
+import { SESSION_COOKIE, cookieOptions } from '@/lib/session'
 
 const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -46,11 +46,18 @@ export async function PATCH(request: Request) {
     const data = await res.json().catch(() => ({}))
 
     if (res.ok) {
+      // Store the fresh JWT so SSR reads updated claims (username, etc.) on next page load.
+      // Same pattern as /api/tournament/onboarding.
+      if (data.access_token) {
+        const isDev = process.env.NODE_ENV !== 'production'
+        const store = await cookies()
+        store.set(SESSION_COOKIE, data.access_token, cookieOptions(isDev))
+      }
       revalidatePath('/profile')
-    } else {
-      console.error('[users] PATCH /me failed status=%d', res.status, data)
+      return Response.json(data.user ?? data, { status: 200 })
     }
 
+    console.error('[users] PATCH /me failed status=%d', res.status, data)
     return Response.json(data, { status: res.status })
   } catch (err) {
     console.error('[users] PATCH /me network error', err)

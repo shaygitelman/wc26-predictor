@@ -2,13 +2,14 @@ import logging
 import secrets
 import string
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.limiter import limiter
 from dependencies.auth import get_current_user
 from models.league import League, LeagueMember
 from models.match import Match
@@ -91,7 +92,9 @@ async def my_leagues(
 
 
 @router.post("", response_model=LeagueOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_league(
+    request: Request,
     body: LeagueCreate,
     user: User = Depends(get_current_user),
     db:   AsyncSession = Depends(get_db),

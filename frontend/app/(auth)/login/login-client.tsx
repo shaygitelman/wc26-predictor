@@ -35,7 +35,16 @@ function GoogleLoginButton({
     onSuccess: response => onSuccess(response.access_token),
     onError,
   })
-  return <GoogleButton onClick={() => login()} loading={loading} />
+
+  function handleClick() {
+    // Fire-and-forget warmup while the user is interacting with the Google
+    // popup. The popup interaction takes ~5-15s; this gives the Render backend
+    // time to exit cold-start before /api/auth/google is called.
+    fetch('/api/tournament/lock-status').catch(() => {})
+    login()
+  }
+
+  return <GoogleButton onClick={handleClick} loading={loading} />
 }
 
 function GoogleLoginGuard({

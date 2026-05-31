@@ -94,7 +94,7 @@ function ProgressDots({ step, total }: { step: number; total: number }) {
 
 // ─── Step 0: Welcome ──────────────────────────────────────────────────────────
 
-function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: boolean }) {
+function WelcomeStep({ onNext, isLocked, authLoading }: { onNext: () => void; isLocked?: boolean; authLoading?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh px-8 text-center gap-8">
       <div className="relative flex items-center justify-center animate-in zoom-in-50 duration-700">
@@ -132,12 +132,23 @@ function WelcomeStep({ onNext, isLocked }: { onNext: () => void; isLocked?: bool
       <div className="w-full max-w-xs animate-in fade-in duration-700 delay-500">
         <button
           onClick={onNext}
+          disabled={authLoading}
           className="w-full h-14 rounded-2xl bg-primary text-primary-foreground text-[15px] font-black
             flex items-center justify-center gap-2
-            shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all"
+            shadow-lg shadow-primary/30 hover:opacity-90 active:scale-[0.98] transition-all
+            disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          Make My Predictions
-          <ChevronRight className="size-5" strokeWidth={2.5} />
+          {authLoading ? (
+            <>
+              <span className="size-4 rounded-full border-2 border-primary-foreground/70 border-t-transparent animate-spin" />
+              Just a moment…
+            </>
+          ) : (
+            <>
+              Make My Predictions
+              <ChevronRight className="size-5" strokeWidth={2.5} />
+            </>
+          )}
         </button>
         <p className="text-2xs text-muted-foreground/50 mt-3">2 quick picks · takes under a minute</p>
         <p className="text-2xs text-muted-foreground/40 mt-1">
@@ -806,7 +817,10 @@ function OnboardingPageInner() {
     navigateOrPrompt(next)
   }, [next, navigateOrPrompt])
 
-  if (isLoading || !user) return null
+  // Only bail out when auth has settled and there's definitely no user.
+  // While isLoading=true we show WelcomeStep immediately so the user never
+  // sees a blank screen during the ~1s /api/auth/me fallback.
+  if (!isLoading && !user) return null
 
   return (
     <div className="min-h-dvh bg-background">
@@ -821,7 +835,7 @@ function OnboardingPageInner() {
       )}
 
       <div key={step} className="animate-in fade-in duration-300">
-        {step === 0 && <WelcomeStep onNext={() => goToStep(1)} isLocked={isLocked} />}
+        {step === 0 && <WelcomeStep onNext={() => goToStep(1)} isLocked={isLocked} authLoading={isLoading} />}
 
         {step === 1 && (
           teamsError ? (

@@ -17,6 +17,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
+from starlette.requests import Request as StarletteRequest
+
+
+def _make_test_request() -> StarletteRequest:
+    """Minimal starlette Request so slowapi's isinstance check passes in unit tests."""
+    scope = {'type': 'http', 'method': 'PUT', 'path': '/', 'query_string': b'', 'headers': []}
+    return StarletteRequest(scope)
 
 import services.tournament_lock as lock_module
 from services.tournament_lock import (
@@ -199,6 +206,7 @@ class TestUpsertLockEnforcement:
              patch("routers.tournament._get_or_create_pick", new=AsyncMock(return_value=_make_pick())):
             with pytest.raises(HTTPException) as exc_info:
                 await upsert_tournament_pick(
+                    request=_make_test_request(),
                     body=TournamentPickUpdate(winner_team_code="BRA"),
                     user=MagicMock(id="user-1"),
                     db=AsyncMock(),
@@ -218,6 +226,7 @@ class TestUpsertLockEnforcement:
              patch("routers.tournament._get_or_create_pick", new=AsyncMock(return_value=locked_pick)):
             with pytest.raises(HTTPException) as exc_info:
                 await upsert_tournament_pick(
+                    request=_make_test_request(),
                     body=TournamentPickUpdate(winner_team_code="BRA"),
                     user=MagicMock(id="user-1"),
                     db=AsyncMock(),
@@ -238,6 +247,7 @@ class TestUpsertLockEnforcement:
              patch("routers.tournament._get_or_create_pick", new=AsyncMock(return_value=pick)), \
              patch("routers.tournament._load_scorer", new=AsyncMock(return_value=None)):
             result = await upsert_tournament_pick(
+                request=_make_test_request(),
                 body=TournamentPickUpdate(winner_team_code="BRA"),
                 user=MagicMock(id="user-1"),
                 db=mock_db,

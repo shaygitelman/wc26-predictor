@@ -2,9 +2,83 @@
 
 import { useState, useEffect, use, Suspense } from 'react'
 import { useGoogleLogin, useGoogleOAuth } from '@react-oauth/google'
-import { Trophy, Users } from 'lucide-react'
+import { Trophy, Users, ExternalLink } from 'lucide-react'
 import type { AuthUser } from '@/types/auth'
 import { trackSignIn, trackLoginPageViewed, trackInviteContextShown } from '@/lib/analytics'
+
+// ─── In-app browser detection ────────────────────────────────
+// Google OAuth is intentionally blocked in WebView/in-app browsers
+// (LinkedIn, Instagram, Facebook, etc.) — detect and prompt to open externally.
+function useIsInAppBrowser(): boolean {
+  const [inApp, setInApp] = useState(false)
+  useEffect(() => {
+    const ua = navigator.userAgent
+    setInApp(/LinkedIn|FBAN|FBAV|Instagram|FB_IAB|BytedanceWebview|TikTok|Twitter|Snapchat/.test(ua))
+  }, [])
+  return inApp
+}
+
+function InAppBrowserBanner() {
+  const url = typeof window !== 'undefined' ? window.location.href : ''
+  const [copied, setCopied] = useState(false)
+
+  function copyLink() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="w-full max-w-sm flex flex-col items-center gap-6 pt-2">
+      {/* Icon */}
+      <div className="relative flex items-center justify-center">
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            width: 170, height: 170,
+            background: 'radial-gradient(ellipse at center, rgba(240,168,12,0.22) 0%, transparent 65%)',
+          }}
+          aria-hidden="true"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/apple-icon.png"
+          alt="MatchPoint26"
+          width={88}
+          height={88}
+          className="relative rounded-[22%]"
+          style={{ filter: 'drop-shadow(0 4px 20px rgba(240,168,12,0.35))' }}
+        />
+      </div>
+
+      {/* Message */}
+      <div className="w-full bg-card border border-primary/25 rounded-2xl overflow-hidden shadow-lg">
+        <div className="h-0.5 w-full bg-gradient-to-r from-primary/40 via-primary to-primary/40" />
+        <div className="px-5 pt-4 pb-5 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <ExternalLink className="size-4 text-primary flex-shrink-0" strokeWidth={2} />
+            <p className="text-sm font-black text-foreground">Open in your browser to sign in</p>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Google Sign-In doesn&apos;t work inside the LinkedIn app.
+            Copy the link and open it in <span className="text-foreground/80 font-semibold">Safari</span> or <span className="text-foreground/80 font-semibold">Chrome</span>.
+          </p>
+          <button
+            onClick={copyLink}
+            className="w-full mt-1 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-bold transition-opacity hover:opacity-90 active:scale-[0.98]"
+          >
+            {copied ? '✓ Link Copied!' : 'Copy Link'}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-center text-2xs text-muted-foreground/60 leading-relaxed px-6">
+        On iPhone: tap the <span className="font-semibold text-foreground/60">···</span> menu → &quot;Open in Safari&quot;
+      </p>
+    </div>
+  )
+}
 
 export interface LeaguePreview {
   name:            string
@@ -128,11 +202,16 @@ function LoginPageContent({
 }) {
   const [state,  setState]  = useState<State>('idle')
   const [errMsg, setErrMsg] = useState('')
-  const next = safeNext(rawNext)
+  const next      = safeNext(rawNext)
+  const isInApp   = useIsInAppBrowser()
 
   useEffect(() => {
     trackLoginPageViewed({ hasInviteContext: !!inviteCode })
   }, [inviteCode])
+
+  if (isInApp) {
+    return <InAppBrowserBanner />
+  }
 
   async function handleGoogleSuccess(accessToken: string) {
     setState('loading')

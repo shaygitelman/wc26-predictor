@@ -18,15 +18,40 @@ function useIsInAppBrowser(): boolean {
   return inApp
 }
 
+function openInExternalBrowser(url: string) {
+  const ua = navigator.userAgent
+  if (/Android/.test(ua)) {
+    // intent:// opens Chrome directly on Android; falls back to system browser
+    const clean = url.replace(/^https?:\/\//, '')
+    window.location.href =
+      `intent://${clean}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`
+  } else {
+    // x-safari-https:// opens Safari on iOS
+    window.location.href = `x-safari-https://${url.replace(/^https?:\/\//, '')}`
+  }
+}
+
 function InAppBrowserBanner() {
   const url = typeof window !== 'undefined' ? window.location.href : ''
   const [copied, setCopied] = useState(false)
+
+  // Attempt automatic redirect on mount — if the URL scheme is supported the
+  // user leaves immediately. If not (scheme blocked), the banner stays visible.
+  useEffect(() => {
+    if (url) openInExternalBrowser(url)
+  // Run once on mount only
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function copyLink() {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  function handleOpenBrowser() {
+    openInExternalBrowser(url)
   }
 
   return (
@@ -62,11 +87,17 @@ function InAppBrowserBanner() {
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
             Google Sign-In doesn&apos;t work inside the LinkedIn app.
-            Copy the link and open it in <span className="text-foreground/80 font-semibold">Safari</span> or <span className="text-foreground/80 font-semibold">Chrome</span>.
+            Tap the button below to open in <span className="text-foreground/80 font-semibold">Safari</span> or <span className="text-foreground/80 font-semibold">Chrome</span>.
           </p>
           <button
-            onClick={copyLink}
+            onClick={handleOpenBrowser}
             className="w-full mt-1 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-bold transition-opacity hover:opacity-90 active:scale-[0.98]"
+          >
+            Open in Browser
+          </button>
+          <button
+            onClick={copyLink}
+            className="w-full py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.12] text-foreground/70 text-sm font-medium transition-opacity hover:opacity-80 active:scale-[0.98]"
           >
             {copied ? '✓ Link Copied!' : 'Copy Link'}
           </button>

@@ -194,6 +194,22 @@ async def sync_live(db: AsyncSession = Depends(get_db)) -> SyncResponse:
 
 
 @router.post(
+    "/sync/reconcile",
+    response_model=SyncResponse,
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Reconcile manually-seeded WC2026 matches to real API-Football fixture IDs. "
+        "Matches by home+away team code. Updates external_id in-place — preserves all "
+        "match UUIDs, user predictions, and league data. Also updates current "
+        "status/scores and auto-scores any newly-finished matches. Idempotent."
+    ),
+)
+async def reconcile_fixtures(db: AsyncSession = Depends(get_db)) -> SyncResponse:
+    result = await _make_service().reconcile_fixtures(db)
+    return SyncResponse(**vars(result))
+
+
+@router.post(
     "/sync/full",
     response_model=SyncAllResponse,
     dependencies=[Depends(_verify_admin)],

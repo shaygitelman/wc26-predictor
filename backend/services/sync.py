@@ -543,6 +543,126 @@ class SyncService:
             log, count, "\n".join(errors) if errors else None, db
         )
 
+    # ── reconcile_fixtures ────────────────────────────────────────
+
+    async def reconcile_fixtures(self, db: AsyncSession) -> SyncResult:
+        """
+        Map existing matches to real API-Football fixture IDs by matching
+        on (home_team_code, away_team_code).  Updates external_id in-place
+        so sync_live can find the match by external_id going forward.
+
+        Also updates status, scores, and minute from the API response.
+        Calls score_match() for any match that transitions to 'finished'.
+
+        Idempotent: safe to call multiple times.
+        Preserves all match UUIDs, user predictions, and points.
+        """
+        from core.scorer import score_match as do_score
+        from datetime import timedelta
+
+        _log_entry = await self._start_log("reconcile", db)
+
+        try:
+            fixtures = await self.provider.fetch_fixtures(self.league_id, self.season)
+        except Exception as exc:
+            return await self._fail_log(_log_entry, str(exc), db)
+
+        # Load all DB matches once, indexed by (HOME_CODE, AWAY_CODE).
+        all_matches = (await db.execute(select(Match))).scalars().all()
+        by_teams: dict[tuple[str, str], Match] = {
+            (m.home_team_code.upper(), m.away_team_code.upper()): m
+            for m in all_matches
+            if m.home_team_code and m.away_team_code
+        }
+
+        count  = 0
+        errors: list[str] = []
+        # (match_id, home_score, away_score) for matches that transition
+        # non-finished → finished.  Scored after the bulk commit so
+        # score_match sees fresh DB state (status still non-finished).
+        to_score: list[tuple[str, int, int]] = []
+
+        _now = datetime.now(timezone.utc)
+
+        for fx in fixtures:
+            try:
+                # Skip TBD knockout placeholders
+                if not fx.home_team_code or not fx.away_team_code:
+                    continue
+                if fx.home_team_code.upper() in ("TBD", "?") or \
+                        fx.away_team_code.upper() in ("TBD", "?"):
+                    continue
+
+                key   = (fx.home_team_code.upper(), fx.away_team_code.upper())
+                match = by_teams.get(key)
+                if not match:
+                    errors.append(
+                        f"no DB match for {fx.home_team_code} vs "
+                        f"{fx.away_team_code} (API id={fx.external_id})"
+                    )
+                    continue
+
+                prev_status = match.status
+                needs_score = (
+                    fx.status == "finished"
+                    and prev_status != "finished"
+                    and fx.home_score is not None
+                    and fx.away_score is not None
+                )
+
+                if needs_score:
+                    # Only update external_id here — score_match will set
+                    # status/scores.  If we committed status='finished' first,
+                    # score_match's idempotency guard would skip scoring.
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == match.id)
+                        .values(external_id=fx.external_id, updated_at=_now)
+                        .execution_options(synchronize_session=False)
+                    )
+                    to_score.append((match.id, fx.home_score, fx.away_score))
+                else:
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == match.id)
+                        .values(
+                            external_id = fx.external_id,
+                            status      = fx.status,
+                            home_score  = fx.home_score,
+                            away_score  = fx.away_score,
+                            minute      = fx.minute,
+                            updated_at  = _now,
+                        )
+                        .execution_options(synchronize_session=False)
+                    )
+                count += 1
+
+            except Exception as exc:
+                errors.append(f"{fx.external_id}: {exc}")
+
+        # Commit external_id + status changes before scoring.
+        # score_match uses db.get() which pulls fresh data post-commit,
+        # and sees status != 'finished' → proceeds with full scoring.
+        await db.commit()
+
+        for match_id, home_score, away_score in to_score:
+            try:
+                log.info(
+                    "[Sync/reconcile] AUTO-SCORE match=%s %d-%d",
+                    match_id, home_score, away_score,
+                )
+                await do_score(match_id, home_score, away_score, db)
+            except Exception as score_exc:
+                log.error(
+                    "[Sync/reconcile] SCORE-FAIL match=%s: %s",
+                    match_id, score_exc,
+                )
+                errors.append(f"score {match_id}: {score_exc}")
+
+        return await self._finish_log(
+            _log_entry, count, "\n".join(errors) if errors else None, db
+        )
+
     # ── sync_live ─────────────────────────────────────────────────
 
     async def sync_live(self, db: AsyncSession) -> SyncResult:
@@ -584,6 +704,10 @@ class SyncService:
         count  = 0
         errors: list[str] = []
 
+        # Track external IDs seen in the live feed so we can detect
+        # matches that dropped off (likely just finished).
+        live_ext_ids_seen: set[str] = set()
+
         for fx in fixtures:
             try:
                 match = await db.scalar(
@@ -592,6 +716,7 @@ class SyncService:
                 if not match:
                     continue  # unknown fixture; skip
 
+                live_ext_ids_seen.add(fx.external_id)
                 prev_status = match.status
 
                 await db.execute(
@@ -653,6 +778,63 @@ class SyncService:
 
             except Exception as exc:
                 errors.append(f"{fx.external_id}: {exc}")
+
+        # ── Phase 2: stale-live recovery ──────────────────────────
+        # Find DB matches still marked 'live' that weren't in the live feed
+        # and are old enough to have finished.  Fetch each individually to
+        # get their real final status.  This covers the window between
+        # a match finishing and the next sync_live tick.
+        stale_conds = [
+            Match.status == "live",
+            Match.scheduled_at <= _now - timedelta(hours=2),
+        ]
+        if live_ext_ids_seen:
+            stale_conds.append(Match.external_id.notin_(live_ext_ids_seen))
+
+        stale_matches = (await db.execute(
+            select(Match).where(*stale_conds)
+        )).scalars().all()
+
+        for stale in stale_matches:
+            if not stale.external_id or not stale.external_id.isdigit():
+                continue  # manual/placeholder IDs cannot be queried from API
+            try:
+                log.info(
+                    "[Sync/live] stale-live check match=%s external=%s",
+                    stale.id, stale.external_id,
+                )
+                fx = await self.provider.fetch_by_id(stale.external_id)
+                if not fx:
+                    continue
+                await db.execute(
+                    update(Match)
+                    .where(Match.id == stale.id)
+                    .values(
+                        status     = fx.status,
+                        home_score = fx.home_score,
+                        away_score = fx.away_score,
+                        minute     = fx.minute,
+                        updated_at = datetime.now(timezone.utc),
+                    )
+                    .execution_options(synchronize_session=False)
+                )
+                count += 1
+                if fx.status == "finished" and fx.home_score is not None \
+                        and fx.away_score is not None:
+                    log.info(
+                        "[Sync/live] stale-live AUTO-SCORE match=%s %d-%d",
+                        stale.id, fx.home_score, fx.away_score,
+                    )
+                    try:
+                        await do_score(stale.id, fx.home_score, fx.away_score, db)
+                    except Exception as score_exc:
+                        log.error(
+                            "[Sync/live] stale-live SCORE-FAIL match=%s: %s",
+                            stale.id, score_exc,
+                        )
+                        errors.append(f"stale-live score {stale.external_id}: {score_exc}")
+            except Exception as exc:
+                errors.append(f"stale-live {stale.external_id}: {exc}")
 
         await db.commit()
         return await self._finish_log(_log_entry, count, "\n".join(errors) if errors else None, db)

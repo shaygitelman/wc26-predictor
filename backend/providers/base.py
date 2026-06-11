@@ -83,3 +83,7 @@ class FootballDataProvider(ABC):
     async def fetch_live(self, league_id: str) -> list["ProviderFixture"]:
         """Return live fixtures. Default: not supported."""
         return []
+
+    async def fetch_by_id(self, fixture_id: str) -> Optional["ProviderFixture"]:
+        """Return a single fixture by provider ID. Default: not supported."""
+        return None

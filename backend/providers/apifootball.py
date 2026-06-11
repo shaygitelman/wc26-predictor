@@ -156,6 +156,13 @@ class ApiFootballProvider(FootballDataProvider):
         await asyncio.sleep(0.2)
         return self._parse_fixtures(data)
 
+    async def fetch_by_id(self, fixture_id: str) -> Optional[ProviderFixture]:
+        """Fetch a single fixture by its API-Football ID."""
+        data = await self._get("/fixtures", {"id": fixture_id})
+        await asyncio.sleep(0.2)
+        fixtures = self._parse_fixtures(data)
+        return fixtures[0] if fixtures else None
+
     def _parse_fixtures(self, data: dict) -> list[ProviderFixture]:
         result: list[ProviderFixture] = []
         for entry in data.get("response", []):

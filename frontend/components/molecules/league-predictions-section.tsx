@@ -12,13 +12,9 @@ import type {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-/**
- * "3h before kickoff", "45m before kickoff", "at kickoff", etc.
- * Negative diff (submitted after kickoff) → returns null so callers show "Auto Pick" instead.
- */
 function formatBeforeKickoff(submittedAt: string, scheduledAt: string): string | null {
   const diffMs = new Date(scheduledAt).getTime() - new Date(submittedAt).getTime()
-  if (diffMs <= 0) return null  // submitted at or after kickoff (auto-pick)
+  if (diffMs <= 0) return null
 
   const diffS = Math.floor(diffMs / 1000)
   if (diffS < 60)   return 'at kickoff'
@@ -86,7 +82,6 @@ function OutcomeBadge({ outcome }: { outcome: PredictionOutcome | null }) {
     )
   }
 
-  // wrong
   return (
     <span className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full bg-muted/20 border border-border text-muted-foreground/60 text-[10px] font-bold whitespace-nowrap flex-shrink-0">
       <span>⚪</span> Wrong
@@ -107,9 +102,9 @@ function PredictionRow({
   matchStatus:      string
   index:            number
 }) {
-  const isFinished      = matchStatus === 'finished'
-  const beforeKickoff   = formatBeforeKickoff(entry.submittedAt, matchScheduledAt)
-  const timeLabel       = entry.isAutoPick ? null : beforeKickoff
+  const isFinished    = matchStatus === 'finished'
+  const beforeKickoff = formatBeforeKickoff(entry.submittedAt, matchScheduledAt)
+  const timeLabel     = entry.isAutoPick ? null : beforeKickoff
 
   const scoreChipCls = isFinished && entry.outcome && entry.outcome !== 'pending'
     ? entry.outcome === 'exact'
@@ -187,9 +182,9 @@ function PredictionRow({
   )
 }
 
-// ─── League group card ────────────────────────────────────────
+// ─── League tab body ──────────────────────────────────────────
 
-function LeagueCard({
+function LeagueTabBody({
   group,
   matchStatus,
   matchScheduledAt,
@@ -200,62 +195,86 @@ function LeagueCard({
 }) {
   const revealed = matchStatus !== 'scheduled'
 
-  return (
-    <div className="bg-card rounded-2xl border border-border shadow-card overflow-hidden animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
-        <div className="flex items-center gap-2 min-w-0">
-          <Trophy className="size-[14px] text-gold flex-shrink-0" strokeWidth={1.75} />
-          <span className="text-[13px] font-bold text-foreground truncate">
-            {group.leagueName}
+  if (!revealed) {
+    return (
+      <div className="px-4 py-6 flex flex-col items-center gap-1.5">
+        <Lock className="size-4 text-muted-foreground/25" strokeWidth={1.75} />
+        <p className="text-[12px] font-semibold text-muted-foreground/50 text-center leading-snug">
+          Predictions will be revealed<br />when the match starts
+        </p>
+        {group.predictedCount > 0 && (
+          <span className="mt-1 text-[11px] text-muted-foreground/35">
+            {group.predictedCount} {group.predictedCount === 1 ? 'member' : 'members'} already predicted
           </span>
-          <span className="text-[11px] text-muted-foreground/40 flex-shrink-0">
-            · {group.totalMembers}
-          </span>
-        </div>
-
-        {revealed ? (
-          <span className="text-[10px] font-bold text-muted-foreground/50 flex-shrink-0">
-            {group.predictedCount}/{group.totalMembers} predicted
-          </span>
-        ) : (
-          <div className="flex items-center gap-1 px-2 py-[3px] rounded-full bg-muted/15 border border-border flex-shrink-0">
-            <Lock className="size-[9px] text-muted-foreground/40" strokeWidth={2} />
-            <span className="text-[10px] font-bold text-muted-foreground/50">Locked</span>
-          </div>
         )}
       </div>
+    )
+  }
 
-      {/* Body */}
-      {!revealed ? (
-        <div className="px-4 py-5 flex flex-col items-center gap-1.5">
-          <Lock className="size-4 text-muted-foreground/25" strokeWidth={1.75} />
-          <p className="text-[12px] font-semibold text-muted-foreground/50 text-center leading-snug">
-            Predictions will be revealed<br />when the match starts
-          </p>
-          {group.predictedCount > 0 && (
-            <span className="mt-1 text-[11px] text-muted-foreground/35">
-              {group.predictedCount} {group.predictedCount === 1 ? 'member' : 'members'} already predicted
+  if (group.predictions.length === 0) {
+    return (
+      <div className="px-4 py-6 text-center">
+        <p className="text-[12px] text-muted-foreground/40">No predictions for this match</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {group.predictions.map((entry, i) => (
+        <PredictionRow
+          key={entry.userId}
+          entry={entry}
+          matchScheduledAt={matchScheduledAt}
+          matchStatus={matchStatus}
+          index={i}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ─── Tab bar ──────────────────────────────────────────────────
+
+function LeagueTabBar({
+  leagues,
+  activeId,
+  onSelect,
+}: {
+  leagues:  LeaguePredictionGroup[]
+  activeId: string
+  onSelect: (id: string) => void
+}) {
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto scrollbar-none px-3 pt-3 pb-0">
+      {leagues.map(league => {
+        const isActive = league.leagueId === activeId
+        return (
+          <button
+            key={league.leagueId}
+            type="button"
+            onClick={() => onSelect(league.leagueId)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-2 rounded-t-xl text-[12px] font-bold whitespace-nowrap flex-shrink-0 transition-colors',
+              'border-b-2',
+              isActive
+                ? 'text-foreground border-primary bg-surface-elevated'
+                : 'text-muted-foreground/55 border-transparent hover:text-muted-foreground hover:bg-surface-elevated/50',
+            )}
+          >
+            {league.isDefault && (
+              <Trophy className="size-[11px] text-gold flex-shrink-0" strokeWidth={2} />
+            )}
+            <span className="max-w-[120px] truncate">{league.leagueName}</span>
+            <span className={cn(
+              'text-[10px] font-semibold tabular-nums',
+              isActive ? 'text-muted-foreground/60' : 'text-muted-foreground/35',
+            )}>
+              {league.predictedCount}/{league.totalMembers}
             </span>
-          )}
-        </div>
-      ) : group.predictions.length === 0 ? (
-        <div className="px-4 py-5 text-center">
-          <p className="text-[12px] text-muted-foreground/40">No predictions for this match</p>
-        </div>
-      ) : (
-        <div>
-          {group.predictions.map((entry, i) => (
-            <PredictionRow
-              key={entry.userId}
-              entry={entry}
-              matchScheduledAt={matchScheduledAt}
-              matchStatus={matchStatus}
-              index={i}
-            />
-          ))}
-        </div>
-      )}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -264,27 +283,31 @@ function LeagueCard({
 
 function SectionSkeleton() {
   return (
-    <div className="flex flex-col gap-3">
-      {[0, 1].map(g => (
-        <div key={g} className="bg-card rounded-2xl border border-border animate-pulse overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
-            <div className="flex items-center gap-2">
-              <div className="size-[14px] rounded bg-surface-elevated" />
-              <div className="h-3.5 w-28 rounded-full bg-surface-elevated" />
-            </div>
-            <div className="h-4 w-16 rounded-full bg-surface-elevated" />
+    <div className="bg-card rounded-2xl border border-border animate-pulse overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
+        <div className="flex items-center gap-2">
+          <div className="size-[14px] rounded bg-surface-elevated" />
+          <div className="h-3.5 w-28 rounded-full bg-surface-elevated" />
+        </div>
+        <div className="h-4 w-16 rounded-full bg-surface-elevated" />
+      </div>
+      {/* Tab bar */}
+      <div className="flex gap-1 px-3 pt-3 pb-0 border-b border-border/40">
+        {[80, 100, 72].map((w, i) => (
+          <div key={i} className="h-8 rounded-t-xl bg-surface-elevated flex-shrink-0" style={{ width: w }} />
+        ))}
+      </div>
+      {/* Rows */}
+      {[0, 1, 2].map(r => (
+        <div key={r} className="flex items-center gap-3 px-4 py-3 border-b border-border/30 last:border-0">
+          <div className="w-4 h-3 rounded-full bg-surface-elevated" />
+          <div className="size-[30px] rounded-full bg-surface-elevated" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-24 rounded-full bg-surface-elevated" />
+            <div className="h-2.5 w-16 rounded-full bg-surface-elevated" />
           </div>
-          {[0, 1, 2].map(r => (
-            <div key={r} className="flex items-center gap-3 px-4 py-3 border-b border-border/30 last:border-0">
-              <div className="w-4 h-3 rounded-full bg-surface-elevated" />
-              <div className="size-[30px] rounded-full bg-surface-elevated" />
-              <div className="flex-1 space-y-1.5">
-                <div className="h-3 w-24 rounded-full bg-surface-elevated" />
-                <div className="h-2.5 w-16 rounded-full bg-surface-elevated" />
-              </div>
-              <div className="h-7 w-14 rounded-lg bg-surface-elevated" />
-            </div>
-          ))}
+          <div className="h-7 w-14 rounded-lg bg-surface-elevated" />
         </div>
       ))}
     </div>
@@ -300,12 +323,20 @@ interface Props {
 }
 
 export function LeaguePredictionsSection({ matchId, matchStatus, initialData }: Props) {
-  const [data,    setData]    = useState<MatchLeaguePredictions | null>(initialData ?? null)
-  const [loading, setLoading] = useState(initialData === undefined)
-  const [error,   setError]   = useState(false)
+  const [data,           setData]           = useState<MatchLeaguePredictions | null>(initialData ?? null)
+  const [loading,        setLoading]        = useState(initialData === undefined)
+  const [error,          setError]          = useState(false)
+  const [activeLeagueId, setActiveLeagueId] = useState<string | null>(null)
   const isLive = matchStatus === 'live'
 
   const hasPushedSSR = useRef(initialData !== undefined)
+
+  // Set the first league as active whenever data arrives
+  useEffect(() => {
+    if (data && data.leagues.length > 0) {
+      setActiveLeagueId(prev => prev ?? data.leagues[0].leagueId)
+    }
+  }, [data])
 
   const fetchData = (cancelled?: { current: boolean }) => {
     fetch(`/api/matches/${matchId}/league-predictions`, { cache: 'no-store' })
@@ -348,10 +379,9 @@ export function LeaguePredictionsSection({ matchId, matchStatus, initialData }: 
     </div>
   )
 
-  if (error || !data) return null
+  if (error || !data || data.leagues.length === 0) return null
 
-  // No leagues → user hasn't joined any
-  if (data.leagues.length === 0) return null
+  const activeGroup = data.leagues.find(l => l.leagueId === activeLeagueId) ?? data.leagues[0]
 
   return (
     <div className="flex flex-col gap-3">
@@ -365,15 +395,39 @@ export function LeaguePredictionsSection({ matchId, matchStatus, initialData }: 
         )}
       </div>
 
-      {/* League cards */}
-      {data.leagues.map(group => (
-        <LeagueCard
-          key={group.leagueId}
-          group={group}
+      {/* Single card */}
+      <div className="bg-card rounded-2xl border border-border shadow-card overflow-hidden animate-fade-in">
+        {/* Card header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
+          <div className="flex items-center gap-2">
+            <Trophy className="size-[14px] text-gold flex-shrink-0" strokeWidth={1.75} />
+            <span className="text-[13px] font-bold text-foreground">League Predictions</span>
+          </div>
+          {data.leagues.length > 1 && (
+            <span className="text-[10px] font-bold text-muted-foreground/40 flex-shrink-0">
+              {data.leagues.length} leagues
+            </span>
+          )}
+        </div>
+
+        {/* Tab bar — only shown when there are multiple leagues */}
+        {data.leagues.length > 1 && (
+          <div className="border-b border-border/50">
+            <LeagueTabBar
+              leagues={data.leagues}
+              activeId={activeGroup.leagueId}
+              onSelect={setActiveLeagueId}
+            />
+          </div>
+        )}
+
+        {/* Active league body */}
+        <LeagueTabBody
+          group={activeGroup}
           matchStatus={data.matchStatus}
           matchScheduledAt={data.matchScheduledAt}
         />
-      ))}
+      </div>
     </div>
   )
 }

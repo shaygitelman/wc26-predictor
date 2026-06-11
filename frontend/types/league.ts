@@ -25,6 +25,8 @@ export interface MemberPick {
   predictedAway: number | null
   outcome: 'exact' | 'difference' | 'outcome' | 'wrong' | 'pending' | null
   pointsEarned: number | null
+  isAutoPick?: boolean | null
+  submittedAt?: string | null  // ISO 8601 — when user last saved their pick
 }
 
 export interface LeagueMemberPrediction {

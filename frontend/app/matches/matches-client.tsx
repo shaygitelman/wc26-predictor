@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { MatchCard } from '@/components/molecules/match-card'
 import { LiveDot } from '@/components/atoms/live-dot'
+import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { formatMatchDate } from '@/lib/utils'
 import type { Match } from '@/types/match'
 import { apiFetch } from '@/lib/api-client'
@@ -40,6 +41,8 @@ function applyFilter(matches: Match[], filter: FilterValue): Match[] {
   }
 }
 
+const _STATUS_ORDER: Record<string, number> = { live: 0, scheduled: 1, finished: 2 }
+
 function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: string; matches: Match[] }> {
   const map = new Map<string, Match[]>()
   for (const m of matches) {
@@ -51,7 +54,13 @@ function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: stri
   return Array.from(map.entries()).map(([key, ms]) => ({
     dateKey:   key,
     dateLabel: formatMatchDate(ms[0].scheduledAt),
-    matches:   ms,
+    // Live matches always float to the top of their day group
+    matches: [...ms].sort((a, b) => {
+      const sa = _STATUS_ORDER[a.status] ?? 1
+      const sb = _STATUS_ORDER[b.status] ?? 1
+      if (sa !== sb) return sa - sb
+      return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+    }),
   }))
 }
 
@@ -226,6 +235,11 @@ export function MatchesClient({ initialMatches, initialPredictions, initialStand
   const [predictions, setPredictions] = useState<Prediction[]>(initialPredictions)
   const [filter,      setFilter]      = useState<FilterValue>('all')
 
+  // liveCount drives <LiveRefresh>. It is derived from initialMatches directly:
+  // router.refresh() (triggered by LiveRefresh) causes the Server Component to
+  // re-execute with fresh data and push new initialMatches into this component.
+  const liveCount = initialMatches.filter(m => m.status === 'live').length
+
   const lastFetchRef = useRef(0)
 
   useEffect(() => {
@@ -256,7 +270,6 @@ export function MatchesClient({ initialMatches, initialPredictions, initialStand
     }
   }, [])
 
-  const liveCount    = initialMatches.filter(m => m.status === 'live').length
   const pendingCount = useMemo(() =>
     initialMatches.filter(m => m.status === 'scheduled' && !predictions.find(p => p.matchId === m.id)).length,
     [initialMatches, predictions],
@@ -268,6 +281,11 @@ export function MatchesClient({ initialMatches, initialPredictions, initialStand
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+      {/* Triggers router.refresh() every 30 s while any match is live, which
+          re-runs the Server Component and pushes fresh match data into this
+          component — same mechanism as the home page. */}
+      <LiveRefresh active={liveCount > 0} />
+
       <ContextHeader
         title="Schedule"
         actions={

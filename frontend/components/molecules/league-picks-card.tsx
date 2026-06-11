@@ -6,6 +6,19 @@ import { cn } from '@/lib/utils'
 import type { League } from '@/types/league'
 import type { LeagueMemberPrediction } from '@/types/league'
 
+function formatSubmittedAt(iso: string): string {
+  const d     = new Date(iso)
+  const now   = Date.now()
+  const diffS = Math.floor((now - d.getTime()) / 1000)
+
+  if (diffS < 60)       return 'just now'
+  if (diffS < 3600)     return `${Math.floor(diffS / 60)}m ago`
+  if (diffS < 86400)    return `${Math.floor(diffS / 3600)}h ago`
+  if (diffS < 172800)   return 'yesterday'
+
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
 interface Props {
   matchId:          string
   matchStatus:      string
@@ -320,9 +333,16 @@ function MemberRow({
             </span>
           )}
         </div>
-        <span className="text-[11px] text-muted-foreground/50 tabular-nums">
-          {member.totalPoints !== null ? `${member.totalPoints} pts` : '—'}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground/50 tabular-nums">
+            {member.totalPoints !== null ? `${member.totalPoints} pts` : '—'}
+          </span>
+          {revealed && member.prediction && !member.prediction.hidden && member.prediction.submittedAt && (
+            <span className="text-[10px] text-muted-foreground/35">
+              · {formatSubmittedAt(member.prediction.submittedAt)}
+            </span>
+          )}
+        </div>
       </div>
 
       <PickChip
@@ -378,12 +398,19 @@ function PickChip({
     : 'bg-surface-elevated border-border/40 text-foreground'
 
   return (
-    <div className={cn('flex items-center gap-1 px-2.5 py-1 rounded-lg border flex-shrink-0', chipCls)}>
-      <span className="text-[13px] font-black tabular-nums leading-none">
-        {prediction.predictedHome}–{prediction.predictedAway}
-      </span>
-      {isFinished && outcome === 'exact' && (
-        <span className="text-[11px] leading-none">★</span>
+    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+      <div className={cn('flex items-center gap-1 px-2.5 py-1 rounded-lg border', chipCls)}>
+        <span className="text-[13px] font-black tabular-nums leading-none">
+          {prediction.predictedHome}–{prediction.predictedAway}
+        </span>
+        {isFinished && outcome === 'exact' && (
+          <span className="text-[11px] leading-none">★</span>
+        )}
+      </div>
+      {prediction.isAutoPick && (
+        <span className="text-[9px] font-black tracking-widest uppercase text-muted-foreground/40 bg-surface-elevated px-1.5 py-[1px] rounded">
+          AUTO
+        </span>
       )}
     </div>
   )

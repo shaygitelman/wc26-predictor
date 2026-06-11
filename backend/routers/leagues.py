@@ -255,11 +255,19 @@ async def league_match_predictions(
             (Prediction.user_id == User.id) & (Prediction.match_id == match_id),
         )
         .where(LeagueMember.league_id == league_id)
-        .order_by(LeagueMember.rank.nulls_last(), LeagueMember.joined_at)
     )
     rows = result.all()
 
-    out: list[MemberPredictionOut] = []
+    # outcome priority for finished matches: exact > correct_direction > wrong > pending/none
+    _OUTCOME_ORDER: dict[str, int] = {
+        "exact":      0,
+        "difference": 1,
+        "outcome":    1,
+        "wrong":      2,
+        "pending":    3,
+    }
+
+    items: list[tuple[MemberPredictionOut, object]] = []
     for member, member_user, pred in rows:
         is_own = member_user.id == user.id
 
@@ -278,7 +286,7 @@ async def league_match_predictions(
         # Stats visibility: always expose to the owner; hide from others if opted out.
         show = is_own or member_user.show_stats
 
-        out.append(MemberPredictionOut(
+        out_item = MemberPredictionOut(
             userId        = member_user.id,
             username      = member_user.username,
             avatarUrl     = member_user.avatar_url,
@@ -287,9 +295,29 @@ async def league_match_predictions(
             totalPoints   = member.total_points  if show else None,
             isCurrentUser = is_own,
             prediction    = pick,
-        ))
+        )
 
-    return out
+        # Sort key —
+        # finished:          exact → correct_direction → wrong → pending → no pick
+        # live / scheduled:  submission time ascending, no pick last
+        _NO_TS = "9999-12-31T23:59:59"
+        if match.status == "finished":
+            if pred is None:
+                sort_key: object = (4, _NO_TS)
+            else:
+                order = _OUTCOME_ORDER.get(pred.outcome or "", 3)
+                ts    = pred.updated_at.isoformat() if pred.updated_at else _NO_TS
+                sort_key = (order, ts)
+        else:
+            if pred is None:
+                sort_key = _NO_TS
+            else:
+                sort_key = pred.updated_at.isoformat() if pred.updated_at else "0001-01-01T00:00:00"
+
+        items.append((out_item, sort_key))
+
+    items.sort(key=lambda x: x[1])
+    return [item for item, _ in items]
 
 
 @router.delete("/{league_id}", status_code=status.HTTP_204_NO_CONTENT)

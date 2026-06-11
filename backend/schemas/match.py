@@ -2,6 +2,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from models.match import Match
+from models.prediction import Prediction
 from core.wc2026_config import CODE_TO_GROUP
 
 
@@ -57,3 +58,67 @@ class MatchOut(BaseModel):
             minute      = m.minute,
             thumbUrl    = m.thumb_url,
         )
+
+
+# ─── League-predictions endpoint schemas ─────────────────────────────────────
+
+
+class LeaguePredictionEntry(BaseModel):
+    """One member's prediction inside a league group."""
+    userId:        str
+    username:      str
+    avatarUrl:     Optional[str]  = None
+    avatarId:      Optional[str]  = None
+    rank:          Optional[int]  = None   # null when user hid stats
+    totalPoints:   Optional[int]  = None   # null when user hid stats
+    isCurrentUser: bool
+    predictedHome: int
+    predictedAway: int
+    outcome:       Optional[str]  = None   # null before match scores
+    pointsEarned:  Optional[int]  = None
+    isAutoPick:    bool
+    submittedAt:   str                      # ISO 8601 — when user last saved
+
+    @classmethod
+    def from_orm(
+        cls,
+        user_id:       str,
+        username:      str,
+        avatar_url:    Optional[str],
+        avatar_id:     Optional[str],
+        rank:          Optional[int],
+        total_points:  Optional[int],
+        is_current:    bool,
+        pred:          Prediction,
+    ) -> "LeaguePredictionEntry":
+        return cls(
+            userId        = user_id,
+            username      = username,
+            avatarUrl     = avatar_url,
+            avatarId      = avatar_id,
+            rank          = rank,
+            totalPoints   = total_points,
+            isCurrentUser = is_current,
+            predictedHome = pred.predicted_home,
+            predictedAway = pred.predicted_away,
+            outcome       = pred.outcome,
+            pointsEarned  = pred.points_earned,
+            isAutoPick    = pred.is_auto_pick,
+            submittedAt   = pred.updated_at.isoformat() if pred.updated_at else pred.created_at.isoformat(),
+        )
+
+
+class LeaguePredictionGroup(BaseModel):
+    """All predictions for one league."""
+    leagueId:       str
+    leagueName:     str
+    isDefault:      bool
+    totalMembers:   int
+    predictedCount: int                       # members who submitted a pick
+    predictions:    list[LeaguePredictionEntry]  # empty when not yet revealed
+
+
+class MatchLeaguePredictionsOut(BaseModel):
+    matchStatus:      str   # "scheduled" | "live" | "finished"
+    matchScheduledAt: str   # ISO 8601 — used by frontend for "X before kickoff"
+    leagues:          list[LeaguePredictionGroup]

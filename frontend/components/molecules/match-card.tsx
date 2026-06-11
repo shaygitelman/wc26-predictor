@@ -110,11 +110,21 @@ export function MatchCard({ match, prediction, className }: MatchCardProps) {
                   {match.awayScore ?? 0}
                 </span>
               </div>
-              {isLive && match.minute && (
-                <div className="flex items-center gap-1.5">
-                  <span className="size-[5px] rounded-full bg-status-live animate-live-pulse flex-shrink-0" />
-                  <span className="text-[11px] font-bold text-status-live tabular">{match.minute}&apos;</span>
-                </div>
+              {isLive ? (
+                match.minute ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="size-[5px] rounded-full bg-status-live animate-live-pulse flex-shrink-0" />
+                    <span className="text-[11px] font-bold text-status-live tabular">{match.minute}&apos;</span>
+                  </div>
+                ) : (
+                  <span className="text-[10px] font-black text-status-live tracking-[0.14em] uppercase">
+                    Half Time
+                  </span>
+                )
+              ) : (
+                <span className="text-2xs font-bold text-muted-foreground/45 tracking-[0.14em] uppercase">
+                  Full Time
+                </span>
               )}
             </>
           ) : (

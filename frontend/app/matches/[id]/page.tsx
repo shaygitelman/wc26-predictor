@@ -5,10 +5,10 @@ import { computeMatchFacts }     from '@/lib/compute-match-facts'
 import { MatchDetailView }       from './view'
 import type { Match }            from '@/types/match'
 import type { Prediction }       from '@/types/prediction'
-import type { League, LeagueMemberPrediction } from '@/types/league'
 import type { ApiGroupStandings } from '@/types/standings'
 import type { MatchInsights }    from '@/types/insights'
 import type { MatchFacts }       from '@/types/match-facts'
+import type { MatchLeaguePredictions } from '@/types/match-league-predictions'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -33,45 +33,40 @@ async function fetchGroupStandings(group: string, status: string): Promise<ApiGr
 export default async function MatchDetailPage({ params }: PageProps) {
   const { id } = await params
 
-  // Round 1 — match identity, user prediction, league memberships
-  const [matchRes, predRes, leaguesRes] = await Promise.allSettled([
+  // Round 1 — match + own prediction
+  const [matchRes, predRes] = await Promise.allSettled([
     apiGetCached<Match>(`/matches/${id}`, 60, { auth: false }),
     apiGet<Prediction | null>(`/predictions/${id}/me`),
-    apiGet<League[]>('/leagues'),
   ])
 
   if (matchRes.status === 'rejected') notFound()
 
-  const match   = matchRes.value
-  const leagues = leaguesRes.status === 'fulfilled' ? (leaguesRes.value ?? []) : []
+  const match = matchRes.value
 
-  // Round 2 — card data + picks, all in parallel
-  const [standingsRes, insightsRes, factsRes, picksRes] = await Promise.allSettled([
+  // Round 2 — all secondary data in parallel (no serial waterfall)
+  const [standingsRes, insightsRes, factsRes, leaguePredRes] = await Promise.allSettled([
     match.round === 'group' && match.group
       ? fetchGroupStandings(match.group, match.status)
       : Promise.resolve(null),
     computeMatchInsights(match),
     computeMatchFacts(id, match),
-    leagues.length > 0
-      ? apiGet<LeagueMemberPrediction[]>(`/leagues/${leagues[0].id}/matches/${id}/predictions`).catch(() => undefined)
-      : Promise.resolve(undefined),
+    apiGet<MatchLeaguePredictions>(`/matches/${id}/league-predictions`).catch(() => undefined),
   ])
 
-  const prediction     = predRes.status      === 'fulfilled' ? predRes.value      ?? undefined : undefined
-  const groupStandings = standingsRes.status === 'fulfilled' ? standingsRes.value ?? undefined : undefined
-  const insights       = insightsRes.status  === 'fulfilled' ? insightsRes.value  ?? undefined : undefined
-  const facts          = factsRes.status     === 'fulfilled' ? factsRes.value     ?? undefined : undefined
-  const initialPicks   = picksRes.status     === 'fulfilled' ? picksRes.value                 : undefined
+  const prediction        = predRes.status       === 'fulfilled' ? predRes.value       ?? undefined : undefined
+  const groupStandings    = standingsRes.status  === 'fulfilled' ? standingsRes.value  ?? undefined : undefined
+  const insights          = insightsRes.status   === 'fulfilled' ? insightsRes.value   ?? undefined : undefined
+  const facts             = factsRes.status      === 'fulfilled' ? factsRes.value      ?? undefined : undefined
+  const leaguePredictions = leaguePredRes.status === 'fulfilled' ? leaguePredRes.value ?? undefined : undefined
 
   return (
     <MatchDetailView
       match={match}
       prediction={prediction}
-      initialLeagues={leagues}
-      initialPicks={initialPicks}
       initialGroupStandings={groupStandings}
       initialInsights={insights}
       initialFacts={facts}
+      initialLeaguePredictions={leaguePredictions}
     />
   )
 }

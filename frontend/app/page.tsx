@@ -120,10 +120,7 @@ export default async function HomePage() {
           </div>
         </Link>
 
-        {/* ── Tournament picks ───────────────────────────────── */}
-        <TournamentPicksCard pick={pick} teams={allTeams} />
-
-        {/* ── Live Now — high-attention zone: below Tournament Picks, above Leagues ── */}
+        {/* ── Live Now — highest priority: immediately after profile strip ── */}
         {liveMatches.length > 0 && (
           <section className="relative -mx-1">
             {/* Multi-layer green atmosphere — extended beyond section bounds */}
@@ -177,6 +174,9 @@ export default async function HomePage() {
             </div>
           </section>
         )}
+
+        {/* ── Tournament picks ───────────────────────────────── */}
+        <TournamentPicksCard pick={pick} teams={allTeams} />
 
         {/* ── Predict Now ────────────────────────────────────── */}
         {upcomingPred.length > 0 && (

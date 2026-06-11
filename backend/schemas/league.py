@@ -69,10 +69,12 @@ class LeagueStandingOut(BaseModel):
 
 class MemberPick(BaseModel):
     hidden:        bool
-    predictedHome: Optional[int] = None
-    predictedAway: Optional[int] = None
-    outcome:       Optional[str] = None
-    pointsEarned:  Optional[int] = None
+    predictedHome: Optional[int]  = None
+    predictedAway: Optional[int]  = None
+    outcome:       Optional[str]  = None
+    pointsEarned:  Optional[int]  = None
+    isAutoPick:    Optional[bool] = None
+    submittedAt:   Optional[str]  = None  # ISO 8601 — when user last saved their pick
 
     @classmethod
     def revealed(cls, pred: Prediction) -> "MemberPick":
@@ -82,6 +84,8 @@ class MemberPick(BaseModel):
             predictedAway = pred.predicted_away,
             outcome       = pred.outcome,
             pointsEarned  = pred.points_earned,
+            isAutoPick    = pred.is_auto_pick,
+            submittedAt   = pred.updated_at.isoformat() if pred.updated_at else None,
         )
 
     @classmethod

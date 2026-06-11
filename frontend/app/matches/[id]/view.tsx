@@ -12,29 +12,28 @@ import { RoundBadge } from '@/components/atoms/round-badge'
 import { PredictionSheet } from '@/components/molecules/prediction-sheet'
 import { MatchInsightsCard } from '@/components/molecules/match-insights-card'
 import { MatchFactsCard } from '@/components/molecules/match-facts-card'
-import { LeaguePicksCard } from '@/components/molecules/league-picks-card'
+import { LeaguePredictionsSection } from '@/components/molecules/league-predictions-section'
 import { GroupStandingsCard } from '@/components/molecules/group-standings-card'
 import { ROUND_POINTS } from '@/lib/constants'
 import { ROUND_LABELS } from '@/types/match'
 import type { Match } from '@/types/match'
 import type { Prediction } from '@/types/prediction'
-import type { League, LeagueMemberPrediction } from '@/types/league'
 import type { ApiGroupStandings } from '@/types/standings'
 import type { MatchInsights } from '@/types/insights'
 import type { MatchFacts } from '@/types/match-facts'
+import type { MatchLeaguePredictions } from '@/types/match-league-predictions'
 import { trackPredictionSubmitted } from '@/lib/analytics'
 
 interface MatchDetailViewProps {
-  match:                  Match
-  prediction?:            Prediction
-  initialLeagues?:        League[]
-  initialPicks?:          LeagueMemberPrediction[]
-  initialGroupStandings?: ApiGroupStandings
-  initialInsights?:       MatchInsights
-  initialFacts?:          MatchFacts
+  match:                    Match
+  prediction?:              Prediction
+  initialGroupStandings?:   ApiGroupStandings
+  initialInsights?:         MatchInsights
+  initialFacts?:            MatchFacts
+  initialLeaguePredictions?: MatchLeaguePredictions
 }
 
-export function MatchDetailView({ match, prediction: initialPrediction, initialLeagues, initialPicks, initialGroupStandings, initialInsights, initialFacts }: MatchDetailViewProps) {
+export function MatchDetailView({ match, prediction: initialPrediction, initialGroupStandings, initialInsights, initialFacts, initialLeaguePredictions }: MatchDetailViewProps) {
   const [prediction, setPrediction] = useState(initialPrediction)
   const isFinished = match.status === 'finished'
   const isLive     = match.status === 'live'
@@ -135,11 +134,17 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialL
                       </span>
                     </div>
 
-                    {isLive && match.minute && (
-                      <div className="flex items-center gap-2 bg-status-live/10 border border-status-live/20 rounded-full px-3 py-1">
-                        <span className="size-1.5 rounded-full bg-status-live animate-live-pulse flex-shrink-0" />
-                        <span className="text-xs font-bold text-status-live tabular">{match.minute}&apos;</span>
-                      </div>
+                    {isLive && (
+                      match.minute ? (
+                        <div className="flex items-center gap-2 bg-status-live/10 border border-status-live/20 rounded-full px-3 py-1">
+                          <span className="size-1.5 rounded-full bg-status-live animate-live-pulse flex-shrink-0" />
+                          <span className="text-xs font-bold text-status-live tabular">{match.minute}&apos;</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 bg-status-live/10 border border-status-live/20 rounded-full px-3 py-1">
+                          <span className="text-xs font-black text-status-live tracking-[0.1em] uppercase">Half Time</span>
+                        </div>
+                      )
                     )}
 
                     {isFinished && (
@@ -205,6 +210,13 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialL
       {/* ── Body ─────────────────────────────────────────── */}
       <div className="flex flex-col gap-5 px-4 pt-1 pb-8">
 
+        {/* League Predictions — first card: directly below the prediction strip */}
+        <LeaguePredictionsSection
+          matchId={match.id}
+          matchStatus={match.status}
+          initialData={initialLeaguePredictions}
+        />
+
         {match.round === 'group' && match.group && (
           <GroupStandingsCard
             matchId={match.id}
@@ -229,13 +241,6 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialL
           awayTeam={{ name: match.awayTeam.name, shortCode: match.awayTeam.shortCode }}
           round={match.round}
           initialData={initialFacts}
-        />
-
-        <LeaguePicksCard
-          matchId={match.id}
-          matchStatus={match.status}
-          initialLeagues={initialLeagues}
-          initialPicks={initialPicks}
         />
 
         <section className="pt-3">

@@ -1,12 +1,17 @@
+from collections import defaultdict
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from dependencies.auth import get_current_user
+from models.league import League, LeagueMember
 from models.match import Match
 from models.player import Player
-from schemas.match import MatchOut
+from models.prediction import Prediction
+from models.user import User
+from schemas.match import MatchOut, LeaguePredictionEntry, LeaguePredictionGroup, MatchLeaguePredictionsOut
 from services.squad_availability import get_squad_availability
 from services.match_stats import get_match_statistics
 from services.team_form import get_team_form, get_h2h
@@ -40,6 +45,136 @@ async def get_match(match_id: str, db: AsyncSession = Depends(get_db)) -> MatchO
     if not match:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     return MatchOut.from_orm(match)
+
+
+@router.get("/{match_id}/league-predictions", response_model=MatchLeaguePredictionsOut)
+async def match_league_predictions(
+    match_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchLeaguePredictionsOut:
+    """
+    Return predictions for this match grouped by every league the caller belongs to.
+
+    Privacy rules
+    ─────────────
+    scheduled  → predictions list is empty for every group; only counts are returned.
+                 The current user's own prediction IS included so they can see their pick.
+    live / finished → all predictions revealed.
+
+    Optimisation
+    ────────────
+    Two queries, zero N+1:
+    1. Fetch all league IDs the caller belongs to.
+    2. One wide JOIN fetches leagues + members + users + predictions for those leagues.
+    Member counts are computed in Python from the grouped rows.
+    """
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    revealed = match.status != "scheduled"
+
+    # ── Query 1: which leagues does the caller belong to? ────────────────────
+    league_id_rows = (await db.execute(
+        select(LeagueMember.league_id).where(LeagueMember.user_id == current_user.id)
+    )).scalars().all()
+
+    if not league_id_rows:
+        return MatchLeaguePredictionsOut(
+            matchStatus      = match.status,
+            matchScheduledAt = match.scheduled_at.isoformat(),
+            leagues          = [],
+        )
+
+    # ── Query 2: all members + predictions for those leagues ─────────────────
+    rows = (await db.execute(
+        select(League, LeagueMember, User, Prediction)
+        .join(LeagueMember, LeagueMember.league_id == League.id)
+        .join(User, User.id == LeagueMember.user_id)
+        .outerjoin(
+            Prediction,
+            (Prediction.user_id == User.id) & (Prediction.match_id == match_id),
+        )
+        .where(League.id.in_(league_id_rows))
+        .order_by(League.is_default.desc(), League.created_at, LeagueMember.rank.nulls_last(), LeagueMember.joined_at)
+    )).all()
+
+    # ── Group rows by league ─────────────────────────────────────────────────
+    league_order:   list[str]                                     = []
+    league_objs:    dict[str, League]                             = {}
+    member_count:   dict[str, int]                                = defaultdict(int)
+    pred_count:     dict[str, int]                                = defaultdict(int)
+    league_entries: dict[str, list[tuple[LeagueMember, User, Optional[Prediction]]]] = defaultdict(list)
+
+    for league, member, member_user, pred in rows:
+        lid = league.id
+        if lid not in league_objs:
+            league_objs[lid] = league
+            league_order.append(lid)
+        member_count[lid] += 1
+        if pred is not None:
+            pred_count[lid] += 1
+        league_entries[lid].append((member, member_user, pred))
+
+    # outcome priority for finished matches: exact > correct_direction > wrong > pending/none
+    _OUTCOME_ORDER = {"exact": 0, "difference": 1, "outcome": 1, "wrong": 2, "pending": 3}
+    _NO_TS         = "9999-12-31T23:59:59"
+
+    # ── Build response groups ────────────────────────────────────────────────
+    groups: list[LeaguePredictionGroup] = []
+
+    for lid in league_order:
+        league = league_objs[lid]
+        entries: list[LeaguePredictionEntry] = []
+
+        for member, member_user, pred in league_entries[lid]:
+            is_own = member_user.id == current_user.id
+
+            # Before kickoff: skip entries that have no prediction, or other users' picks
+            if not revealed and not is_own:
+                continue
+            if pred is None:
+                continue  # never show members without a prediction in this section
+
+            # Privacy: hide stats if member opted out (always show own)
+            show_stats = is_own or member_user.show_stats
+
+            entry = LeaguePredictionEntry.from_orm(
+                user_id      = member_user.id,
+                username     = member_user.username,
+                avatar_url   = member_user.avatar_url,
+                avatar_id    = member_user.avatar_id,
+                rank         = member.rank         if show_stats else None,
+                total_points = member.total_points if show_stats else None,
+                is_current   = is_own,
+                pred         = pred,
+            )
+            entries.append(entry)
+
+        # Sort entries
+        if match.status == "finished":
+            entries.sort(key=lambda e: (
+                _OUTCOME_ORDER.get(e.outcome or "", 3),
+                e.submittedAt or _NO_TS,
+            ))
+        else:
+            entries.sort(key=lambda e: e.submittedAt or _NO_TS)
+
+        groups.append(LeaguePredictionGroup(
+            leagueId       = league.id,
+            leagueName     = league.name,
+            isDefault      = league.is_default,
+            totalMembers   = member_count[lid],
+            predictedCount = pred_count[lid],
+            predictions    = entries,
+        ))
+
+    return MatchLeaguePredictionsOut(
+        matchStatus      = match.status,
+        matchScheduledAt = match.scheduled_at.isoformat(),
+        leagues          = groups,
+    )
 
 
 @router.get("/{match_id}/squad/home")

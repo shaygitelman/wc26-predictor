@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database import get_db
 from core.limiter import limiter
-from routers import admin, auth, groups, matches, players, predictions, leagues, teams, tournament, users
+from routers import admin, auth, cron, groups, matches, players, predictions, leagues, teams, tournament, users
 
 log = logging.getLogger(__name__)
 
@@ -674,6 +674,7 @@ app.include_router(groups.router)
 app.include_router(tournament.router)
 app.include_router(users.router)
 app.include_router(admin.router)
+app.include_router(cron.router)
 
 
 @app.get("/health")

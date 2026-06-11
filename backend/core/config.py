@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Admin
     admin_key: str = "change-me-admin"
 
+    # Cron (same value must be set in Vercel + Render)
+    cron_secret: str = ""
+
     # API-Football (api-sports.io)
     apifootball_key: str = ""
 

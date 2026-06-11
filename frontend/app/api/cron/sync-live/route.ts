@@ -5,7 +5,6 @@ export const runtime = 'nodejs'
 export const maxDuration = 55
 
 const CRON_SECRET  = process.env.CRON_SECRET   // set in Vercel env vars (server-only)
-const ADMIN_KEY    = process.env.ADMIN_KEY      // set in Vercel env vars (server-only)
 const BACKEND_URL  = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 function isAuthorized(req: NextRequest): boolean {
@@ -26,9 +25,9 @@ export async function GET(req: NextRequest) {
   const started = Date.now()
 
   try {
-    const res = await fetch(`${BACKEND_URL}/admin/sync/live`, {
+    const res = await fetch(`${BACKEND_URL}/cron/sync-live`, {
       method:  'POST',
-      headers: { 'X-Admin-Key': ADMIN_KEY ?? '' },
+      headers: { 'X-Cron-Secret': CRON_SECRET ?? '' },
       signal:  AbortSignal.timeout(45_000),
     })
 

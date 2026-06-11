@@ -486,6 +486,52 @@ async def _bootstrap_all_players() -> None:
         log.error("BACKGROUND: full player sync FAILED — %s", exc, exc_info=True)
 
 
+async def _bootstrap_reconcile_fixtures() -> None:
+    """Reconcile manually-seeded matches to real API-Football fixture IDs.
+
+    Runs when any matches still have placeholder external_ids ('manual-wc2026-*').
+    Idempotent — subsequent calls are a no-op once all IDs are mapped.
+    Also scores any matches that have already finished.
+    Skipped entirely if APIFOOTBALL_KEY is absent.
+    """
+    if not settings.apifootball_key:
+        log.info("BOOTSTRAP: APIFOOTBALL_KEY not set — skipping fixture reconciliation")
+        return
+
+    from core.database import SessionLocal
+    from providers.apifootball import ApiFootballProvider
+    from services.sync import SyncService
+
+    log.info("BOOTSTRAP: checking for unreconciled fixtures")
+    try:
+        async with SessionLocal() as db:
+            count = (await db.execute(
+                text(
+                    "SELECT COUNT(*) FROM matches "
+                    "WHERE external_id LIKE 'manual-wc2026-%'"
+                )
+            )).scalar() or 0
+
+            if count == 0:
+                log.info("BOOTSTRAP: all fixtures already reconciled, skipping")
+                return
+
+        log.info("BOOTSTRAP: %d unreconciled fixtures — running reconciliation", count)
+        svc = SyncService(
+            provider=ApiFootballProvider(settings.apifootball_key),
+            league_id="1",
+            season="2026",
+        )
+        async with SessionLocal() as db:
+            result = await svc.reconcile_fixtures(db)
+            log.info(
+                "BOOTSTRAP: reconcile done — records=%d status=%s errors=%s",
+                result.records_affected, result.status, result.errors or "none",
+            )
+    except Exception as exc:
+        log.error("BOOTSTRAP: reconcile FAILED — %s", exc, exc_info=True)
+
+
 async def _bootstrap_knockout_matches() -> None:
     """Seed WC 2026 knockout placeholder matches if none exist yet.
 
@@ -591,10 +637,11 @@ async def lifespan(app: FastAPI):
     #   3. group fixtures  — needs: matches + teams (API call if APIFOOTBALL_KEY set)
     #   4. knockout matches — needs: matches table; no dependencies
     #   5. critical players — needs: teams with external_ids (API call if key set)
-    await _bootstrap_default_league()    # world league + user memberships
-    await _bootstrap_teams()             # 48 WC2026 teams from config
-    await _bootstrap_group_fixtures()    # 72 group fixtures (skips if no API key)
-    await _bootstrap_knockout_matches()  # 32 knockout placeholder matches
+    await _bootstrap_default_league()       # world league + user memberships
+    await _bootstrap_teams()               # 48 WC2026 teams from config
+    await _bootstrap_group_fixtures()      # 72 group fixtures (skips if no API key)
+    await _bootstrap_reconcile_fixtures()  # map manual IDs → real API IDs + score finished
+    await _bootstrap_knockout_matches()    # 32 knockout placeholder matches
     await _seed_manual_players()         # all 14 Golden Boot favorites (no API key needed)
     await _verify_golden_boot_players()  # log verification: confirms each is selectable
     await _bootstrap_critical_players()  # sync full squads for Golden Boot teams (needs API key)

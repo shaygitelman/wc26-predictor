@@ -567,8 +567,18 @@ class SyncService:
         except Exception as exc:
             return await self._fail_log(_log_entry, str(exc), db)
 
-        # Load all DB matches once, indexed by (HOME_CODE, AWAY_CODE).
-        all_matches = (await db.execute(select(Match))).scalars().all()
+        # Load only matches that still need reconciliation: those with manual-seeded
+        # or null external_ids.  This avoids accidentally overwriting rows that were
+        # already correctly mapped by a previous sync_fixtures run.
+        from sqlalchemy import or_
+        all_matches = (await db.execute(
+            select(Match).where(
+                or_(
+                    Match.external_id.is_(None),
+                    Match.external_id.like("manual-%"),
+                )
+            )
+        )).scalars().all()
         by_teams: dict[tuple[str, str], Match] = {
             (m.home_team_code.upper(), m.away_team_code.upper()): m
             for m in all_matches

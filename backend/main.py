@@ -508,7 +508,7 @@ async def _bootstrap_reconcile_fixtures() -> None:
             count = (await db.execute(
                 text(
                     "SELECT COUNT(*) FROM matches "
-                    "WHERE external_id LIKE 'manual-wc2026-%'"
+                    "WHERE external_id IS NULL OR external_id LIKE 'manual-%'"
                 )
             )).scalar() or 0
 

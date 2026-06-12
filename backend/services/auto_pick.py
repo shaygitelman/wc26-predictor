@@ -8,7 +8,9 @@ Design invariants:
 - Score is deterministic: pool[sha256(match_id) % len(pool)] — same pick every
   time for the same match, stable across restarts/deploys (unlike Python hash()).
 - ON CONFLICT DO NOTHING: a concurrent manual submission always wins.
-- Auto-picks are scored identically to manual predictions — exact scores earn full points.
+- Auto-picks earn at most direction_pts — if the auto-pick hits the exact score it is
+  reclassified as "outcome" and capped at direction_pts. Only deliberate predictions
+  earn full exact-score points.
 - Test accounts (email *@test.wc26, google_id google-test-*) are excluded.
 """
 import hashlib

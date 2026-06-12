@@ -304,8 +304,27 @@ class ApiFootballProvider(FootballDataProvider):
     # ── Injuries ─────────────────────────────────────────────────
 
     async def fetch_injuries(self, fixture_id: str) -> list[dict]:
-        """Returns raw API-Football injury entries for a fixture."""
+        """Fixture-scoped injuries — returns entries for both teams in a fixture."""
         data = await self._get("/injuries", {"fixture": fixture_id})
+        await asyncio.sleep(0.2)
+        return data.get("response", [])
+
+    async def fetch_injuries_by_team(
+        self,
+        team_ext_id: str,
+        league_id:   str = "1",
+        season:      str = "2026",
+    ) -> list[dict]:
+        """Team+league+season scoped injuries — returns all WC injury entries for a team.
+
+        Useful as a fallback when the fixture-level report hasn't been published yet.
+        Each entry carries a fixture reference so callers can filter to upcoming matches.
+        """
+        data = await self._get("/injuries", {
+            "team":   team_ext_id,
+            "league": league_id,
+            "season": season,
+        })
         await asyncio.sleep(0.2)
         return data.get("response", [])
 

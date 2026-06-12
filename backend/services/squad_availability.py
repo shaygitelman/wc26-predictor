@@ -4,38 +4,51 @@ Squad availability service.
 Fetches real-time player availability for one side of a match via API-Football.
 Only returns data that has been validated — never fabricates names or statuses.
 
-Data sources (in order of precedence):
-  1. /injuries?fixture={fixture_id}  — primary; covers injured/suspended/doubtful
-  2. Player names are validated against our own players table when possible.
+Data sources (two-tier):
+  1. /injuries?fixture={id}  — fixture-specific report (most accurate; published ~24-48h before KO)
+  2. /injuries?team={id}&league=1&season=2026  — WC-wide injury list; used when fixture
+     report isn't published yet. Carries forward ongoing injuries from the team's most
+     recent past WC match.
 
-Returns None when data cannot be obtained (missing API key, missing external IDs,
-API errors).  The caller is responsible for returning an appropriate HTTP response
-(501 Not Implemented is the correct code when data is simply not available yet).
+Returns None only when both tiers are empty (no data available at all).
+The caller is responsible for returning HTTP 501 when None is returned.
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Literal, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from models.match import Match
-from models.player import Player
 from models.team import Team
 from providers.apifootball import ApiFootballProvider
 
 log = logging.getLogger(__name__)
 
-# API-Football injury `type` → availability bucket
+# API-Football injury `type` → availability bucket.
+# API v3 may return either the detailed form ("Injured", "Out", …) or the
+# broad-category form ("Injury", "Suspension") — both are handled here.
 _TYPE_TO_STATUS: dict[str, str] = {
+    # Detailed types (most common in fixture-scoped responses)
     "Injured":         "injured",
     "Out":             "injured",
     "Missing Fixture": "injured",
     "Suspended":       "suspended",
     "Questionable":    "doubtful",
     "Doubtful":        "doubtful",
+    # Broad-category types (observed in some API responses / league-scoped queries)
+    "Injury":          "injured",
+    "Suspension":      "suspended",
 }
+
+# Types considered "ongoing" injuries that survive across fixtures
+# (as opposed to per-fixture suspensions or "questionable" fitness doubts)
+_ONGOING_INJURY_TYPES: frozenset[str] = frozenset({
+    "Injured", "Injury", "Out", "Missing Fixture",
+})
 
 
 @dataclass
@@ -63,6 +76,73 @@ class SquadAvailability:
         }
 
 
+def _parse_fixture_dt(entry: dict) -> Optional[datetime]:
+    """Parse the fixture.date field from an injury entry into a UTC datetime."""
+    raw = entry.get("fixture", {}).get("date", "")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _select_tournament_entries(
+    team_raw: list[dict],
+    fixture_id: str,
+    match_dt: datetime,
+) -> tuple[list[dict], bool]:
+    """
+    From a team+league+season injury response, pick the most useful entries for
+    the given match.
+
+    Returns (entries, is_tournament_fallback):
+      - entries: filtered list to parse
+      - is_tournament_fallback: True when entries are from a past fixture (not
+        the exact upcoming one), which means the detail note should flag this
+    """
+    # Best case: API has already published the fixture-specific report
+    exact = [
+        e for e in team_raw
+        if str(e.get("fixture", {}).get("id", "")) == fixture_id
+    ]
+    if exact:
+        log.debug("[SquadAvailability] team-scope has %d exact-fixture entries", len(exact))
+        return exact, False
+
+    # Fall back: find the team's most recent PAST WC match and carry forward
+    # ongoing (non-suspension) injuries from that fixture.
+    most_recent_fixture_id: Optional[str] = None
+    most_recent_dt:         Optional[datetime] = None
+
+    for e in team_raw:
+        fix_dt = _parse_fixture_dt(e)
+        if fix_dt is None or fix_dt >= match_dt:
+            continue
+        if most_recent_dt is None or fix_dt > most_recent_dt:
+            most_recent_dt = fix_dt
+            most_recent_fixture_id = str(e.get("fixture", {}).get("id", ""))
+
+    if most_recent_fixture_id is None:
+        return [], False
+
+    # Ongoing injuries only (no suspensions — those are per-fixture)
+    ongoing = [
+        e for e in team_raw
+        if (
+            str(e.get("fixture", {}).get("id", "")) == most_recent_fixture_id
+            and (e.get("type") or "").strip() in _ONGOING_INJURY_TYPES
+        )
+    ]
+
+    log.info(
+        "[SquadAvailability] tournament fallback: most recent past fixture=%s "
+        "ongoing injuries=%d",
+        most_recent_fixture_id, len(ongoing),
+    )
+    return ongoing, True
+
+
 async def get_squad_availability(
     match_id: str,
     side:     Literal["home", "away"],
@@ -76,6 +156,8 @@ async def get_squad_availability(
     - The match record has no external_id (fixture not yet mapped)
     - The team has no apifootball external ID
     - The API call fails with a hard error
+    - Both fixture-scoped and team-scoped queries return zero entries
+    - No past WC fixture exists to derive ongoing injuries from
     """
     if not settings.apifootball_key:
         log.warning(
@@ -129,41 +211,69 @@ async def get_squad_availability(
         match_id, side, team_code, fixture_id, team_ext_id,
     )
 
+    # ── Tier 1: fixture-scoped ────────────────────────────────────────────────
     try:
         raw_entries = await provider.fetch_injuries(fixture_id)
     except Exception as exc:
         log.error(
-            "[SquadAvailability] match=%s side=%s — API-Football /injuries failed: %s",
+            "[SquadAvailability] match=%s side=%s — API-Football /injuries fixture-scope failed: %s",
             match_id, side, exc,
         )
-        return None
+        raw_entries = []
 
-    # Filter to this team only
+    using_tournament_fallback = False
+
+    if not raw_entries:
+        # ── Tier 2: team + tournament scope ──────────────────────────────────
+        log.info(
+            "[SquadAvailability] match=%s side=%s — fixture-scope empty; "
+            "trying team+tournament scope (team=%s league=1 season=2026)",
+            match_id, side, team_ext_id,
+        )
+        try:
+            team_raw = await provider.fetch_injuries_by_team(team_ext_id)
+        except Exception as exc:
+            log.error(
+                "[SquadAvailability] match=%s side=%s — team-scope /injuries failed: %s",
+                match_id, side, exc,
+            )
+            team_raw = []
+
+        if not team_raw:
+            log.info(
+                "[SquadAvailability] match=%s side=%s — team-scope also empty; no injury data available",
+                match_id, side,
+            )
+            return None
+
+        match_dt = match.scheduled_at
+        if match_dt.tzinfo is None:
+            match_dt = match_dt.replace(tzinfo=timezone.utc)
+
+        raw_entries, using_tournament_fallback = _select_tournament_entries(
+            team_raw, fixture_id, match_dt,
+        )
+
+        if not raw_entries:
+            log.info(
+                "[SquadAvailability] match=%s side=%s — no usable entries from team-scope; no-data",
+                match_id, side,
+            )
+            return None
+
+    # Filter to this team only (fixture-scope returns both teams; team-scope already filtered)
     team_entries = [
         e for e in raw_entries
         if str(e.get("team", {}).get("id", "")) == team_ext_id
     ]
 
     log.info(
-        "[SquadAvailability] match=%s side=%s — raw entries: total=%d, team=%d",
-        match_id, side, len(raw_entries), len(team_entries),
+        "[SquadAvailability] match=%s side=%s — entries: total=%d team=%d "
+        "tournament_fallback=%s",
+        match_id, side, len(raw_entries), len(team_entries), using_tournament_fallback,
     )
 
-    # Load our DB roster for optional name validation
-    roster_names: set[str] = set()
-    db_players = await db.execute(
-        select(Player.name).where(Player.team_id == team_code.lower())
-    )
-    for (name,) in db_players.all():
-        roster_names.add(name.strip().lower())
-
-    has_roster = len(roster_names) > 0
-    log.info(
-        "[SquadAvailability] match=%s side=%s — DB roster has %d players (validation %s)",
-        match_id, side, len(roster_names), "enabled" if has_roster else "skipped",
-    )
-
-    # Parse + validate
+    # ── Parse + validate ──────────────────────────────────────────────────────
     result_data = SquadAvailability()
     seen_names: set[str] = set()
 
@@ -198,19 +308,14 @@ async def get_squad_availability(
             )
             continue
 
-        # If we have a roster, only accept players whose name fuzzy-matches a roster entry.
-        # We use a simple substring check (last name) to handle "J. Smith" vs "John Smith".
-        if has_roster:
-            parts     = name_key.split()
-            last_name = parts[-1] if parts else name_key
-            if not any(last_name in roster_name for roster_name in roster_names):
-                log.debug(
-                    "[SquadAvailability] match=%s side=%s — '%s' not found in DB roster, skipping",
-                    match_id, side, name,
-                )
-                continue
+        # For tournament-fallback entries, annotate the detail so the frontend can
+        # show "WC status" context instead of implying match-confirmed absence.
+        if using_tournament_fallback:
+            detail = (f"{reason} · WC status" if reason else "WC status")
+        else:
+            detail = reason
 
-        p = PlayerEntry(name=name, detail=reason)
+        p = PlayerEntry(name=name, detail=detail)
         if status == "injured":
             result_data.injured.append(p)
         elif status == "suspended":

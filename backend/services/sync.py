@@ -846,6 +846,61 @@ class SyncService:
             except Exception as exc:
                 errors.append(f"stale-live {stale.external_id}: {exc}")
 
+        # ── Phase 3: stale-scheduled recovery ─────────────────────────
+        # Matches that never transitioned scheduled → live because the cron
+        # was down during kick-off.  Fetch each individually and update.
+        # Only runs when the match is >90 min past scheduled_at and still
+        # has a real (numeric) external_id.
+        stale_scheduled = (await db.execute(
+            select(Match).where(
+                Match.status == "scheduled",
+                Match.scheduled_at <= _now - timedelta(minutes=90),
+                Match.external_id.isnot(None),
+            )
+        )).scalars().all()
+
+        for stale in stale_scheduled:
+            if not stale.external_id or not stale.external_id.isdigit():
+                continue
+            try:
+                log.info(
+                    "[Sync/live] stale-scheduled check match=%s external=%s",
+                    stale.id, stale.external_id,
+                )
+                fx = await self.provider.fetch_by_id(stale.external_id)
+                if not fx:
+                    continue
+                prev_status = stale.status
+                await db.execute(
+                    update(Match)
+                    .where(Match.id == stale.id)
+                    .values(
+                        status     = fx.status,
+                        home_score = fx.home_score,
+                        away_score = fx.away_score,
+                        minute     = fx.minute,
+                        updated_at = datetime.now(timezone.utc),
+                    )
+                    .execution_options(synchronize_session=False)
+                )
+                count += 1
+                if fx.status == "finished" and fx.home_score is not None \
+                        and fx.away_score is not None:
+                    log.info(
+                        "[Sync/live] stale-scheduled AUTO-SCORE match=%s %d-%d",
+                        stale.id, fx.home_score, fx.away_score,
+                    )
+                    try:
+                        await do_score(stale.id, fx.home_score, fx.away_score, db)
+                    except Exception as score_exc:
+                        log.error(
+                            "[Sync/live] stale-scheduled SCORE-FAIL match=%s: %s",
+                            stale.id, score_exc,
+                        )
+                        errors.append(f"stale-sched score {stale.external_id}: {score_exc}")
+            except Exception as exc:
+                errors.append(f"stale-sched {stale.external_id}: {exc}")
+
         await db.commit()
         return await self._finish_log(_log_entry, count, "\n".join(errors) if errors else None, db)
 

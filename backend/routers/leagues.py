@@ -18,6 +18,7 @@ from models.user import User
 from schemas.league import (
     LeagueCreate, LeagueJoin, LeagueOut, LeaguePreview, LeagueStandingOut,
     MemberPick, MemberPredictionOut,
+    LeagueMemberTournamentPickOut, LeagueTournamentPicksOut, MostPickedOut,
 )
 
 log = logging.getLogger(__name__)
@@ -318,6 +319,118 @@ async def league_match_predictions(
 
     items.sort(key=lambda x: x[1])
     return [item for item, _ in items]
+
+
+@router.get("/{league_id}/tournament-picks", response_model=LeagueTournamentPicksOut)
+async def league_tournament_picks(
+    league_id: str,
+    user:      User = Depends(get_current_user),
+    db:        AsyncSession = Depends(get_db),
+) -> LeagueTournamentPicksOut:
+    """Return all league members' tournament winner + top-scorer picks.
+
+    Individual picks are always visible (aggregate insights are shown before lock;
+    individual picks are shown after lock).  Aggregate insights (most picked winner /
+    scorer) are always computed from the full member set.
+    """
+    await _require_member(league_id, user.id, db)
+
+    from models.tournament_pick import TournamentPick as TPickModel
+    from models.team import Team
+    from models.player import Player
+    from services.tournament_lock import is_tournament_locked
+
+    locked = await is_tournament_locked(db)
+
+    rows = (await db.execute(
+        select(
+            User.id,
+            User.username,
+            User.avatar_url,
+            User.avatar_id,
+            TPickModel.winner_team_code,
+            TPickModel.top_scorer_id,
+        )
+        .join(LeagueMember, LeagueMember.user_id == User.id)
+        .outerjoin(TPickModel, TPickModel.user_id == User.id)
+        .where(LeagueMember.league_id == league_id)
+        .where(~User.email.ilike('%@test.wc26'))
+        .order_by(User.username)
+    )).all()
+
+    teams: dict[str, Team] = {
+        t.id: t for t in (await db.execute(select(Team))).scalars().all()
+    }
+
+    scorer_ids = {r[5] for r in rows if r[5]}
+    players: dict[str, Player] = {}
+    if scorer_ids:
+        players = {
+            p.id: p
+            for p in (await db.execute(
+                select(Player).where(Player.id.in_(scorer_ids))
+            )).scalars().all()
+        }
+
+    winner_counts: dict[str, int] = {}
+    scorer_counts: dict[str, int] = {}
+    picks: list[LeagueMemberTournamentPickOut] = []
+
+    for uid, username, avatar_url, avatar_id, winner_code, scorer_id in rows:
+        if winner_code:
+            winner_counts[winner_code] = winner_counts.get(winner_code, 0) + 1
+        if scorer_id:
+            scorer_counts[scorer_id] = scorer_counts.get(scorer_id, 0) + 1
+
+        team   = teams.get(winner_code) if winner_code else None
+        player = players.get(scorer_id) if scorer_id else None
+        s_team = teams.get(player.team_id) if player else None
+
+        picks.append(LeagueMemberTournamentPickOut(
+            userId         = uid,
+            username       = username,
+            avatarUrl      = avatar_url,
+            avatarId       = avatar_id,
+            winnerId       = winner_code,
+            winnerName     = team.name if team else None,
+            winnerFlagUrl  = team.flag_url if team else None,
+            topScorerId    = scorer_id,
+            scorerName     = player.name if player else None,
+            scorerPhotoUrl = player.photo_url if player else None,
+            scorerTeamFlag = s_team.flag_url if s_team else None,
+            scorerTeamCode = s_team.short_code if s_team else None,
+        ))
+
+    most_winner: MostPickedOut | None = None
+    if winner_counts:
+        top_code = max(winner_counts, key=lambda k: winner_counts[k])
+        top_team = teams.get(top_code)
+        if top_team:
+            most_winner = MostPickedOut(
+                id=top_code, name=top_team.name,
+                flagUrl=top_team.flag_url, count=winner_counts[top_code],
+            )
+
+    most_scorer: MostPickedOut | None = None
+    if scorer_counts:
+        top_id  = max(scorer_counts, key=lambda k: scorer_counts[k])
+        top_pl  = players.get(top_id)
+        if top_pl:
+            tp_team = teams.get(top_pl.team_id)
+            most_scorer = MostPickedOut(
+                id=top_id, name=top_pl.name,
+                photoUrl=top_pl.photo_url,
+                teamFlagUrl=tp_team.flag_url if tp_team else None,
+                teamCode=tp_team.short_code if tp_team else None,
+                count=scorer_counts[top_id],
+            )
+
+    return LeagueTournamentPicksOut(
+        isLocked=locked,
+        picks=picks,
+        mostPickedWinner=most_winner,
+        mostPickedScorer=most_scorer,
+    )
 
 
 @router.delete("/{league_id}", status_code=status.HTTP_204_NO_CONTENT)

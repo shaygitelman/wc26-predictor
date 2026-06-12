@@ -29,6 +29,38 @@ export interface MemberPick {
   submittedAt?: string | null  // ISO 8601 — when user last saved their pick
 }
 
+export interface LeagueMemberTournamentPick {
+  userId:          string
+  username:        string
+  avatarUrl?:      string | null
+  avatarId?:       string | null
+  winnerId?:       string | null
+  winnerName?:     string | null
+  winnerFlagUrl?:  string | null
+  topScorerId?:    string | null
+  scorerName?:     string | null
+  scorerPhotoUrl?: string | null
+  scorerTeamFlag?: string | null
+  scorerTeamCode?: string | null
+}
+
+export interface MostPicked {
+  id:          string
+  name:        string
+  count:       number
+  flagUrl?:    string | null
+  photoUrl?:   string | null
+  teamFlagUrl?: string | null
+  teamCode?:   string | null
+}
+
+export interface LeagueTournamentPicksData {
+  isLocked:         boolean
+  picks:            LeagueMemberTournamentPick[]
+  mostPickedWinner?: MostPicked | null
+  mostPickedScorer?: MostPicked | null
+}
+
 export interface LeagueMemberPrediction {
   userId: string
   username: string

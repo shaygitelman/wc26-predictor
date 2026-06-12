@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X, QrCode, Link2, Globe } from 'lucide-react'
+import { Copy, Share2, Users, Check, MoreVertical, Trash2, LogOut, X, QrCode, Link2, Globe, Trophy, Lock } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
 import { LeaderboardRow } from '@/components/molecules/leaderboard-row'
+import { UserAvatar } from '@/components/atoms/user-avatar'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { useAuth } from '@/providers/auth-provider'
 import { apiFetch } from '@/lib/api-client'
-import type { League, LeagueStanding } from '@/types/league'
+import type { League, LeagueStanding, LeagueTournamentPicksData, LeagueMemberTournamentPick, MostPicked } from '@/types/league'
 import { trackInviteLinkCopied } from '@/lib/analytics'
 
 // Lazy-load the QR library (~80KB) — only downloaded when the modal opens.
@@ -186,19 +188,213 @@ function SettingsMenu({ isOwner, onDelete, onLeave }: { isOwner: boolean; onDele
   )
 }
 
+// ─── Tournament picks tab ────────────────────────────────────────────────────
+
+function InsightCard({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex-1 min-w-0 bg-card rounded-2xl border border-border p-3 flex flex-col gap-2">
+      <p className="text-2xs font-black tracking-[0.12em] uppercase text-muted-foreground/70">{label}</p>
+      {children}
+    </div>
+  )
+}
+
+function WinnerInsight({ w }: { w: MostPicked }) {
+  return (
+    <div className="flex items-center gap-2">
+      {w.flagUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={w.flagUrl} alt={w.name} className="w-7 h-[18px] rounded-sm object-cover flex-shrink-0" />
+      )}
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-foreground truncate leading-tight">{w.name}</p>
+        <p className="text-2xs text-muted-foreground">{w.count} pick{w.count !== 1 ? 's' : ''}</p>
+      </div>
+    </div>
+  )
+}
+
+function ScorerInsight({ s }: { s: MostPicked }) {
+  const initials = s.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+  return (
+    <div className="flex items-center gap-2">
+      {s.photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={s.photoUrl} alt={s.name} className="size-8 rounded-full object-cover flex-shrink-0" />
+      ) : (
+        <span className="size-8 rounded-full bg-surface-elevated border border-border flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0">
+          {initials}
+        </span>
+      )}
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-bold text-foreground truncate leading-tight">{s.name}</p>
+          {s.teamFlagUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={s.teamFlagUrl} alt={s.teamCode ?? ''} className="w-4 h-[10px] rounded-[2px] object-cover flex-shrink-0" />
+          )}
+        </div>
+        <p className="text-2xs text-muted-foreground">{s.count} pick{s.count !== 1 ? 's' : ''}</p>
+      </div>
+    </div>
+  )
+}
+
+function PickRow({ pick, isCurrentUser }: { pick: LeagueMemberTournamentPick; isCurrentUser: boolean }) {
+  const initials = pick.scorerName
+    ? pick.scorerName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+    : null
+
+  return (
+    <div className={cn(
+      'flex items-center gap-3 px-3 py-2.5 rounded-xl border',
+      isCurrentUser ? 'bg-primary/[0.06] border-primary/20' : 'bg-card border-border',
+    )}>
+      {/* User */}
+      <div className="flex items-center gap-2 w-[100px] flex-shrink-0">
+        <UserAvatar avatarUrl={pick.avatarUrl ?? undefined} avatarId={pick.avatarId ?? undefined} username={pick.username} size="xs" />
+        <p className={cn('text-xs font-semibold truncate', isCurrentUser ? 'text-primary' : 'text-foreground')}>
+          {pick.username}
+        </p>
+      </div>
+
+      {/* Winner */}
+      <div className="flex-1 flex items-center gap-1.5 min-w-0">
+        {pick.winnerFlagUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={pick.winnerFlagUrl} alt={pick.winnerName ?? ''} className="w-5 h-[14px] rounded-[3px] object-cover flex-shrink-0" />
+        ) : (
+          <span className="w-5 h-[14px] rounded-[3px] bg-surface-elevated border border-border/60 flex-shrink-0" />
+        )}
+        <span className="text-xs text-foreground truncate">
+          {pick.winnerName ?? <span className="text-muted-foreground italic">—</span>}
+        </span>
+      </div>
+
+      {/* Scorer */}
+      <div className="flex items-center gap-1.5 w-[110px] flex-shrink-0">
+        {pick.scorerPhotoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={pick.scorerPhotoUrl} alt={pick.scorerName ?? ''} className="size-5 rounded-full object-cover flex-shrink-0" />
+        ) : initials ? (
+          <span className="size-5 rounded-full bg-surface-elevated border border-border/60 flex items-center justify-center text-[9px] font-bold text-muted-foreground flex-shrink-0">
+            {initials}
+          </span>
+        ) : (
+          <span className="size-5 rounded-full bg-surface-elevated border border-border/60 flex-shrink-0" />
+        )}
+        <span className="text-xs text-foreground truncate">
+          {pick.scorerName ?? <span className="text-muted-foreground italic">—</span>}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function TournamentPicksTab({
+  data,
+  currentUserId,
+}: {
+  data:           LeagueTournamentPicksData | null | undefined
+  currentUserId?: string
+}) {
+  if (!data) {
+    return (
+      <div className="bg-card rounded-xl border border-border p-6 text-center">
+        <p className="text-sm text-muted-foreground">Tournament picks unavailable.</p>
+      </div>
+    )
+  }
+
+  const picksWithData = data.picks.filter(p => p.winnerId || p.topScorerId)
+  const totalMembers  = data.picks.length
+  const pickedCount   = picksWithData.length
+
+  return (
+    <div className="flex flex-col gap-4">
+
+      {/* Before lock: banner */}
+      {!data.isLocked && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-surface-elevated border border-border">
+          <Lock className="size-4 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.75} />
+          <div>
+            <p className="text-sm font-bold text-foreground">Picks revealed at kick-off</p>
+            <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+              {pickedCount} of {totalMembers} member{totalMembers !== 1 ? 's' : ''} have made their picks.
+              Individual selections are hidden until the tournament starts.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Insights row (after lock) */}
+      {data.isLocked && (data.mostPickedWinner || data.mostPickedScorer) && (
+        <div>
+          <p className="text-2xs font-black tracking-[0.12em] uppercase text-muted-foreground/70 mb-2">League Favourites</p>
+          <div className="flex gap-3">
+            <InsightCard label="Top Pick — Winner">
+              {data.mostPickedWinner
+                ? <WinnerInsight w={data.mostPickedWinner} />
+                : <p className="text-sm text-muted-foreground italic">—</p>
+              }
+            </InsightCard>
+            <InsightCard label="Top Pick — Golden Boot">
+              {data.mostPickedScorer
+                ? <ScorerInsight s={data.mostPickedScorer} />
+                : <p className="text-sm text-muted-foreground italic">—</p>
+              }
+            </InsightCard>
+          </div>
+        </div>
+      )}
+
+      {/* Member picks table (after lock only) */}
+      {data.isLocked && (
+        <div>
+          <div className="flex items-center px-3 py-1.5 mb-1">
+            <span className="text-2xs font-bold text-muted-foreground w-[100px] flex-shrink-0">Player</span>
+            <span className="text-2xs font-bold text-muted-foreground flex-1">Winner</span>
+            <span className="text-2xs font-bold text-muted-foreground w-[110px] flex-shrink-0">Golden Boot</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {data.picks.map(pick => (
+              <PickRow
+                key={pick.userId}
+                pick={pick}
+                isCurrentUser={pick.userId === currentUserId}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* No picks at all */}
+      {data.isLocked && data.picks.length === 0 && (
+        <div className="bg-card rounded-xl border border-border p-6 text-center">
+          <p className="text-sm text-muted-foreground">No members have made tournament picks yet.</p>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
 // ─── Main client component ────────────────────────────────────────────────────
 
 export function LeagueDetailClient({
   league,
   initialStandings,
   hasLiveMatches = false,
+  initialTournamentPicks = null,
 }: {
-  league:           League
-  initialStandings: LeagueStanding[]
-  hasLiveMatches?:  boolean
+  league:                  League
+  initialStandings:        LeagueStanding[]
+  hasLiveMatches?:         boolean
+  initialTournamentPicks?: LeagueTournamentPicksData | null
 }) {
   const { user } = useAuth()
 
+  const [activeTab,  setActiveTab]  = useState<'standings' | 'picks'>('standings')
   const [copyState,  setCopyState]  = useState<'idle' | 'copied'>('idle')
   const [showQR,     setShowQR]     = useState(false)
   const [modal,      setModal]      = useState<'delete' | 'leave' | null>(null)
@@ -411,12 +607,38 @@ export function LeagueDetailClient({
           </div>
         )}
 
-        {/* ── Standings ─────────────────────────────────────── */}
-        <div>
-          <p className="text-2xs font-bold tracking-[0.12em] uppercase text-muted-foreground mb-3">
-            Standings
-          </p>
-          {initialStandings.length === 0 ? (
+      </div>
+
+      {/* ── Tabs ─────────────────────────────────────────────── */}
+      <div className="px-4 pb-1">
+        <div className="relative flex bg-surface-elevated rounded-xl p-1">
+          <span
+            className="absolute top-1 bottom-1 rounded-[10px] bg-card shadow-sm border border-border/60 transition-transform duration-200 ease-out pointer-events-none"
+            style={{
+              width: 'calc((100% - 8px) / 2)',
+              transform: activeTab === 'picks' ? 'translateX(100%)' : 'translateX(0)',
+            }}
+          />
+          {(['standings', 'picks'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2',
+                'text-xs font-semibold rounded-[10px] transition-colors duration-150',
+                activeTab === tab ? 'text-foreground font-bold' : 'text-muted-foreground hover:text-foreground/70',
+              )}
+            >
+              {tab === 'standings' ? 'Standings' : 'Tournament Picks'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Tab content ──────────────────────────────────────── */}
+      <div className="px-4 pb-4 pt-3">
+        {activeTab === 'standings' ? (
+          initialStandings.length === 0 ? (
             <div className="bg-card rounded-xl border border-border p-6 text-center">
               <p className="text-sm text-muted-foreground">No standings yet — predictions needed.</p>
             </div>
@@ -434,9 +656,10 @@ export function LeagueDetailClient({
                 />
               ))}
             </div>
-          )}
-        </div>
-
+          )
+        ) : (
+          <TournamentPicksTab data={initialTournamentPicks} currentUserId={user?.sub} />
+        )}
       </div>
 
       {/* ── QR modal ─────────────────────────────────────────── */}

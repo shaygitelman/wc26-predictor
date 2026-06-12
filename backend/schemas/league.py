@@ -109,3 +109,35 @@ class LeaguePreview(BaseModel):
     memberCount:     int
     creatorUsername: str
     inviteCode:      str
+
+
+class LeagueMemberTournamentPickOut(BaseModel):
+    userId:          str
+    username:        str
+    avatarUrl:       Optional[str] = None
+    avatarId:        Optional[str] = None
+    winnerId:        Optional[str] = None
+    winnerName:      Optional[str] = None
+    winnerFlagUrl:   Optional[str] = None
+    topScorerId:     Optional[str] = None
+    scorerName:      Optional[str] = None
+    scorerPhotoUrl:  Optional[str] = None
+    scorerTeamFlag:  Optional[str] = None
+    scorerTeamCode:  Optional[str] = None
+
+
+class MostPickedOut(BaseModel):
+    id:          str
+    name:        str
+    count:       int
+    flagUrl:     Optional[str] = None
+    photoUrl:    Optional[str] = None
+    teamFlagUrl: Optional[str] = None
+    teamCode:    Optional[str] = None
+
+
+class LeagueTournamentPicksOut(BaseModel):
+    isLocked:         bool
+    picks:            list[LeagueMemberTournamentPickOut]
+    mostPickedWinner: Optional[MostPickedOut] = None
+    mostPickedScorer: Optional[MostPickedOut] = None

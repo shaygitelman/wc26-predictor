@@ -41,8 +41,6 @@ function applyFilter(matches: Match[], filter: FilterValue): Match[] {
   }
 }
 
-const _STATUS_ORDER: Record<string, number> = { live: 0, scheduled: 1, finished: 2 }
-
 function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: string; matches: Match[] }> {
   const map = new Map<string, Match[]>()
   for (const m of matches) {
@@ -51,17 +49,15 @@ function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: stri
     arr.push(m)
     map.set(key, arr)
   }
-  return Array.from(map.entries()).map(([key, ms]) => ({
-    dateKey:   key,
-    dateLabel: formatMatchDate(ms[0].scheduledAt),
-    // Live matches always float to the top of their day group
-    matches: [...ms].sort((a, b) => {
-      const sa = _STATUS_ORDER[a.status] ?? 1
-      const sb = _STATUS_ORDER[b.status] ?? 1
-      if (sa !== sb) return sa - sb
-      return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-    }),
-  }))
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, ms]) => ({
+      dateKey:   key,
+      dateLabel: formatMatchDate(ms[0].scheduledAt),
+      matches:   [...ms].sort(
+        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+      ),
+    }))
 }
 
 function getSmartDateLabel(dateKey: string, dateLabel: string): string {

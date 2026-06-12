@@ -1,6 +1,10 @@
+import asyncio
+import logging
 from collections import defaultdict
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+log = logging.getLogger(__name__)
 from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +17,7 @@ from models.prediction import Prediction
 from models.user import User
 from schemas.match import MatchOut, LeaguePredictionEntry, LeaguePredictionGroup, MatchLeaguePredictionsOut
 from services.squad_availability import get_squad_availability
+from services.card_tracker import get_card_tracking
 from services.match_stats import get_match_statistics
 from services.team_form import get_team_form, get_h2h
 
@@ -197,6 +202,64 @@ async def get_match_squad_away(match_id: str, db: AsyncSession = Depends(get_db)
             detail="Squad data not available for this match",
         )
     return availability.to_dict()
+
+
+async def _build_squad_news(match_id: str, side: str, db: AsyncSession) -> dict:
+    """
+    Merge card-tracking data (suspensions, at-risk, injury events) with
+    reported injury/suspension data from the API-Football injuries pipeline.
+    Always returns a dict (never 501).
+    """
+    # Run both pipelines concurrently
+    card_result, injury_result = await asyncio.gather(
+        get_card_tracking(match_id, side, db),   # type: ignore[arg-type]
+        get_squad_availability(match_id, side, db),
+        return_exceptions=True,
+    )
+
+    # Defensive: treat exceptions as None
+    if isinstance(card_result, Exception):
+        log.error("[SquadNews] match=%s side=%s — card_tracker threw: %s", match_id, side, card_result)
+        card_result = None
+    if isinstance(injury_result, Exception):
+        log.error("[SquadNews] match=%s side=%s — squad_availability threw: %s", match_id, side, injury_result)
+        injury_result = None
+
+    card_dict = card_result.to_dict() if card_result else {
+        "suspended": [], "atRisk": [], "injuryEvents": [],
+        "yellowThreshold": 2, "cardDataAvailable": False,
+    }
+
+    injury_dict = injury_result.to_dict() if injury_result else None
+    injury_available = injury_dict is not None
+
+    return {
+        "suspended":           card_dict["suspended"],
+        "atRisk":              card_dict["atRisk"],
+        "injured":             injury_dict["injured"]    if injury_available else [],
+        "doubtful":            injury_dict["doubtful"]   if injury_available else [],
+        "reportedSuspended":   injury_dict["suspended"]  if injury_available else [],
+        "injuryEvents":        card_dict["injuryEvents"],
+        "yellowThreshold":     card_dict["yellowThreshold"],
+        "cardDataAvailable":   card_dict["cardDataAvailable"],
+        "injuryDataAvailable": injury_available,
+    }
+
+
+@router.get("/{match_id}/squad-news/home")
+async def get_match_squad_news_home(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+    return await _build_squad_news(match_id, "home", db)
+
+
+@router.get("/{match_id}/squad-news/away")
+async def get_match_squad_news_away(match_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    match = await db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+    return await _build_squad_news(match_id, "away", db)
 
 
 @router.get("/{match_id}/stats")

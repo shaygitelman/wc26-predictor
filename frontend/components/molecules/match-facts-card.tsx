@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { BarChart3, ChevronDown, ChevronUp, Flame, Trophy, AlertTriangle, ShieldAlert, ShieldCheck, Activity } from 'lucide-react'
+import { BarChart3, ChevronDown, ChevronUp, Flame, Trophy, AlertTriangle, ShieldAlert, ShieldCheck, Activity, OctagonX, TriangleAlert, BandageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, PlayerStatus, TeamHistoricalStats, TeamFormEntry } from '@/types/match-facts'
+import type { MatchFacts, StatRow, TeamSquadStatus, MatchContext, ContextType, PlayerStatus, TeamHistoricalStats, TeamFormEntry, ComprehensiveTeamSquad } from '@/types/match-facts'
 
 // ─── Props ───────────────────────────────────────────────────
 
@@ -130,7 +130,7 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam, initialData }: Pro
               </span>
               {facts.squadConfidence === 'verified' ? (
                 <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-status-won/10 text-status-won border-status-won/20">
-                  Verified
+                  Live Data
                 </span>
               ) : (
                 <span className="text-[9px] font-bold tracking-[0.05em] uppercase px-1.5 py-[2px] rounded border bg-muted/20 text-muted-foreground/50 border-border/50">
@@ -146,9 +146,16 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam, initialData }: Pro
 
           {squadOpen && (
             <div className="px-4 pb-4">
-              {facts.squadConfidence !== 'verified' ? (
-                <SquadNoDataFallback />
-              ) : (
+              {facts.squadNews && facts.squadConfidence === 'verified' ? (
+                <ComprehensiveSquadNewsBlock
+                  home={facts.squadNews.home}
+                  away={facts.squadNews.away}
+                  homeCode={homeTeam.shortCode}
+                  awayCode={awayTeam.shortCode}
+                  homeName={homeTeam.name}
+                  awayName={awayTeam.name}
+                />
+              ) : facts.squadConfidence === 'verified' ? (
                 <div className="flex flex-col gap-4">
                   <TeamSquadBlock
                     code={homeTeam.shortCode}
@@ -163,6 +170,8 @@ export function MatchFactsCard({ matchId, homeTeam, awayTeam, initialData }: Pro
                     verified
                   />
                 </div>
+              ) : (
+                <SquadNoDataFallback />
               )}
             </div>
           )}
@@ -266,6 +275,228 @@ function SquadNoDataFallback() {
       <p className="text-[11px] text-muted-foreground/40 pl-1 leading-snug">
         Injury and suspension data appears here once verified by official sources.
       </p>
+    </div>
+  )
+}
+
+// ─── Comprehensive Squad News block ───────────────────────────
+
+function SquadSummaryPill({ count, label, colorClass }: { count: number; label: string; colorClass: string }) {
+  if (count === 0) return null
+  return (
+    <span className={cn('text-[10px] font-bold px-2 py-[3px] rounded-full border', colorClass)}>
+      {count} {label}
+    </span>
+  )
+}
+
+function ComprehensiveTeamBlock({
+  code,
+  name,
+  squad,
+}: {
+  code:  string
+  name:  string
+  squad: ComprehensiveTeamSquad
+}) {
+  const hasSuspensions  = squad.suspended.length > 0
+  const hasAtRisk       = squad.atRisk.length > 0
+  const hasInjured      = squad.injured.length > 0
+  const hasDoubtful     = squad.doubtful.length > 0
+  const hasReported     = squad.reportedSuspended.length > 0
+  const hasInjuryEvents = squad.injuryEvents.length > 0
+  const hasAnything     = hasSuspensions || hasAtRisk || hasInjured || hasDoubtful || hasReported || hasInjuryEvents
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[11px] font-black uppercase tracking-wider text-foreground">{code}</span>
+        <span className="text-[11px] text-muted-foreground/60">{name}</span>
+      </div>
+
+      {!hasAnything ? (
+        <p className="text-[12px] text-muted-foreground/55 italic pl-1">
+          No confirmed absences or suspensions
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2 pl-1">
+
+          {/* Suspended — card derived */}
+          {hasSuspensions && (
+            <div className="flex flex-col gap-1.5">
+              {squad.suspended.map((p, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <OctagonX className="mt-[2px] size-[11px] flex-shrink-0 text-red-400" strokeWidth={2.5} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-red-500/15 text-red-400">
+                        Suspended
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">{p.reason}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reported suspensions from injuries API */}
+          {hasReported && (
+            <div className="flex flex-col gap-1.5">
+              {squad.reportedSuspended.map((p, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <OctagonX className="mt-[2px] size-[11px] flex-shrink-0 text-amber-400" strokeWidth={2.5} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-amber-500/15 text-amber-400">
+                        Suspended
+                      </span>
+                    </div>
+                    {p.detail && <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">{p.detail}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* At risk */}
+          {hasAtRisk && (
+            <div className="flex flex-col gap-1.5">
+              {squad.atRisk.map((p, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <TriangleAlert className="mt-[2px] size-[11px] flex-shrink-0 text-yellow-400" strokeWidth={2.5} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-yellow-400/15 text-yellow-500">
+                        Suspension Risk
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">
+                      {p.yellowCards} yellow {p.yellowCards === 1 ? 'card' : 'cards'} · 1 more = ban
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reported injuries */}
+          {hasInjured && (
+            <div className="flex flex-col gap-1.5">
+              {squad.injured.map((p, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <BandageIcon className="mt-[2px] size-[11px] flex-shrink-0 text-red-400" strokeWidth={2.5} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-red-500/15 text-red-400">
+                        Injured
+                      </span>
+                    </div>
+                    {p.detail && <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">{p.detail}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Doubtful */}
+          {hasDoubtful && (
+            <div className="flex flex-col gap-1.5">
+              {squad.doubtful.map((p, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <TriangleAlert className="mt-[2px] size-[11px] flex-shrink-0 text-yellow-400" strokeWidth={2.5} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-yellow-400/15 text-yellow-500">
+                        Doubtful
+                      </span>
+                    </div>
+                    {p.detail && <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">{p.detail}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Recent injury events */}
+          {hasInjuryEvents && (
+            <div className="flex flex-col gap-1">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/50 mt-1 mb-0.5">
+                Injury Substitutions
+              </p>
+              {squad.injuryEvents.map((e, i) => (
+                <div key={i} className="flex items-center gap-2 pl-0.5">
+                  <span className="size-[5px] rounded-full bg-orange-400 flex-shrink-0 mt-px" />
+                  <span className="text-[12px] text-foreground/80">
+                    {e.playerName}
+                    <span className="text-muted-foreground/50 ml-1">{e.matchLabel}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ComprehensiveSquadNewsBlock({
+  home,
+  away,
+  homeCode,
+  awayCode,
+  homeName,
+  awayName,
+}: {
+  home:     ComprehensiveTeamSquad
+  away:     ComprehensiveTeamSquad
+  homeCode: string
+  awayCode: string
+  homeName: string
+  awayName: string
+}) {
+  // Summary pill counts
+  const totalSuspended = home.suspended.length + home.reportedSuspended.length +
+                          away.suspended.length + away.reportedSuspended.length
+  const totalAtRisk    = home.atRisk.length + away.atRisk.length
+  const totalInjured   = home.injured.length + away.injured.length
+
+  return (
+    <div className="flex flex-col gap-1">
+      {/* Summary bar */}
+      {(totalSuspended > 0 || totalAtRisk > 0 || totalInjured > 0) && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          <SquadSummaryPill count={totalSuspended} label="Suspended" colorClass="bg-red-500/10 text-red-400 border-red-500/20" />
+          <SquadSummaryPill count={totalAtRisk}    label="At Risk"   colorClass="bg-yellow-400/10 text-yellow-500 border-yellow-400/20" />
+          <SquadSummaryPill count={totalInjured}   label="Injured"   colorClass="bg-orange-400/10 text-orange-400 border-orange-400/20" />
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4">
+        <ComprehensiveTeamBlock code={homeCode} name={homeName} squad={home} />
+        <ComprehensiveTeamBlock code={awayCode} name={awayName} squad={away} />
+      </div>
+
+      {/* Data sources footer */}
+      <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-border/30">
+        <span className="text-[10px] text-muted-foreground/35">Sources:</span>
+        {(home.cardDataAvailable || away.cardDataAvailable) && (
+          <span className="text-[10px] text-muted-foreground/40">Match card events</span>
+        )}
+        {(home.injuryDataAvailable || away.injuryDataAvailable) && (
+          <>
+            <span className="text-[10px] text-muted-foreground/25">·</span>
+            <span className="text-[10px] text-muted-foreground/40">Official injury reports</span>
+          </>
+        )}
+      </div>
     </div>
   )
 }

@@ -348,6 +348,18 @@ class ApiFootballProvider(FootballDataProvider):
         await asyncio.sleep(0.2)
         return data.get("response", [])
 
+    # ── Fixture events (cards, goals, substitutions) ─────────────
+
+    async def fetch_fixture_events(self, fixture_id: str) -> list[dict]:
+        """Returns raw API-Football event entries for a fixture.
+
+        Each entry has: time, team, player, assist, type, detail, comments.
+        Available for live and finished matches only.
+        """
+        data = await self._get("/fixtures/events", {"fixture": fixture_id})
+        await asyncio.sleep(0.2)
+        return data.get("response", [])
+
     # ── Standings (group letters) ──────────────────────────────────
 
     async def fetch_standings(self, league_id: str, season: str) -> dict[str, str]:

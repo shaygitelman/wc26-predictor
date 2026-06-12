@@ -45,6 +45,48 @@ export interface TeamSquadStatus {
   doubtful:  PlayerStatus[]
 }
 
+// ─── Comprehensive Squad News (card events + injuries merged) ─────────────────
+
+export interface CardSuspendedEntry {
+  name:   string
+  reason: 'Red Card' | 'Yellow Card Accumulation'
+}
+
+export interface AtRiskEntry {
+  name:        string
+  yellowCards: number
+  threshold:   number
+}
+
+export interface InjuryEventEntry {
+  playerName:  string
+  matchLabel:  string   // e.g. "vs RSA (Jun 11)"
+}
+
+export interface SimplePlayerEntry {
+  name:    string
+  detail?: string
+}
+
+export interface ComprehensiveTeamSquad {
+  suspended:           CardSuspendedEntry[]    // card-derived (red + yellow accumulation)
+  atRisk:              AtRiskEntry[]           // 1 yellow from threshold
+  injured:             SimplePlayerEntry[]     // injuries API
+  doubtful:            SimplePlayerEntry[]     // injuries API
+  reportedSuspended:   SimplePlayerEntry[]     // injuries API-reported suspensions
+  injuryEvents:        InjuryEventEntry[]      // recent injury substitutions
+  yellowThreshold:     number
+  cardDataAvailable:   boolean
+  injuryDataAvailable: boolean
+}
+
+export interface ComprehensiveSquadNews {
+  home:       ComprehensiveTeamSquad
+  away:       ComprehensiveTeamSquad
+  confidence: SquadConfidence
+  fetchedAt:  string
+}
+
 export interface StatRow {
   label:          string
   home:           number
@@ -151,6 +193,10 @@ export interface MatchFacts {
     home: SquadFetchLog
     away: SquadFetchLog
   }
+
+  // Comprehensive squad news (card events + injuries merged).
+  // Present when the /squad-news endpoint is available.
+  squadNews?: ComprehensiveSquadNews
 
   stats:           StatRow[]
   statsSource:     StatsDataSource    // 'api-football' when real, 'none' when unavailable

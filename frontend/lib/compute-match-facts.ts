@@ -1,4 +1,4 @@
-import { fetchSquadNews }               from '@/lib/squad-news'
+import { fetchSquadNews, fetchComprehensiveSquadNews } from '@/lib/squad-news'
 import { realProvenance, noProvenance }  from '@/types/provenance'
 import type { Match, Team, Round }       from '@/types/match'
 import type {
@@ -6,6 +6,7 @@ import type {
   PlayerStatus, TeamSquadStatus,
   ApiMatchStats, StatsDataSource, StatsConfidence,
   TeamFormEntry, TeamHistoricalStats, HistoricalConfidence,
+  ComprehensiveSquadNews,
 } from '@/types/match-facts'
 
 const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -252,8 +253,9 @@ export async function computeMatchFacts(matchId: string, match: Match): Promise<
   }
 
   try {
-    const [squadResult, statsResult, historicalResult] = await Promise.all([
+    const [squadResult, comprehensiveSquad, statsResult, historicalResult] = await Promise.all([
       fetchSquadNews(matchId, match.homeTeam.shortCode, match.awayTeam.shortCode),
+      fetchComprehensiveSquadNews(matchId),
       fetchMatchStats(matchId),
       fetchHistoricalStats(matchId, match.homeTeam.shortCode, match.awayTeam.shortCode),
     ])
@@ -263,7 +265,7 @@ export async function computeMatchFacts(matchId: string, match: Match): Promise<
     const awaySquad  = scrubSquadTeam(squadResult.away, 'away', matchId)
 
     const statsVerified = statsResult.confidence   === 'verified'
-    const squadVerified = squadResult.confidence   === 'verified'
+    const squadVerified = squadResult.confidence   === 'verified' || comprehensiveSquad.confidence === 'verified'
     const histVerified  = historicalResult.confidence !== 'none'
     const now           = new Date().toISOString()
 
@@ -271,11 +273,12 @@ export async function computeMatchFacts(matchId: string, match: Match): Promise<
       matchId,
       generatedAt:          now,
       squad:                { home: homeSquad, away: awaySquad },
-      squadSource:          squadResult.dataSource,
-      squadConfidence:      squadResult.confidence,
+      squadSource:          squadResult.dataSource !== 'none' ? squadResult.dataSource : (comprehensiveSquad.confidence === 'verified' ? 'api-verified' : 'none'),
+      squadConfidence:      squadResult.confidence !== 'none' ? squadResult.confidence : comprehensiveSquad.confidence,
       squadFetchedAt:       squadResult.fetchedAt,
       squadFallbackUsed:    false,
       squadLogs:            squadResult.logs,
+      squadNews:            comprehensiveSquad,
       stats:                statsResult.rows,
       statsSource:          statsResult.source,
       statsConfidence:      statsResult.confidence,

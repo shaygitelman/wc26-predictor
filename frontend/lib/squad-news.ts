@@ -19,6 +19,8 @@ import type {
   SquadDataSource,
   SquadConfidence,
   SquadFetchLog,
+  ComprehensiveTeamSquad,
+  ComprehensiveSquadNews,
 } from '@/types/match-facts'
 
 const API_BASE = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -261,4 +263,86 @@ export async function fetchSquadNews(
   )
 
   return { home, away, dataSource, confidence, fetchedAt, logs: { home: homeResult.log, away: awayResult.log } }
+}
+
+// ─── Comprehensive squad news (card events + injuries merged) ──────────────────
+
+function isComprehensiveShape(data: unknown): data is ComprehensiveTeamSquad {
+  if (typeof data !== 'object' || data === null) return false
+  const d = data as Record<string, unknown>
+  return (
+    Array.isArray(d.suspended) &&
+    Array.isArray(d.atRisk) &&
+    Array.isArray(d.injured) &&
+    Array.isArray(d.doubtful) &&
+    Array.isArray(d.injuryEvents) &&
+    typeof d.yellowThreshold === 'number'
+  )
+}
+
+async function fetchComprehensiveTeamSquad(
+  endpoint: string,
+  side:     'home' | 'away',
+  matchId:  string,
+): Promise<ComprehensiveTeamSquad | null> {
+  try {
+    const res = await fetch(endpoint, { cache: 'no-store' })
+    if (!res.ok) {
+      if (res.status !== 404 && res.status !== 501) {
+        console.warn(`[ComprehensiveSquad] match=${matchId} side=${side} — HTTP ${res.status}`)
+      }
+      return null
+    }
+    const raw = await res.json()
+    if (!isComprehensiveShape(raw)) {
+      console.warn(`[ComprehensiveSquad] match=${matchId} side=${side} — unexpected shape`)
+      return null
+    }
+    return raw as ComprehensiveTeamSquad
+  } catch (err) {
+    console.error(
+      `[ComprehensiveSquad] match=${matchId} side=${side} — fetch error: ` +
+      (err instanceof Error ? err.message : String(err)),
+    )
+    return null
+  }
+}
+
+const EMPTY_COMPREHENSIVE: ComprehensiveTeamSquad = {
+  suspended: [], atRisk: [], injured: [], doubtful: [],
+  reportedSuspended: [], injuryEvents: [],
+  yellowThreshold: 2, cardDataAvailable: false, injuryDataAvailable: false,
+}
+
+export async function fetchComprehensiveSquadNews(
+  matchId: string,
+): Promise<ComprehensiveSquadNews> {
+  const base         = `${API_BASE}/matches/${matchId}`
+  const homeEndpoint = `${base}/squad-news/home`
+  const awayEndpoint = `${base}/squad-news/away`
+  const fetchedAt    = new Date().toISOString()
+
+  const [homeData, awayData] = await Promise.all([
+    fetchComprehensiveTeamSquad(homeEndpoint, 'home', matchId),
+    fetchComprehensiveTeamSquad(awayEndpoint, 'away', matchId),
+  ])
+
+  const home = homeData ?? EMPTY_COMPREHENSIVE
+  const away = awayData ?? EMPTY_COMPREHENSIVE
+
+  const hasData =
+    home.cardDataAvailable || away.cardDataAvailable ||
+    home.injuryDataAvailable || away.injuryDataAvailable
+
+  const confidence: SquadConfidence = hasData ? 'verified' : 'none'
+
+  console.log(
+    `[ComprehensiveSquad] match=${matchId} — ` +
+    `home(cards=${home.cardDataAvailable} injuries=${home.injuryDataAvailable} ` +
+    `suspended=${home.suspended.length} atRisk=${home.atRisk.length}) ` +
+    `away(cards=${away.cardDataAvailable} injuries=${away.injuryDataAvailable} ` +
+    `suspended=${away.suspended.length} atRisk=${away.atRisk.length})`,
+  )
+
+  return { home, away, confidence, fetchedAt }
 }

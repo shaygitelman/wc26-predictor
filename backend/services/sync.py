@@ -37,6 +37,10 @@ _ROUND_MAP: dict[int, str] = {
     9: "final",
 }
 
+# Throttle: only run knockout slot reconciliation at most once per hour from sync_live.
+# The bootstrap and admin/cron endpoints bypass this and always run to completion.
+_last_ko_reconcile_at: Optional[datetime] = None
+
 
 @dataclass
 class SyncResult:
@@ -673,6 +677,220 @@ class SyncService:
             _log_entry, count, "\n".join(errors) if errors else None, db
         )
 
+    # ── reconcile_knockout_slots ──────────────────────────────────
+
+    async def reconcile_knockout_slots(self, db: AsyncSession) -> SyncResult:
+        """
+        After the group stage ends, API-Football publishes knockout fixtures with
+        real team codes.  This method matches each real API fixture to the
+        corresponding DB placeholder (external_id='manual-wc2026-{round}-{slot}')
+        by sorting both sides deterministically within each round and zipping
+        positionally:
+          - API fixtures: sorted by (scheduled_at ASC, numeric fixture ID ASC)
+          - DB placeholders: sorted by slot number extracted from external_id suffix
+
+        Updates each placeholder in-place, preserving its UUID (and therefore all
+        user predictions attached to it).  Fields updated: external_id, team codes,
+        team names, scheduled_at, status, scores, venue, city.
+
+        Also removes orphan rows (numeric external_id, same round, no predictions)
+        that may have been created by a prior sync_fixtures call.
+
+        Date-gated: no-ops before 2026-07-01 UTC (bracket cannot be set earlier).
+        Idempotent: if no manual-wc2026-* KO rows remain, returns immediately.
+        """
+        from core.scorer import score_match as do_score
+        from datetime import timedelta
+
+        _now = datetime.now(timezone.utc)
+
+        # Date gate — group stage cannot end before July 1
+        _ko_gate = datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
+        if _now < _ko_gate:
+            log.debug("[Sync/reconcile_knockout] skipped — before group-stage-end gate")
+            return SyncResult(status="skipped", entity_type="reconcile_knockout", records_affected=0)
+
+        # Fast path — nothing to reconcile
+        unreconciled_count = await db.scalar(
+            select(func.count(Match.id)).where(
+                Match.external_id.like("manual-wc2026-%"),
+                Match.round != "group",
+            )
+        )
+        if not unreconciled_count:
+            log.debug("[Sync/reconcile_knockout] no manual KO placeholders — skipped")
+            return SyncResult(status="skipped", entity_type="reconcile_knockout", records_affected=0)
+
+        _log_entry = await self._start_log("reconcile_knockout", db)
+
+        try:
+            fixtures = await self.provider.fetch_fixtures(self.league_id, self.season)
+        except Exception as exc:
+            return await self._fail_log(_log_entry, str(exc), db)
+
+        count  = 0
+        errors: list[str] = []
+        to_score: list[tuple[str, int, int]] = []
+
+        # Build reverse map: round_code → set of int_round values
+        _code_to_int_rounds: dict[str, list[int]] = {}
+        for ir, rc in _ROUND_MAP.items():
+            _code_to_int_rounds.setdefault(rc, []).append(ir)
+
+        def _slot_num(ext_id: str) -> int:
+            """Extract slot integer from 'manual-wc2026-r32-7' → 7."""
+            try:
+                return int(ext_id.rsplit("-", 1)[-1])
+            except (ValueError, IndexError):
+                return 999
+
+        for round_code in ("r32", "r16", "qf", "sf", "3rd", "final"):
+            valid_int_rounds = _code_to_int_rounds.get(round_code, [])
+
+            # API fixtures for this round with known (non-TBD) teams
+            api_fixtures = sorted(
+                [
+                    fx for fx in fixtures
+                    if fx.int_round in valid_int_rounds
+                    and fx.home_team_code
+                    and fx.away_team_code
+                    and fx.home_team_code.upper() not in ("TBD", "?", "")
+                    and fx.away_team_code.upper() not in ("TBD", "?", "")
+                ],
+                key=lambda x: (
+                    x.scheduled_at,
+                    int(x.external_id) if x.external_id.isdigit() else 0,
+                ),
+            )
+
+            # DB placeholders for this round still needing reconciliation
+            db_placeholders = sorted(
+                (await db.execute(
+                    select(Match).where(
+                        Match.round == round_code,
+                        Match.external_id.like("manual-wc2026-%"),
+                    )
+                )).scalars().all(),
+                key=lambda m: _slot_num(m.external_id or ""),
+            )
+
+            if not api_fixtures or not db_placeholders:
+                log.info(
+                    "[Sync/reconcile_knockout] round=%s skipping: api=%d db_manual=%d",
+                    round_code, len(api_fixtures), len(db_placeholders),
+                )
+                continue
+
+            if len(api_fixtures) != len(db_placeholders):
+                msg = (
+                    f"round={round_code} count mismatch: "
+                    f"api={len(api_fixtures)} db_manual={len(db_placeholders)} — skipping"
+                )
+                log.warning("[Sync/reconcile_knockout] %s", msg)
+                errors.append(msg)
+                continue
+
+            # Remove orphan rows (numeric external_id, same round, zero predictions)
+            # These can accumulate when sync_fixtures runs before reconcile.
+            from models.prediction import Prediction
+            orphans = [
+                m for m in (await db.execute(
+                    select(Match).where(Match.round == round_code)
+                )).scalars().all()
+                if m.external_id and m.external_id.isdigit()
+            ]
+            for orphan in orphans:
+                pred_count = await db.scalar(
+                    select(func.count()).select_from(Prediction).where(
+                        Prediction.match_id == orphan.id
+                    )
+                )
+                if pred_count:
+                    errors.append(
+                        f"round={round_code} orphan ext={orphan.external_id} "
+                        f"has {pred_count} predictions — cannot remove"
+                    )
+                else:
+                    await db.delete(orphan)
+                    log.info(
+                        "[Sync/reconcile_knockout] removed orphan match=%s ext=%s round=%s",
+                        orphan.id, orphan.external_id, round_code,
+                    )
+            await db.flush()  # commit orphan deletes before updating with same ext_ids
+
+            # Positional matching within round
+            for fx, match in zip(api_fixtures, db_placeholders):
+                try:
+                    prev_status = match.status
+                    needs_score = (
+                        fx.status == "finished"
+                        and prev_status != "finished"
+                        and fx.home_score is not None
+                        and fx.away_score is not None
+                    )
+
+                    values: dict = {
+                        "external_id":    fx.external_id,
+                        "home_team_code": fx.home_team_code,
+                        "away_team_code": fx.away_team_code,
+                        "home_team_name": fx.home_team_name,
+                        "away_team_name": fx.away_team_name,
+                        "scheduled_at":   fx.scheduled_at,
+                        "minute":         fx.minute,
+                        "updated_at":     _now,
+                    }
+                    if fx.venue:
+                        values["venue"] = fx.venue
+                    if fx.city:
+                        values["city"] = fx.city
+
+                    if needs_score:
+                        # Leave status/scores unset; score_match will finalise them
+                        values["status"] = prev_status
+                    else:
+                        values["status"]     = fx.status
+                        values["home_score"] = fx.home_score
+                        values["away_score"] = fx.away_score
+
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == match.id)
+                        .values(**values)
+                        .execution_options(synchronize_session=False)
+                    )
+                    count += 1
+                    log.info(
+                        "[Sync/reconcile_knockout] %s vs %s → ext=%s round=%s slot=%d",
+                        fx.home_team_code, fx.away_team_code,
+                        fx.external_id, round_code, _slot_num(match.external_id or ""),
+                    )
+
+                    if needs_score:
+                        to_score.append((match.id, fx.home_score, fx.away_score))
+
+                except Exception as exc:
+                    errors.append(f"{round_code} {fx.external_id}: {exc}")
+
+        await db.commit()
+
+        for match_id, home_score, away_score in to_score:
+            try:
+                log.info(
+                    "[Sync/reconcile_knockout] AUTO-SCORE match=%s %d-%d",
+                    match_id, home_score, away_score,
+                )
+                await do_score(match_id, home_score, away_score, db)
+            except Exception as score_exc:
+                log.error(
+                    "[Sync/reconcile_knockout] SCORE-FAIL match=%s: %s",
+                    match_id, score_exc,
+                )
+                errors.append(f"score {match_id}: {score_exc}")
+
+        return await self._finish_log(
+            _log_entry, count, "\n".join(errors) if errors else None, db
+        )
+
     # ── sync_live ─────────────────────────────────────────────────
 
     async def sync_live(self, db: AsyncSession) -> SyncResult:
@@ -900,6 +1118,43 @@ class SyncService:
                         errors.append(f"stale-sched score {stale.external_id}: {score_exc}")
             except Exception as exc:
                 errors.append(f"stale-sched {stale.external_id}: {exc}")
+
+        # ── Phase 4: knockout slot reconciliation ─────────────────────
+        # Once the group stage ends, API-Football publishes knockout fixtures
+        # with real team codes.  Auto-reconcile placeholder rows so live sync
+        # can find them by numeric external_id.
+        # Date-gated (July 1+), throttled to once per hour, and fast-exits
+        # if no manual KO placeholders remain.
+        global _last_ko_reconcile_at
+        _ko_due = (
+            _now >= datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
+            and (
+                _last_ko_reconcile_at is None
+                or _now >= _last_ko_reconcile_at + timedelta(hours=1)
+            )
+        )
+        if _ko_due:
+            ko_unreconciled = await db.scalar(
+                select(Match.id).where(
+                    Match.external_id.like("manual-wc2026-%"),
+                    Match.round != "group",
+                ).limit(1)
+            )
+            if ko_unreconciled:
+                _last_ko_reconcile_at = _now
+                try:
+                    ko_result = await self.reconcile_knockout_slots(db)
+                    if ko_result.records_affected > 0:
+                        log.info(
+                            "[Sync/live] Phase4 knockout reconcile: %d slots mapped",
+                            ko_result.records_affected,
+                        )
+                        count += ko_result.records_affected
+                    if ko_result.errors:
+                        errors.extend(ko_result.errors)
+                except Exception as ko_exc:
+                    log.error("[Sync/live] Phase4 knockout reconcile FAILED: %s", ko_exc)
+                    errors.append(f"ko-reconcile: {ko_exc}")
 
         await db.commit()
         return await self._finish_log(_log_entry, count, "\n".join(errors) if errors else None, db)

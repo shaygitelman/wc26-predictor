@@ -31,3 +31,15 @@ def _verify_cron(x_cron_secret: str = Header(...)) -> None:
 async def cron_sync_live(db: AsyncSession = Depends(get_db)) -> SyncResponse:
     result = await _make_service().sync_live(db)
     return SyncResponse(**vars(result))
+
+
+@router.post(
+    "/reconcile-knockouts",
+    response_model=SyncResponse,
+    dependencies=[Depends(_verify_cron)],
+    summary="Cron-triggered knockout slot reconciliation. Protected by X-Cron-Secret header.",
+    include_in_schema=False,
+)
+async def cron_reconcile_knockouts(db: AsyncSession = Depends(get_db)) -> SyncResponse:
+    result = await _make_service().reconcile_knockout_slots(db)
+    return SyncResponse(**vars(result))

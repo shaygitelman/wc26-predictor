@@ -532,6 +532,55 @@ async def _bootstrap_reconcile_fixtures() -> None:
         log.error("BOOTSTRAP: reconcile FAILED — %s", exc, exc_info=True)
 
 
+async def _bootstrap_reconcile_knockout_slots() -> None:
+    """Auto-reconcile knockout placeholder rows to real API-Football fixture IDs.
+
+    After the group stage ends (~July 2, 2026), API-Football publishes knockout
+    fixtures with real team codes.  This matches each placeholder row
+    (external_id='manual-wc2026-{round}-{slot}') to the corresponding API
+    fixture by positional ordering within each round, then updates external_id
+    and team codes in-place (preserving UUIDs and user predictions).
+
+    No-ops before 2026-07-01 and once all KO slots are reconciled.
+    Skipped if APIFOOTBALL_KEY is absent.
+    """
+    if not settings.apifootball_key:
+        log.info("BOOTSTRAP: APIFOOTBALL_KEY not set — skipping knockout reconciliation")
+        return
+
+    from core.database import SessionLocal
+    from providers.apifootball import ApiFootballProvider
+    from services.sync import SyncService
+
+    log.info("BOOTSTRAP: checking knockout slot reconciliation")
+    try:
+        async with SessionLocal() as db:
+            count = (await db.execute(
+                text(
+                    "SELECT COUNT(*) FROM matches "
+                    "WHERE round != 'group' AND external_id LIKE 'manual-wc2026-%'"
+                )
+            )).scalar() or 0
+
+            if count == 0:
+                log.info("BOOTSTRAP: all KO slots already reconciled, skipping")
+                return
+
+        svc = SyncService(
+            provider=ApiFootballProvider(settings.apifootball_key),
+            league_id="1",
+            season="2026",
+        )
+        async with SessionLocal() as db:
+            result = await svc.reconcile_knockout_slots(db)
+            log.info(
+                "BOOTSTRAP: KO slot reconcile done — records=%d status=%s errors=%s",
+                result.records_affected, result.status, result.errors or "none",
+            )
+    except Exception as exc:
+        log.error("BOOTSTRAP: KO slot reconcile FAILED — %s", exc, exc_info=True)
+
+
 async def _bootstrap_knockout_matches() -> None:
     """Seed WC 2026 knockout placeholder matches if none exist yet.
 
@@ -639,9 +688,10 @@ async def lifespan(app: FastAPI):
     #   5. critical players — needs: teams with external_ids (API call if key set)
     await _bootstrap_default_league()       # world league + user memberships
     await _bootstrap_teams()               # 48 WC2026 teams from config
-    await _bootstrap_group_fixtures()      # 72 group fixtures (skips if no API key)
-    await _bootstrap_reconcile_fixtures()  # map manual IDs → real API IDs + score finished
-    await _bootstrap_knockout_matches()    # 32 knockout placeholder matches
+    await _bootstrap_group_fixtures()               # 72 group fixtures (skips if no API key)
+    await _bootstrap_reconcile_fixtures()           # map manual IDs → real API IDs + score finished
+    await _bootstrap_knockout_matches()             # 32 knockout placeholder matches
+    await _bootstrap_reconcile_knockout_slots()     # map KO placeholders → real IDs post-group-stage
     await _seed_manual_players()         # all 14 Golden Boot favorites (no API key needed)
     await _verify_golden_boot_players()  # log verification: confirms each is selectable
     await _bootstrap_critical_players()  # sync full squads for Golden Boot teams (needs API key)

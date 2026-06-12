@@ -210,6 +210,24 @@ async def reconcile_fixtures(db: AsyncSession = Depends(get_db)) -> SyncResponse
 
 
 @router.post(
+    "/sync/reconcile-knockouts",
+    response_model=SyncResponse,
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Reconcile WC2026 knockout placeholder rows to real API-Football fixture IDs. "
+        "After the group stage, API-Football publishes knockout fixtures with real teams. "
+        "This maps each placeholder (manual-wc2026-*) to the corresponding API fixture "
+        "by positional ordering within each round. Updates external_id and team codes "
+        "in-place — preserves all match UUIDs and user predictions. "
+        "Date-gated (no-ops before 2026-07-01). Idempotent."
+    ),
+)
+async def reconcile_knockout_slots(db: AsyncSession = Depends(get_db)) -> SyncResponse:
+    result = await _make_service().reconcile_knockout_slots(db)
+    return SyncResponse(**vars(result))
+
+
+@router.post(
     "/sync/full",
     response_model=SyncAllResponse,
     dependencies=[Depends(_verify_admin)],

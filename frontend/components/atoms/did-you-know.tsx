@@ -36,21 +36,23 @@ export function DidYouKnow({ nextMatches }: Props) {
         <div className="h-0.5 bg-gold/60" />
         <div className="bg-card px-4 pt-2.5 pb-4">
 
-          {/* ⚽ label */}
-          <p className="text-[9px] font-black tracking-[0.14em] uppercase text-gold/80 mb-2">
-            ⚽ Next Match
-          </p>
+          {/* ⚽ label + kickoff time */}
+          <div className="flex items-baseline justify-between mb-2">
+            <span className="text-[9px] font-black tracking-[0.14em] uppercase text-gold/80">
+              ⚽ Next Match
+            </span>
+            <span className="text-[13px] font-semibold text-muted-foreground/60 whitespace-nowrap">
+              {kickoff}
+            </span>
+          </div>
 
-          {/* Teams — 3-col grid keeps both names from clipping */}
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-x-2 mb-2">
+          {/* Teams — VS alone in center so the row height stays anchored to the flag */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-x-3 mb-2">
             <div className="flex items-center gap-2">
               <TeamFlag team={m.homeTeam} size="md" />
               <span className="text-[15px] font-bold text-foreground">{m.homeTeam.name}</span>
             </div>
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] font-black text-muted-foreground/50 uppercase">vs</span>
-              <span className="text-[9px] font-medium text-muted-foreground/40 whitespace-nowrap">{kickoff}</span>
-            </div>
+            <span className="text-[18px] font-black text-foreground/30 uppercase leading-none">vs</span>
             <div className="flex items-center gap-2 justify-end">
               <span className="text-[15px] font-bold text-foreground text-right">{m.awayTeam.name}</span>
               <TeamFlag team={m.awayTeam} size="md" />

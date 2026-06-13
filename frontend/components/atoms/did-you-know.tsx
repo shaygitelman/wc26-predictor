@@ -8,7 +8,7 @@ interface Props {
 }
 
 function kickoffLabel(scheduledAt: string) {
-  const d = new Date(scheduledAt)
+  const d    = new Date(scheduledAt)
   const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
   const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC' })
   return `${date} · ${time}`
@@ -32,40 +32,41 @@ export function DidYouKnow({ nextMatches }: Props) {
     const m    = nextMatches[0]
     const fact = getFact(m)
     return (
-      <div className="overflow-hidden rounded-2xl border border-gold/20 shadow-card">
-        <div className="h-0.5 bg-gold/50" />
-        <div className="bg-card px-4 pt-2 pb-2.5">
+      <div className="overflow-hidden rounded-2xl border border-gold/40 shadow-card">
+        <div className="h-0.5 bg-gold/60" />
+        <div className="bg-card px-4 pt-2.5 pb-3">
 
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[9px] font-black tracking-[0.14em] uppercase text-muted-foreground/70">
-              ⚽ Next Match
-            </span>
-            <span className="text-[9px] font-medium text-muted-foreground/50">{kickoff}</span>
-          </div>
+          {/* ⚽ label */}
+          <p className="text-[9px] font-black tracking-[0.14em] uppercase text-gold/80 mb-2">
+            ⚽ Next Match
+          </p>
 
-          <div className="flex items-center mb-2">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <TeamFlag team={m.homeTeam} size="sm" />
-              <span className="text-[12px] font-semibold text-foreground leading-tight truncate">
-                {m.homeTeam.name}
-              </span>
+          {/* Teams — 3-col grid keeps both names from clipping */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-x-2 mb-2">
+            <div className="flex items-center gap-2">
+              <TeamFlag team={m.homeTeam} size="md" />
+              <span className="text-[13px] font-bold text-foreground">{m.homeTeam.name}</span>
             </div>
-            <span className="text-[9px] font-bold text-muted-foreground/40 px-2 shrink-0">vs</span>
-            <div className="flex items-center gap-1.5 flex-1 min-w-0 justify-end">
-              <span className="text-[12px] font-semibold text-foreground leading-tight truncate text-right">
-                {m.awayTeam.name}
-              </span>
-              <TeamFlag team={m.awayTeam} size="sm" />
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] font-black text-muted-foreground/50 uppercase">vs</span>
+              <span className="text-[9px] font-medium text-muted-foreground/40 whitespace-nowrap">{kickoff}</span>
+            </div>
+            <div className="flex items-center gap-2 justify-end">
+              <span className="text-[13px] font-bold text-foreground text-right">{m.awayTeam.name}</span>
+              <TeamFlag team={m.awayTeam} size="md" />
             </div>
           </div>
 
+          {/* Divider */}
           <div className="border-t border-border/40 mb-2" />
 
-          <div className="flex items-start gap-1.5">
-            <Lightbulb className="size-3 text-gold shrink-0 mt-[1px]" />
-            <p className="text-[11px] leading-[1.4] text-muted-foreground">
-              <span className="font-semibold text-foreground/75">Did you know?</span>{' '}{fact}
-            </p>
+          {/* Fact */}
+          <div className="flex items-start gap-2">
+            <Lightbulb className="size-3.5 text-gold shrink-0 mt-[1px]" />
+            <div>
+              <p className="text-[11px] font-bold text-gold leading-tight mb-0.5">Did you know?</p>
+              <p className="text-[11px] leading-[1.4] text-muted-foreground">{fact}</p>
+            </div>
           </div>
 
         </div>
@@ -75,12 +76,12 @@ export function DidYouKnow({ nextMatches }: Props) {
 
   // ── Multiple matches at same kickoff ──────────────────────────────────────
   return (
-    <div className="overflow-hidden rounded-2xl border border-gold/20 shadow-card">
-      <div className="h-0.5 bg-gold/50" />
-      <div className="bg-card px-4 pt-2 pb-2.5">
+    <div className="overflow-hidden rounded-2xl border border-gold/40 shadow-card">
+      <div className="h-0.5 bg-gold/60" />
+      <div className="bg-card px-4 pt-2.5 pb-3">
 
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[9px] font-black tracking-[0.14em] uppercase text-muted-foreground/70">
+          <span className="text-[9px] font-black tracking-[0.14em] uppercase text-gold/80">
             ⚽ Next Matches
           </span>
           <span className="text-[9px] font-medium text-muted-foreground/50">{kickoff}</span>

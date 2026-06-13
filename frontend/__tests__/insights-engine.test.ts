@@ -1,13 +1,13 @@
 /**
- * No-hallucination guarantee tests for the insights engine.
+ * Integrity tests for the new 4-section insights engine.
  *
  * Verifies:
- *  1. No form data → edge.team is 'none', never 'draw' (no synthetic assessment)
- *  2. No form data + knockout → personality is NOT 'tactical-battle' (no label without data)
- *  3. TBD teams → insufficientData=true, edge.team='none'
- *  4. Real form data → edge.team is 'home'|'away'|'draw' based on actual points
- *  5. Tactical insights only fire when specific numeric thresholds are met
- *  6. Zero form data → zero tactical insights (no fabricated observations)
+ *  1. TBD teams → insufficientData=true, empty sections
+ *  2. No form data → valid fallback output (no fabricated numbers)
+ *  3. Real form data → keyEdge.side reflects stronger team
+ *  4. Deciding factors are always present (2–3 items)
+ *  5. Story is always a non-empty string
+ *  6. Prediction scores are non-negative integers
  *  7. DataProvenance helpers produce correct shapes
  */
 
@@ -71,109 +71,76 @@ const baseFacts = (home: TeamFacts, away: TeamFacts, isKnockout = false): Insigh
   dataConfidence: home.results.length > 0 && away.results.length > 0 ? 'medium' : 'insufficient',
 })
 
-// ─── Tests: edge.team='none' when no data ────────────────────────
-
-describe('No-data edge fallback', () => {
-  it('returns edge.team="none" when both teams have no form data', () => {
-    const facts = baseFacts(emptyTeam('Brazil', 'BRA'), emptyTeam('Argentina', 'ARG'))
-    const result = runInsightsEngine(facts)
-    expect(result.edge.team).toBe('none')
-  })
-
-  it('never returns edge.team="draw" for a no-data match (would be fabricated)', () => {
-    const facts = baseFacts(emptyTeam('France', 'FRA'), emptyTeam('Germany', 'GER'))
-    const result = runInsightsEngine(facts)
-    expect(result.edge.team).not.toBe('draw')
-  })
-
-  it('returns confidence="low" when no form data', () => {
-    const facts = baseFacts(emptyTeam('Spain', 'ESP'), emptyTeam('Portugal', 'POR'))
-    const result = runInsightsEngine(facts)
-    expect(result.confidence).toBe('low')
-  })
-})
-
-// ─── Tests: personality not 'tactical-battle' without data ───────
-
-describe('Personality without data', () => {
-  it('does NOT label knockout match as tactical-battle when no form data exists', () => {
-    const facts = baseFacts(emptyTeam('USA', 'USA'), emptyTeam('Mexico', 'MEX'), true)
-    const result = runInsightsEngine(facts)
-    expect(result.personality).not.toBe('tactical-battle')
-  })
-
-  it('returns tactical-battle only when knockout AND real form data exists', () => {
-    const home  = teamWithForm('Brazil', 'BRA', [
-      { r: 'W', gf: 2, ga: 0 }, { r: 'W', gf: 1, ga: 0 }, { r: 'D', gf: 1, ga: 1 },
-      { r: 'W', gf: 3, ga: 1 }, { r: 'W', gf: 2, ga: 0 },
-    ])
-    const away  = teamWithForm('Argentina', 'ARG', [
-      { r: 'W', gf: 1, ga: 0 }, { r: 'D', gf: 0, ga: 0 }, { r: 'W', gf: 2, ga: 1 },
-      { r: 'L', gf: 0, ga: 1 }, { r: 'W', gf: 1, ga: 0 },
-    ])
-    const facts = { ...baseFacts(home, away, true), dataConfidence: 'medium' as const }
-    const result = runInsightsEngine(facts)
-    expect(result.personality).toBe('tactical-battle')
-  })
-})
-
 // ─── Tests: TBD teams ────────────────────────────────────────────
 
 describe('TBD teams', () => {
   it('returns insufficientData=true for TBD short codes', () => {
-    const home  = { ...emptyTeam('TBD', 'TBD') }
-    const away  = emptyTeam('Argentina', 'ARG')
-    const facts = baseFacts(home, away)
+    const facts = baseFacts({ ...emptyTeam('TBD', 'TBD') }, emptyTeam('Argentina', 'ARG'))
     const result = runInsightsEngine(facts)
     expect(result.insufficientData).toBe(true)
   })
 
-  it('returns edge.team="none" for TBD matches', () => {
-    const home  = { ...emptyTeam('Winner Group A', 'TBD') }
-    const away  = emptyTeam('Runner-up Group B', 'TBA')
-    const facts = baseFacts(home, away)
+  it('returns insufficientData=true for bracket-label team names', () => {
+    const facts = baseFacts(
+      { ...emptyTeam('Winner Group A', 'TBD') },
+      { ...emptyTeam('Runner-up Group B', 'TBA') },
+    )
     const result = runInsightsEngine(facts)
-    expect(result.edge.team).toBe('none')
+    expect(result.insufficientData).toBe(true)
   })
 
-  it('returns empty tactical array for TBD matches', () => {
-    const home  = { ...emptyTeam('TBD', 'TBD') }
-    const away  = emptyTeam('Germany', 'GER')
-    const facts = baseFacts(home, away)
+  it('returns empty story and factors for TBD matches', () => {
+    const facts = baseFacts({ ...emptyTeam('TBD', 'TBD') }, emptyTeam('Germany', 'GER'))
     const result = runInsightsEngine(facts)
-    expect(result.tactical).toHaveLength(0)
+    expect(result.story).toBe('')
+    expect(result.decidingFactors).toHaveLength(0)
   })
 })
 
-// ─── Tests: zero tactical insights without data ──────────────────
+// ─── Tests: valid structure when no form data ─────────────────────
 
-describe('No fabricated tactical insights', () => {
-  it('produces zero tactical insights when both teams have no form data', () => {
+describe('Fallback structure without form data', () => {
+  it('always produces a non-empty story', () => {
+    const facts = baseFacts(emptyTeam('Brazil', 'BRA'), emptyTeam('Argentina', 'ARG'))
+    const result = runInsightsEngine(facts)
+    expect(result.story.length).toBeGreaterThan(20)
+  })
+
+  it('always produces 2–3 deciding factors', () => {
+    const facts = baseFacts(emptyTeam('France', 'FRA'), emptyTeam('Germany', 'GER'))
+    const result = runInsightsEngine(facts)
+    expect(result.decidingFactors.length).toBeGreaterThanOrEqual(2)
+    expect(result.decidingFactors.length).toBeLessThanOrEqual(3)
+  })
+
+  it('always produces a keyEdge with valid side', () => {
+    const facts = baseFacts(emptyTeam('Spain', 'ESP'), emptyTeam('Portugal', 'POR'))
+    const result = runInsightsEngine(facts)
+    expect(['home', 'away']).toContain(result.keyEdge.side)
+    expect(result.keyEdge.teamName.length).toBeGreaterThan(0)
+    expect(result.keyEdge.label.length).toBeGreaterThan(0)
+  })
+
+  it('always produces a prediction with non-negative integer scores', () => {
     const facts = baseFacts(emptyTeam('Italy', 'ITA'), emptyTeam('England', 'ENG'))
     const result = runInsightsEngine(facts)
-    expect(result.tactical).toHaveLength(0)
+    expect(result.prediction.homeScore).toBeGreaterThanOrEqual(0)
+    expect(result.prediction.awayScore).toBeGreaterThanOrEqual(0)
+    expect(Number.isInteger(result.prediction.homeScore)).toBe(true)
+    expect(Number.isInteger(result.prediction.awayScore)).toBe(true)
   })
 
-  it('produces zero tactical insights when dataConfidence=insufficient', () => {
-    const home  = emptyTeam('Japan', 'JPN')
-    const away  = emptyTeam('Morocco', 'MAR')
-    const facts: InsightsFacts = {
-      matchId:        'test-match-2',
-      home,
-      away,
-      h2h:            null,
-      isKnockout:     false,
-      dataConfidence: 'insufficient',
-    }
+  it('returns low confidence when no form data', () => {
+    const facts = baseFacts(emptyTeam('Japan', 'JPN'), emptyTeam('Morocco', 'MAR'))
     const result = runInsightsEngine(facts)
-    expect(result.tactical).toHaveLength(0)
+    expect(result.prediction.confidence).toBe('low')
   })
 })
 
-// ─── Tests: real edge from real data ─────────────────────────────
+// ─── Tests: keyEdge reflects real form data ───────────────────────
 
-describe('Real edge from real form data', () => {
-  it('gives home edge when home team has significantly more points', () => {
+describe('KeyEdge from real form data', () => {
+  it('sets keyEdge.side="home" when home team has clear form advantage', () => {
     const home  = teamWithForm('Brazil', 'BRA', [
       { r: 'W', gf: 2, ga: 0 }, { r: 'W', gf: 2, ga: 0 }, { r: 'W', gf: 3, ga: 1 },
       { r: 'W', gf: 1, ga: 0 }, { r: 'W', gf: 2, ga: 1 },
@@ -184,11 +151,11 @@ describe('Real edge from real form data', () => {
     ]) // 1 pt
     const facts = { ...baseFacts(home, away), dataConfidence: 'medium' as const }
     const result = runInsightsEngine(facts)
-    expect(result.edge.team).toBe('home')
-    expect(result.edge.teamName).toBe('Brazil')
+    expect(result.keyEdge.side).toBe('home')
+    expect(result.keyEdge.teamName).toBe('Brazil')
   })
 
-  it('gives away edge when away team has significantly more points', () => {
+  it('sets keyEdge.side="away" when away team has clear form advantage', () => {
     const home  = teamWithForm('Saudi Arabia', 'KSA', [
       { r: 'L', gf: 0, ga: 3 }, { r: 'L', gf: 1, ga: 2 }, { r: 'L', gf: 0, ga: 1 },
     ]) // 0 pts
@@ -197,71 +164,75 @@ describe('Real edge from real form data', () => {
     ]) // 9 pts
     const facts = { ...baseFacts(home, away), dataConfidence: 'medium' as const }
     const result = runInsightsEngine(facts)
-    expect(result.edge.team).toBe('away')
+    expect(result.keyEdge.side).toBe('away')
   })
 
-  it('returns draw edge when form is level', () => {
-    const home  = teamWithForm('England', 'ENG', [
-      { r: 'W', gf: 1, ga: 0 }, { r: 'D', gf: 0, ga: 0 }, { r: 'W', gf: 2, ga: 1 },
-    ]) // 7 pts
-    const away  = teamWithForm('France', 'FRA', [
-      { r: 'D', gf: 0, ga: 0 }, { r: 'W', gf: 2, ga: 0 }, { r: 'W', gf: 1, ga: 0 },
-    ]) // 7 pts
+  it('story references the stronger team when form gap exists', () => {
+    const home  = teamWithForm('Germany', 'GER', [
+      { r: 'W', gf: 3, ga: 0 }, { r: 'W', gf: 2, ga: 0 }, { r: 'W', gf: 1, ga: 0 },
+      { r: 'W', gf: 2, ga: 1 }, { r: 'W', gf: 1, ga: 0 },
+    ]) // 15 pts
+    const away  = teamWithForm('Panama', 'PAN', [
+      { r: 'L', gf: 0, ga: 2 }, { r: 'L', gf: 0, ga: 1 }, { r: 'L', gf: 1, ga: 3 },
+      { r: 'L', gf: 0, ga: 1 }, { r: 'D', gf: 0, ga: 0 },
+    ]) // 1 pt
     const facts = { ...baseFacts(home, away), dataConfidence: 'medium' as const }
     const result = runInsightsEngine(facts)
-    expect(result.edge.team).toBe('draw')
+    expect(result.story).toContain('Germany')
   })
 })
 
-// ─── Tests: tactical insights only from real thresholds ──────────
+// ─── Tests: prediction consistency ───────────────────────────────
 
-describe('Tactical insights only from real thresholds', () => {
-  it('generates a finishing insight only when avgGoalsScored >= 2.0', () => {
-    const high  = teamWithForm('Brazil', 'BRA', [
-      { r: 'W', gf: 3, ga: 0 }, { r: 'W', gf: 2, ga: 1 }, { r: 'W', gf: 3, ga: 0 },
-      { r: 'W', gf: 2, ga: 0 }, { r: 'W', gf: 2, ga: 1 },
-    ]) // avg 2.4 goals scored
-    const low   = teamWithForm('Saudi Arabia', 'KSA', [
-      { r: 'L', gf: 0, ga: 2 }, { r: 'L', gf: 1, ga: 3 }, { r: 'D', gf: 0, ga: 0 },
-      { r: 'L', gf: 0, ga: 1 }, { r: 'L', gf: 1, ga: 2 },
-    ]) // avg 0.4 goals scored — below threshold
-    const facts: InsightsFacts = {
-      matchId:        'test-match-3',
-      home:           high,
-      away:           low,
-      h2h:            null,
-      isKnockout:     false,
-      dataConfidence: 'medium',
-    }
+describe('Prediction consistency', () => {
+  it('produces 1–3 reasoning bullets', () => {
+    const home  = teamWithForm('France', 'FRA', [
+      { r: 'W', gf: 2, ga: 0 }, { r: 'D', gf: 1, ga: 1 }, { r: 'W', gf: 3, ga: 0 },
+    ])
+    const away  = teamWithForm('Spain', 'ESP', [
+      { r: 'W', gf: 1, ga: 0 }, { r: 'W', gf: 2, ga: 1 }, { r: 'D', gf: 0, ga: 0 },
+    ])
+    const facts = { ...baseFacts(home, away), dataConfidence: 'medium' as const }
     const result = runInsightsEngine(facts)
-    const finishingInsights = result.tactical.filter(t => t.category === 'finishing')
-    expect(finishingInsights.length).toBeGreaterThan(0)
-    // The insight text must reference the actual number — never a fabricated claim
-    expect(finishingInsights[0].text).toContain('2.4')
-    // Source must point to real data
-    expect(finishingInsights[0].source).toContain('avgGoalsScored')
+    expect(result.prediction.reasoning.length).toBeGreaterThanOrEqual(1)
+    expect(result.prediction.reasoning.length).toBeLessThanOrEqual(3)
   })
 
-  it('does NOT generate tactical insights when avgGoalsScored < 2.0', () => {
-    const home  = teamWithForm('Bolivia', 'BOL', [
-      { r: 'L', gf: 1, ga: 2 }, { r: 'D', gf: 0, ga: 0 }, { r: 'L', gf: 0, ga: 1 },
-      { r: 'D', gf: 1, ga: 1 }, { r: 'L', gf: 1, ga: 2 },
-    ]) // avg 0.6 goals — no threshold met
+  it('scores are clamped to 0–4', () => {
+    const home  = teamWithForm('Brazil', 'BRA', [
+      { r: 'W', gf: 6, ga: 0 }, { r: 'W', gf: 5, ga: 0 }, { r: 'W', gf: 7, ga: 0 },
+    ]) // extreme scoring
     const away  = teamWithForm('Panama', 'PAN', [
-      { r: 'D', gf: 0, ga: 0 }, { r: 'L', gf: 0, ga: 1 }, { r: 'D', gf: 1, ga: 1 },
-      { r: 'L', gf: 0, ga: 2 }, { r: 'L', gf: 1, ga: 3 },
-    ]) // avg 0.4 goals — no threshold met
-    const facts: InsightsFacts = {
-      matchId:        'test-match-4',
-      home,
-      away,
-      h2h:            null,
-      isKnockout:     false,
-      dataConfidence: 'medium',
-    }
+      { r: 'L', gf: 0, ga: 5 }, { r: 'L', gf: 0, ga: 4 }, { r: 'L', gf: 0, ga: 3 },
+    ])
+    const facts = { ...baseFacts(home, away), dataConfidence: 'medium' as const }
     const result = runInsightsEngine(facts)
-    const finishingInsights = result.tactical.filter(t => t.category === 'finishing')
-    expect(finishingInsights).toHaveLength(0)
+    expect(result.prediction.homeScore).toBeLessThanOrEqual(4)
+    expect(result.prediction.awayScore).toBeGreaterThanOrEqual(0)
+  })
+})
+
+// ─── Tests: form bubbles are preserved ───────────────────────────
+
+describe('Form data in output', () => {
+  it('includes recentForm in form.home and form.away', () => {
+    const home  = teamWithForm('England', 'ENG', [
+      { r: 'W', gf: 1, ga: 0 }, { r: 'D', gf: 0, ga: 0 }, { r: 'W', gf: 2, ga: 1 },
+    ])
+    const away  = teamWithForm('France', 'FRA', [
+      { r: 'W', gf: 2, ga: 0 }, { r: 'L', gf: 0, ga: 1 }, { r: 'W', gf: 1, ga: 0 },
+    ])
+    const facts = { ...baseFacts(home, away), dataConfidence: 'medium' as const }
+    const result = runInsightsEngine(facts)
+    expect(result.form.home).toEqual(['W', 'D', 'W'])
+    expect(result.form.away).toEqual(['W', 'L', 'W'])
+  })
+
+  it('returns empty form arrays when no data', () => {
+    const facts = baseFacts(emptyTeam('Italy', 'ITA'), emptyTeam('England', 'ENG'))
+    const result = runInsightsEngine(facts)
+    expect(result.form.home).toHaveLength(0)
+    expect(result.form.away).toHaveLength(0)
   })
 })
 

@@ -63,23 +63,22 @@ export async function GET(_req: Request, { params }: Params) {
     const t3 = Date.now()
     console.log(
       `[Insights] ${id} — engine in ${t3 - t2}ms | ` +
-      `tactical=${insights.tactical.length} ` +
       `insufficientData=${insights.insufficientData} ` +
-      `confidence=${insights.confidence}`,
+      `storyLen=${insights.story?.length ?? 0} ` +
+      `factors=${insights.decidingFactors?.length ?? 0}`,
     )
 
-    // Layer 3.5: Groq AI enrichment / generation
+    // Layer 3.5: Groq AI generation
     const groqStart = Date.now()
     const enriched  = await enrichInsightsWithGroq(insights, facts)
     const groqMs    = Date.now() - groqStart
     console.log(
       `[Insights] ${id} — groq step in ${groqMs}ms | ` +
-      `tactical_before=${insights.tactical.length} ` +
-      `tactical_after=${enriched.tactical.length}`,
+      `storyLen=${enriched.story?.length ?? 0} ` +
+      `confidence=${enriched.prediction?.confidence ?? 'unknown'}`,
     )
 
-    const groqFallback =
-      enriched.tactical.length === 0 && insights.tactical.length === 0
+    const groqFallback = enriched.story === insights.story
 
     // ── Provenance envelope ──────────────────────────────────────
     // Reflects which real data sources were available for this pipeline run.
@@ -108,8 +107,7 @@ export async function GET(_req: Request, { params }: Params) {
           rawFactsCount,
           groqLatencyMs:      groqMs,
           groqFallback,
-          insightCount:       enriched.tactical.length,
-          confidence:         enriched.confidence,
+          predictionConfidence: enriched.prediction?.confidence ?? 'unknown',
           apiBaseUsed:        API_BASE,
           // DEBUG_DATA_PROVENANCE extras
           ...(DEBUG_PROVENANCE && {

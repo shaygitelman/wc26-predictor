@@ -1,14 +1,14 @@
 /**
- * Layer 3.5 — Groq AI enricher.
+ * Layer 3.5 — Groq AI insights generator.
  *
- * ENRICH mode only: rewrites rule-based insight prose using verified numbers
- * from the facts summary. Only runs when form data exists (tactical.length > 0).
- * When no form data is available, the original engine output is returned unchanged.
+ * GENERATE mode: produces all 4 insight sections from the facts summary in a
+ * single call. The rule-based engine output is used only as a fallback when
+ * Groq is unavailable, times out, or returns malformed JSON.
  *
- * Falls back to the original template output silently if:
+ * Falls back silently if:
  *   - GROQ_API_KEY is not set
- *   - The API call fails or times out
- *   - The response JSON is malformed
+ *   - The API call fails or times out (8s)
+ *   - The response JSON is missing required fields
  */
 
 import type { MatchInsights } from '@/types/insights'
@@ -32,6 +32,8 @@ function buildFactsSummary(facts: InsightsFacts): string {
     if (home.avgPossession    !== null) lines.push(`  - ${home.avgPossession.toFixed(0)}% average possession`)
     if (home.avgCorners       !== null) lines.push(`  - ${home.avgCorners.toFixed(1)} corners per match`)
     if (home.topScorer)                 lines.push(`  - Top scorer: ${home.topScorer.name} (${home.topScorer.goals} goals)`)
+    const homePoints = home.recentForm.reduce((s, r) => s + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0)
+    lines.push(`  - Recent form: ${home.recentForm.join(' ')} (${homePoints}pts)`)
   }
 
   if (away.results.length > 0) {
@@ -42,6 +44,8 @@ function buildFactsSummary(facts: InsightsFacts): string {
     if (away.avgPossession    !== null) lines.push(`  - ${away.avgPossession.toFixed(0)}% average possession`)
     if (away.avgCorners       !== null) lines.push(`  - ${away.avgCorners.toFixed(1)} corners per match`)
     if (away.topScorer)                 lines.push(`  - Top scorer: ${away.topScorer.name} (${away.topScorer.goals} goals)`)
+    const awayPoints = away.recentForm.reduce((s, r) => s + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0)
+    lines.push(`  - Recent form: ${away.recentForm.join(' ')} (${awayPoints}pts)`)
   }
 
   if (h2h && h2h.totalMeetings > 0) {
@@ -61,45 +65,59 @@ function buildFactsSummary(facts: InsightsFacts): string {
   return lines.length > 0 ? lines.join('\n') : '(no historical data available)'
 }
 
-// ─── Prompt: ENRICH mode (rule-based insights already exist) ──────
+// ─── Prompt ───────────────────────────────────────────────────────
 
-function buildEnrichPrompt(insights: MatchInsights, facts: InsightsFacts): string {
-  const matchLabel = `${facts.home.name} vs ${facts.away.name}${facts.isKnockout ? ' (knockout stage)' : ''}`
+function buildPrompt(facts: InsightsFacts): string {
+  const { home, away } = facts
+  const context = facts.isKnockout
+    ? 'knockout stage of the 2026 FIFA World Cup — single match, elimination'
+    : 'group stage of the 2026 FIFA World Cup'
 
-  const tacticalBlock = insights.tactical.map((t, i) =>
-    `${i + 1}. [${t.category.toUpperCase()}] ${t.text}`,
-  ).join('\n')
+  return `You are a football match analyst covering the 2026 FIFA World Cup.
 
-  const narrativeBlock = insights.narrative
-    ? `Knockout context: ${insights.narrative.body}`
-    : ''
+MATCH: ${home.name} vs ${away.name} (${context})
+HOME TEAM CODE: ${home.shortCode}
+AWAY TEAM CODE: ${away.shortCode}
 
-  return `MATCH: ${matchLabel}
-
-CONFIRMED DATA — use only these numbers, do not invent any additional statistics:
+CONFIRMED DATA — use ONLY these numbers. Do not invent statistics:
 ${buildFactsSummary(facts)}
 
-TEXTS TO REWRITE:
-Tactical insights:
-${tacticalBlock}
-Edge note: ${insights.edgeNote}
-${narrativeBlock}
+Generate this JSON exactly (no extra keys, no markdown):
+{
+  "story": "2–3 sentences. Identify ONE clear narrative angle — form mismatch, defensive battle, underdog threat, attacking firepower, revenge match, etc. Be specific to this matchup. Never write: 'both teams', 'could be', 'anything can happen', 'will look to win'.",
+  "keyEdge": {
+    "teamCode": "${home.shortCode} or ${away.shortCode}",
+    "teamName": "full team name",
+    "side": "home or away",
+    "label": "3–5 word specific label (e.g. 'Elite Attacking Depth', 'Defensive Wall', 'Form Surge')",
+    "explanation": "2–3 sentences explaining WHY this team has the edge, citing specific numbers from the data above."
+  },
+  "decidingFactors": [
+    "Factor 1 — specific tactical or physical element (e.g. 'Set piece delivery and aerial dominance')",
+    "Factor 2",
+    "Factor 3"
+  ],
+  "prediction": {
+    "homeScore": 1,
+    "awayScore": 0,
+    "homeTeamName": "${home.name}",
+    "awayTeamName": "${away.name}",
+    "reasoning": [
+      "Bullet 1 — reference actual data from above",
+      "Bullet 2",
+      "Bullet 3"
+    ],
+    "confidence": "high, medium, or low — high only when both teams have 5+ matches of data"
+  }
+}
 
 RULES:
-- Use ONLY the numbers from CONFIRMED DATA above
-- Tactical rewrites: 1–2 sentences each, always include the specific number that justifies the claim
-- Edge note: 2–3 sentences, reference actual points tallies or averages
-- Knockout context: 1–2 sentences about the stakes and tactical implications
-- Tone: direct, analytical, confident — no clichés, no hyperbole
-- Do NOT add player names, scorelines, or stats not listed above
-
-Return JSON with this exact shape:
-{
-  "tacticalTexts": [ ...exactly ${insights.tactical.length} strings... ],
-  "edgeNote": "...",
-  "narrativeBody": "..."
-}
-Omit narrativeBody if there is no knockout context.`
+- Use ONLY numbers from the CONFIRMED DATA above — never invent stats
+- story: one specific narrative angle, not a general preview
+- keyEdge: label must be 3–5 words; explanation must cite real numbers
+- decidingFactors: tactical/physical specifics, not vague ("finishing quality under pressure" not "scoring goals")
+- prediction: scores must follow logically from the data; justify with actual figures
+- If data is minimal, story can acknowledge uncertainty while still setting a narrative angle`
 }
 
 // ─── Groq API call ────────────────────────────────────────────────
@@ -120,15 +138,15 @@ async function callGroq<T>(apiKey: string, userPrompt: string): Promise<T> {
       },
       body: JSON.stringify({
         model:           GROQ_MODEL,
-        temperature:     0.4,
-        max_tokens:      1200,
+        temperature:     0.45,
+        max_tokens:      900,
         response_format: { type: 'json_object' },
         messages: [
           {
             role:    'system',
             content:
-              'You are a football match analyst specializing in international football. ' +
-              'Provide sharp, grounded tactical analysis. Return valid JSON only.',
+              'You are a concise football match analyst. Write sharp, data-backed insights. ' +
+              'Maximum 200 words total across all sections. Return valid JSON only.',
           },
           { role: 'user', content: userPrompt },
         ],
@@ -155,38 +173,81 @@ async function callGroq<T>(apiKey: string, userPrompt: string): Promise<T> {
   return JSON.parse(content) as T
 }
 
-// ─── Apply: ENRICH mode ───────────────────────────────────────────
+// ─── Validate and apply Groq output ──────────────────────────────
 
-interface GroqEnrichment {
-  tacticalTexts:  string[]
-  edgeNote:       string
-  narrativeBody?: string
+interface GroqPayload {
+  story?:           string
+  keyEdge?: {
+    teamCode?:    string
+    teamName?:    string
+    side?:        string
+    label?:       string
+    explanation?: string
+  }
+  decidingFactors?: unknown[]
+  prediction?: {
+    homeScore?:    unknown
+    awayScore?:    unknown
+    homeTeamName?: string
+    awayTeamName?: string
+    reasoning?:    unknown[]
+    confidence?:   string
+  }
 }
 
-function applyEnrichment(insights: MatchInsights, enrichment: GroqEnrichment): MatchInsights {
-  const tacticalCount  = insights.tactical.length
-  const enrichedTexts  = enrichment.tacticalTexts
-  const validTactical  =
-    Array.isArray(enrichedTexts) && enrichedTexts.length === tacticalCount
+function isValidSide(s: unknown): s is 'home' | 'away' {
+  return s === 'home' || s === 'away'
+}
+
+function isValidConfidence(c: unknown): c is 'low' | 'medium' | 'high' {
+  return c === 'low' || c === 'medium' || c === 'high'
+}
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null
+}
+
+function applyGroqPayload(fallback: MatchInsights, payload: GroqPayload): MatchInsights {
+  const story    = str(payload.story)
+  const ke       = payload.keyEdge
+  const df       = Array.isArray(payload.decidingFactors)
+    ? payload.decidingFactors.filter((f): f is string => typeof f === 'string' && !!f.trim()).slice(0, 3)
+    : []
+  const pr       = payload.prediction
+
+  // Validate keyEdge
+  const validEdge = ke &&
+    str(ke.teamCode) && str(ke.teamName) && isValidSide(ke.side) &&
+    str(ke.label)    && str(ke.explanation)
+
+  // Validate prediction
+  const hScore     = typeof pr?.homeScore === 'number' ? Math.round(Math.max(0, Math.min(pr.homeScore, 6))) : null
+  const aScore     = typeof pr?.awayScore === 'number' ? Math.round(Math.max(0, Math.min(pr.awayScore, 6))) : null
+  const reasoning  = Array.isArray(pr?.reasoning)
+    ? pr!.reasoning.filter((r): r is string => typeof r === 'string' && !!r.trim()).slice(0, 3)
+    : []
+  const confidence = isValidConfidence(pr?.confidence) ? pr!.confidence : null
+  const validPred  = hScore !== null && aScore !== null && reasoning.length >= 1 && confidence
 
   return {
-    ...insights,
-    tactical: validTactical
-      ? insights.tactical.map((t, i) => ({
-          ...t,
-          text: typeof enrichedTexts[i] === 'string' && enrichedTexts[i].trim()
-            ? enrichedTexts[i].trim()
-            : t.text,
-        }))
-      : insights.tactical,
-    edgeNote:
-      typeof enrichment.edgeNote === 'string' && enrichment.edgeNote.trim()
-        ? enrichment.edgeNote.trim()
-        : insights.edgeNote,
-    narrative:
-      insights.narrative && typeof enrichment.narrativeBody === 'string' && enrichment.narrativeBody.trim()
-        ? { ...insights.narrative, body: enrichment.narrativeBody.trim() }
-        : insights.narrative,
+    ...fallback,
+    story:           story ?? fallback.story,
+    keyEdge:         validEdge ? {
+      teamCode:    ke!.teamCode!.trim(),
+      teamName:    ke!.teamName!.trim(),
+      side:        ke!.side as 'home' | 'away',
+      label:       ke!.label!.trim(),
+      explanation: ke!.explanation!.trim(),
+    } : fallback.keyEdge,
+    decidingFactors: df.length >= 2 ? df : fallback.decidingFactors,
+    prediction:      validPred ? {
+      homeScore:    hScore!,
+      awayScore:    aScore!,
+      homeTeamName: str(pr?.homeTeamName) ?? fallback.prediction.homeTeamName,
+      awayTeamName: str(pr?.awayTeamName) ?? fallback.prediction.awayTeamName,
+      reasoning:    reasoning.length >= 2 ? reasoning : fallback.prediction.reasoning,
+      confidence:   confidence!,
+    } : fallback.prediction,
   }
 }
 
@@ -200,8 +261,8 @@ export async function enrichInsightsWithGroq(
 
   if (!apiKey) {
     console.warn(
-      '[GroqInsights] GROQ_API_KEY is not set — AI enrichment disabled. ' +
-      'Add GROQ_API_KEY to your Vercel environment variables to enable AI-generated insights.',
+      '[GroqInsights] GROQ_API_KEY is not set — using rule-based fallback. ' +
+      'Add GROQ_API_KEY to your environment variables to enable AI-generated insights.',
     )
     return insights
   }
@@ -212,30 +273,20 @@ export async function enrichInsightsWithGroq(
   }
 
   try {
-    if (insights.tactical.length === 0) {
-      // No rule-based insights exist — no real form data available.
-      // GENERATE mode (AI-invented team narratives) is disabled: without measured
-      // match data, any generated tactical text would be unverifiable inference.
-      // The engine already produced the correct low-confidence edge note.
-      console.log(`[GroqInsights] match ${insights.matchId} — no form data, skipping Groq (no fabrication)`)
-      return insights
-    } else {
-      // ENRICH mode — rewrite existing rule-based prose
-      console.log(`[GroqInsights] match ${insights.matchId} — ENRICH mode (${insights.tactical.length} rule-based insights)`)
-      const t = Date.now()
-      const prompt     = buildEnrichPrompt(insights, facts)
-      const enrichment = await callGroq<GroqEnrichment>(apiKey, prompt)
-      const result     = applyEnrichment(insights, enrichment)
-      console.log(
-        `[GroqInsights] match ${insights.matchId} — ENRICH done in ${Date.now() - t}ms | ` +
-        `tactical count unchanged: ${result.tactical.length}`,
-      )
-      return result
-    }
+    console.log(`[GroqInsights] match ${insights.matchId} — GENERATE mode`)
+    const t       = Date.now()
+    const prompt  = buildPrompt(facts)
+    const payload = await callGroq<GroqPayload>(apiKey, prompt)
+    const result  = applyGroqPayload(insights, payload)
+    console.log(
+      `[GroqInsights] match ${insights.matchId} — done in ${Date.now() - t}ms | ` +
+      `story=${result.story.length}chars factors=${result.decidingFactors.length}`,
+    )
+    return result
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(
-      `[GroqInsights] match ${insights.matchId} — Groq call failed, returning template fallback. ` +
+      `[GroqInsights] match ${insights.matchId} — Groq call failed, returning rule-based fallback. ` +
       `Error: ${msg}`,
     )
     return insights

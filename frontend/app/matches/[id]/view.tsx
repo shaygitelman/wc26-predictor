@@ -230,8 +230,8 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialG
 
         <MatchInsightsCard
           matchId={match.id}
-          homeTeam={{ name: match.homeTeam.name, shortCode: match.homeTeam.shortCode }}
-          awayTeam={{ name: match.awayTeam.name, shortCode: match.awayTeam.shortCode }}
+          homeTeam={{ name: match.homeTeam.name, shortCode: match.homeTeam.shortCode, flagUrl: match.homeTeam.flagUrl }}
+          awayTeam={{ name: match.awayTeam.name, shortCode: match.awayTeam.shortCode, flagUrl: match.awayTeam.flagUrl }}
           initialData={initialInsights}
         />
 

@@ -324,20 +324,29 @@ function ComprehensiveTeamBlock({
           {/* Suspended — card derived */}
           {hasSuspensions && (
             <div className="flex flex-col gap-1.5">
-              {squad.suspended.map((p, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <OctagonX className="mt-[2px] size-[11px] flex-shrink-0 text-red-400" strokeWidth={2.5} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-red-500/15 text-red-400">
-                        Suspended
-                      </span>
+              {squad.suspended.map((p, i) => {
+                const isRedCard = p.reason === 'Red Card'
+                return (
+                  <div key={i} className="flex items-start gap-2">
+                    <OctagonX
+                      className={cn('mt-[2px] size-[11px] flex-shrink-0', isRedCard ? 'text-red-400' : 'text-amber-400')}
+                      strokeWidth={2.5}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
+                        <span className={cn(
+                          'text-[10px] font-bold px-1.5 py-[2px] rounded',
+                          isRedCard ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400',
+                        )}>
+                          Suspended
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">{p.reason}</p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">{p.reason}</p>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -366,16 +375,16 @@ function ComprehensiveTeamBlock({
             <div className="flex flex-col gap-1.5">
               {squad.atRisk.map((p, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <TriangleAlert className="mt-[2px] size-[11px] flex-shrink-0 text-yellow-400" strokeWidth={2.5} />
+                  <TriangleAlert className="mt-[2px] size-[11px] flex-shrink-0 text-amber-400" strokeWidth={2.5} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-yellow-400/15 text-yellow-500">
-                        Suspension Risk
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-amber-500/15 text-amber-400">
+                        1 Yellow
                       </span>
                     </div>
                     <p className="text-[11px] text-muted-foreground/60 leading-tight mt-0.5">
-                      {p.yellowCards} yellow {p.yellowCards === 1 ? 'card' : 'cards'} · 1 more = ban
+                      1 more yellow = suspended
                     </p>
                   </div>
                 </div>
@@ -408,11 +417,11 @@ function ComprehensiveTeamBlock({
             <div className="flex flex-col gap-1.5">
               {squad.doubtful.map((p, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <TriangleAlert className="mt-[2px] size-[11px] flex-shrink-0 text-yellow-400" strokeWidth={2.5} />
+                  <TriangleAlert className="mt-[2px] size-[11px] flex-shrink-0 text-yellow-500" strokeWidth={2.5} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[12px] font-semibold text-foreground">{p.name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-yellow-400/15 text-yellow-500">
+                      <span className="text-[10px] font-bold px-1.5 py-[2px] rounded bg-yellow-500/10 text-yellow-500">
                         Doubtful
                       </span>
                     </div>
@@ -474,7 +483,7 @@ function ComprehensiveSquadNewsBlock({
       {(totalSuspended > 0 || totalAtRisk > 0 || totalInjured > 0) && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           <SquadSummaryPill count={totalSuspended} label="Suspended" colorClass="bg-red-500/10 text-red-400 border-red-500/20" />
-          <SquadSummaryPill count={totalAtRisk}    label="At Risk"   colorClass="bg-yellow-400/10 text-yellow-500 border-yellow-400/20" />
+          <SquadSummaryPill count={totalAtRisk}    label="At Risk"   colorClass="bg-amber-500/10 text-amber-400 border-amber-500/20" />
           <SquadSummaryPill count={totalInjured}   label="Injured"   colorClass="bg-orange-400/10 text-orange-400 border-orange-400/20" />
         </div>
       )}
@@ -485,18 +494,29 @@ function ComprehensiveSquadNewsBlock({
       </div>
 
       {/* Data sources footer */}
-      <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-border/30">
-        <span className="text-[10px] text-muted-foreground/35">Sources:</span>
-        {(home.cardDataAvailable || away.cardDataAvailable) && (
-          <span className="text-[10px] text-muted-foreground/40">Match card events</span>
-        )}
-        {(home.injuryDataAvailable || away.injuryDataAvailable) && (
-          <>
-            <span className="text-[10px] text-muted-foreground/25">·</span>
-            <span className="text-[10px] text-muted-foreground/40">Official injury reports</span>
-          </>
-        )}
-      </div>
+      {(() => {
+        const hasCards    = home.cardDataAvailable || away.cardDataAvailable
+        const hasInjuries = home.injuryDataAvailable || away.injuryDataAvailable
+        return (
+          <div className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 mt-3 pt-2 border-t border-border/30">
+            <span className="text-[10px] text-muted-foreground/35">Sources:</span>
+            {hasCards && (
+              <span className="text-[10px] text-muted-foreground/40">Match card events</span>
+            )}
+            {hasInjuries ? (
+              <>
+                {hasCards && <span className="text-[10px] text-muted-foreground/25">·</span>}
+                <span className="text-[10px] text-muted-foreground/40">Official injury reports</span>
+              </>
+            ) : hasCards ? (
+              <>
+                <span className="text-[10px] text-muted-foreground/25">·</span>
+                <span className="text-[10px] text-muted-foreground/30 italic">Official reports pending</span>
+              </>
+            ) : null}
+          </div>
+        )
+      })()}
     </div>
   )
 }

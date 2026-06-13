@@ -10,6 +10,7 @@ import { SectionHeader } from '@/components/molecules/section-header'
 import { TournamentPicksCard } from '@/components/molecules/tournament-picks-card'
 import { LeagueCard } from '@/components/molecules/league-card'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
+import { DidYouKnow } from '@/components/atoms/did-you-know'
 import { apiGet, apiGetCached } from '@/lib/api-server'
 import { getSessionUser } from '@/lib/session'
 import type { User, UserStats } from '@/types/user'
@@ -65,6 +66,10 @@ export default async function HomePage() {
 
   const liveMatches  = unique.filter(m => m.status === 'live')
   const upcomingPred = unique.filter(m => m.status === 'scheduled' && !predsByMatch.has(m.id))
+
+  const nextMatch = matches
+    .filter(m => m.status === 'scheduled')
+    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0] ?? null
 
   const allTeams = rawTeams.map(t => ({
     id:        t.id,
@@ -201,6 +206,9 @@ export default async function HomePage() {
             </div>
           </section>
         )}
+
+        {/* ── Did You Know ───────────────────────────────────── */}
+        <DidYouKnow nextMatch={nextMatch} />
 
         {/* ── My Leagues ─────────────────────────────────────── */}
         <MyLeaguesSection leagues={leagues} userId={user?.id} />

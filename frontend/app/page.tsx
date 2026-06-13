@@ -67,9 +67,11 @@ export default async function HomePage() {
   const liveMatches  = unique.filter(m => m.status === 'live')
   const upcomingPred = unique.filter(m => m.status === 'scheduled' && !predsByMatch.has(m.id))
 
-  const nextMatch = matches
+  const scheduled    = matches
     .filter(m => m.status === 'scheduled')
-    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())[0] ?? null
+    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+  const earliestTime = scheduled[0]?.scheduledAt ?? null
+  const nextMatches  = earliestTime ? scheduled.filter(m => m.scheduledAt === earliestTime) : []
 
   const allTeams = rawTeams.map(t => ({
     id:        t.id,
@@ -208,7 +210,7 @@ export default async function HomePage() {
         )}
 
         {/* ── Did You Know ───────────────────────────────────── */}
-        <DidYouKnow nextMatch={nextMatch} />
+        <DidYouKnow nextMatches={nextMatches} />
 
         {/* ── My Leagues ─────────────────────────────────────── */}
         <MyLeaguesSection leagues={leagues} userId={user?.id} />

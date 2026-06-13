@@ -1012,9 +1012,11 @@ class SyncService:
         # and are old enough to have finished.  Fetch each individually to
         # get their real final status.  This covers the window between
         # a match finishing and the next sync_live tick.
+        # 95 min = 90-min match + 5-min buffer; safe for extra-time matches
+        # because we re-check real status before acting (won't false-finish).
         stale_conds = [
             Match.status == "live",
-            Match.scheduled_at <= _now - timedelta(hours=2),
+            Match.scheduled_at <= _now - timedelta(minutes=95),
         ]
         if live_ext_ids_seen:
             stale_conds.append(Match.external_id.notin_(live_ext_ids_seen))

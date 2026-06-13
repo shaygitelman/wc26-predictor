@@ -209,8 +209,8 @@ export default async function HomePage() {
           </section>
         )}
 
-        {/* ── Did You Know ───────────────────────────────────── */}
-        <DidYouKnow nextMatches={nextMatches} />
+        {/* ── Did You Know — hidden while any match is live ──── */}
+        {liveMatches.length === 0 && <DidYouKnow nextMatches={nextMatches} />}
 
         {/* ── My Leagues ─────────────────────────────────────── */}
         <MyLeaguesSection leagues={leagues} userId={user?.id} />

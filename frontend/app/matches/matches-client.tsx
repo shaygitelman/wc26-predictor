@@ -16,7 +16,7 @@ import type { ApiGroupStandings, ApiTeamStanding } from '@/types/standings'
 // ─── Filter config ────────────────────────────────────────────
 
 const FILTERS = [
-  { value: 'all',      label: 'All Matches' },
+  { value: 'all',      label: 'Remaining'   },
   { value: 'today',    label: 'Today'       },
   { value: 'finished', label: 'Finished'    },
   { value: 'groups',   label: 'Groups'      },

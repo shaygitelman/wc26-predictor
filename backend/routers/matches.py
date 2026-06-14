@@ -14,12 +14,13 @@ from models.league import League, LeagueMember
 from models.match import Match
 from models.player import Player
 from models.prediction import Prediction
+from models.team import Team
 from models.user import User
 from schemas.match import MatchOut, LeaguePredictionEntry, LeaguePredictionGroup, MatchLeaguePredictionsOut
 from services.squad_availability import get_squad_availability
 from services.card_tracker import get_card_tracking
 from services.match_stats import get_match_statistics
-from services.team_form import get_team_form, get_h2h
+from services.team_form import get_team_form, get_h2h, get_wc_top_performers
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -523,14 +524,31 @@ async def _get_match_players(match_id: str, side: str, db: AsyncSession) -> list
     result = await db.execute(q)
     players = result.scalars().all()
 
+    # Enrich with live WC2026 goals/assists from API-Football top scorers
+    wc_performers = await get_wc_top_performers()
+    team_obj      = await db.get(Team, team_id)
+    api_team_id   = ""
+    if team_obj:
+        ext = team_obj.external_ids or {}
+        api_team_id = str(
+            ext.get("api_football") or ext.get("apifootball") or ext.get("api-football") or ""
+        )
+    # {api_player_id: (goals, assists)} for this team
+    player_stats: dict[str, tuple[int, int]] = {
+        p["player_id"]: (p["goals"], p["assists"])
+        for p in wc_performers.get(api_team_id, [])
+    }
+
     return [
         {
             "name":          p.name,
             "teamShortCode": team_code,
             "teamName":      team_name,
             "position":      p.position,
-            "goals":         0,
-            "assists":       0,
+            **dict(zip(
+                ("goals", "assists"),
+                player_stats.get(str((p.external_ids or {}).get("apifootball", "")), (0, 0)),
+            )),
         }
         for p in players
     ]

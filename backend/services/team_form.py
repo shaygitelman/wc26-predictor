@@ -35,6 +35,8 @@ _FT_STATUSES = frozenset({"FT", "AET", "PEN", "AWD", "WO"})
 _FORM_CACHE: dict[str, tuple[float, "TeamFormResult"]] = {}
 # Key: "h2h:{home_api_id}:{away_api_id}" → (fetched_at_unix, dict)
 _H2H_CACHE:  dict[str, tuple[float, dict]]             = {}
+# Key: "wc2026" → (fetched_at_unix, {team_api_id: [{player_id, name, goals, assists}]})
+_TOP_PERFORMERS_CACHE: dict[str, tuple[float, dict[str, list[dict]]]] = {}
 _CACHE_TTL   = 3600  # 1 hour
 
 
@@ -385,3 +387,53 @@ async def get_h2h(
         home_code, away_code, home_wins, draws, away_wins,
     )
     return result
+
+
+async def get_wc_top_performers() -> dict[str, list[dict]]:
+    """
+    Return WC2026 top scorers keyed by API-Football team ID.
+
+    Shape: {str(team_api_id): [{player_id, name, goals, assists}, ...]}
+    Players are sorted goals-desc within each team.
+
+    Single API call per cache window — not team-scoped — so all 9 parallel
+    insights fetches share the same cached result.
+    """
+    if not settings.apifootball_key:
+        return {}
+
+    cache_key = "wc2026"
+    now = time.time()
+    if cache_key in _TOP_PERFORMERS_CACHE:
+        ts, cached = _TOP_PERFORMERS_CACHE[cache_key]
+        if now - ts < _CACHE_TTL:
+            return cached
+
+    provider = ApiFootballProvider(settings.apifootball_key)
+    try:
+        data = await provider._get("/players/topscorers", {"league": "1", "season": "2026"})
+    except Exception as exc:
+        log.warning("[TopPerformers] API error: %s", exc)
+        return {}
+
+    by_team: dict[str, list[dict]] = {}
+    for entry in data.get("response", []):
+        player = entry.get("player", {})
+        pid    = str(player.get("id", ""))
+        name   = player.get("name", "")
+        if not pid:
+            continue
+        for stat in entry.get("statistics", []):
+            team_id     = str((stat.get("team") or {}).get("id", ""))
+            goals_block = stat.get("goals") or {}
+            goals   = int(goals_block.get("total")   or 0)
+            assists = int(goals_block.get("assists")  or 0)
+            if team_id:
+                by_team.setdefault(team_id, []).append(
+                    {"player_id": pid, "name": name, "goals": goals, "assists": assists}
+                )
+            break  # only first stats block per entry
+
+    _TOP_PERFORMERS_CACHE[cache_key] = (now, by_team)
+    log.info("[TopPerformers] WC2026 — %d teams with performers cached", len(by_team))
+    return by_team

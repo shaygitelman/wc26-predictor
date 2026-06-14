@@ -13,6 +13,7 @@
 
 import type { MatchInsights } from '@/types/insights'
 import type { InsightsFacts } from '@/types/insights-facts'
+import { FIFA_RANKINGS } from '@/lib/fifa-rankings'
 
 const GROQ_BASE  = 'https://api.groq.com/openai/v1'
 const GROQ_MODEL = 'llama-3.3-70b-versatile'
@@ -24,26 +25,47 @@ function buildFactsSummary(facts: InsightsFacts): string {
   const { home, away, h2h } = facts
   const lines: string[] = []
 
+  const homeRank = FIFA_RANKINGS[home.shortCode.toUpperCase()]
+  const awayRank = FIFA_RANKINGS[away.shortCode.toUpperCase()]
+
+  // Rankings header — always printed when known; anchors quality context before form data
+  if (homeRank || awayRank) {
+    const parts: string[] = []
+    if (homeRank) parts.push(`${home.name} #${homeRank}`)
+    if (awayRank) parts.push(`${away.name} #${awayRank}`)
+    lines.push(`FIFA World Rankings: ${parts.join(' | ')}`)
+  }
+
   if (home.results.length > 0) {
-    lines.push(`${home.name} (last ${home.results.length} matches):`)
+    const rankStr = homeRank ? ` | FIFA #${homeRank}` : ''
+    lines.push(`${home.name}${rankStr} (last ${home.results.length} matches):`)
     if (home.avgGoalsScored   !== null) lines.push(`  - ${home.avgGoalsScored.toFixed(1)} goals scored per match`)
     if (home.avgGoalsConceded !== null) lines.push(`  - ${home.avgGoalsConceded.toFixed(1)} goals conceded per match`)
     if (home.cleanSheets      !== null) lines.push(`  - ${home.cleanSheets} clean sheets`)
     if (home.avgPossession    !== null) lines.push(`  - ${home.avgPossession.toFixed(0)}% average possession`)
     if (home.avgCorners       !== null) lines.push(`  - ${home.avgCorners.toFixed(1)} corners per match`)
     if (home.topScorer)                 lines.push(`  - Top scorer: ${home.topScorer.name} (${home.topScorer.goals} goals)`)
+    if (home.unavailablePlayers.length > 0) {
+      const absences = home.unavailablePlayers.slice(0, 3).map(p => `${p.name} (${p.status})`).join(', ')
+      lines.push(`  - Key absences: ${absences}`)
+    }
     const homePoints = home.recentForm.reduce((s, r) => s + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0)
     lines.push(`  - Recent form: ${home.recentForm.join(' ')} (${homePoints}pts)`)
   }
 
   if (away.results.length > 0) {
-    lines.push(`${away.name} (last ${away.results.length} matches):`)
+    const rankStr = awayRank ? ` | FIFA #${awayRank}` : ''
+    lines.push(`${away.name}${rankStr} (last ${away.results.length} matches):`)
     if (away.avgGoalsScored   !== null) lines.push(`  - ${away.avgGoalsScored.toFixed(1)} goals scored per match`)
     if (away.avgGoalsConceded !== null) lines.push(`  - ${away.avgGoalsConceded.toFixed(1)} goals conceded per match`)
     if (away.cleanSheets      !== null) lines.push(`  - ${away.cleanSheets} clean sheets`)
     if (away.avgPossession    !== null) lines.push(`  - ${away.avgPossession.toFixed(0)}% average possession`)
     if (away.avgCorners       !== null) lines.push(`  - ${away.avgCorners.toFixed(1)} corners per match`)
     if (away.topScorer)                 lines.push(`  - Top scorer: ${away.topScorer.name} (${away.topScorer.goals} goals)`)
+    if (away.unavailablePlayers.length > 0) {
+      const absences = away.unavailablePlayers.slice(0, 3).map(p => `${p.name} (${p.status})`).join(', ')
+      lines.push(`  - Key absences: ${absences}`)
+    }
     const awayPoints = away.recentForm.reduce((s, r) => s + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0)
     lines.push(`  - Recent form: ${away.recentForm.join(' ')} (${awayPoints}pts)`)
   }
@@ -116,7 +138,8 @@ RULES:
 - story: one specific narrative angle, not a general preview
 - keyEdge: label must be 3–5 words; explanation must cite real numbers
 - decidingFactors: tactical/physical specifics, not vague ("finishing quality under pressure" not "scoring goals")
-- prediction: scores must follow logically from the data; justify with actual figures
+- prediction: scores must follow logically from the data; justify with actual figures; a large FIFA ranking gap (e.g. #1 vs #54) should modulate predictions even when form looks close
+- Key absences in the data should influence the story, keyEdge, and prediction reasoning
 - If data is minimal, story can acknowledge uncertainty while still setting a narrative angle`
 }
 

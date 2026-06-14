@@ -51,16 +51,16 @@ function scrubSquadTeam(
 }
 
 const KNOWN_RIVALRIES: Record<string, { label: string; detail: string }> = {
-  'BRA-ARG': { label: 'Clásico de América',  detail: "One of football's defining rivalries — never a dull moment between these sides" },
-  'ARG-BRA': { label: 'Clásico de América',  detail: "One of football's defining rivalries — never a dull moment between these sides" },
+  'BRA-ARG': { label: 'Clásico de América',  detail: "One of football's defining rivalries. Never a dull moment between these sides." },
+  'ARG-BRA': { label: 'Clásico de América',  detail: "One of football's defining rivalries. Never a dull moment between these sides." },
   'ENG-GER': { label: 'Historic Rivalry',    detail: 'Decades of World Cup history make this fixture unique in world football' },
   'GER-ENG': { label: 'Historic Rivalry',    detail: 'Decades of World Cup history make this fixture unique in world football' },
   'ESP-POR': { label: 'Iberian Derby',        detail: 'Neighboring nations with fierce competitive pride on the biggest stage' },
   'POR-ESP': { label: 'Iberian Derby',        detail: 'Neighboring nations with fierce competitive pride on the biggest stage' },
   'USA-MEX': { label: 'CONCACAF Rivalry',    detail: 'A long-running rivalry with intense passion on both sides of the border' },
   'MEX-USA': { label: 'CONCACAF Rivalry',    detail: 'A long-running rivalry with intense passion on both sides of the border' },
-  'FRA-GER': { label: 'European Giants',     detail: "Two of Europe's most decorated nations — their meetings shape tournaments" },
-  'GER-FRA': { label: 'European Giants',     detail: "Two of Europe's most decorated nations — their meetings shape tournaments" },
+  'FRA-GER': { label: 'European Giants',     detail: "Two of Europe's most decorated nations. Their meetings shape tournaments." },
+  'GER-FRA': { label: 'European Giants',     detail: "Two of Europe's most decorated nations. Their meetings shape tournaments." },
   'ARG-ENG': { label: 'Charged Encounter',  detail: 'A fixture steeped in history and always carrying an extra edge' },
   'ENG-ARG': { label: 'Charged Encounter',  detail: 'A fixture steeped in history and always carrying an extra edge' },
   'BRA-FRA': { label: 'World Cup Classics', detail: "These sides have produced some of the tournament's most memorable moments" },
@@ -79,20 +79,20 @@ function buildContext(homeTeam: Team, awayTeam: Team, round: Round): MatchContex
   if (round === 'r32' || round === 'r16') {
     context.push({
       type:   'elimination-risk',
-      label:  'Knockout Round — No Second Chances',
-      detail: 'One result ends the tournament for the loser — margins are everything',
+      label:  'Knockout Round. No Second Chances',
+      detail: 'One result ends the tournament for the loser. Margins are everything.',
     })
   } else if (round === 'qf' || round === 'sf') {
     context.push({
       type:   'knockout-pressure',
       label:  'One Step from the Final',
-      detail: 'The quality of opposition rises sharply — focus and discipline are non-negotiable',
+      detail: 'The quality of opposition rises sharply. Focus and discipline are non-negotiable.',
     })
   } else if (round === 'final') {
     context.push({
       type:   'high-stakes',
       label:  'World Cup Final',
-      detail: 'The pinnacle of international football — one match to decide the world champion',
+      detail: 'The pinnacle of international football. One match to decide the world champion.',
     })
   }
   return context

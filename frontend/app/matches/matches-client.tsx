@@ -35,6 +35,7 @@ function ilDateKey(dateStr: string): string {
 function applyFilter(matches: Match[], filter: FilterValue): Match[] {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: IL_TZ })
   switch (filter) {
+    case 'all':      return matches.filter(m => m.status !== 'finished')
     case 'today':    return matches.filter(m => ilDateKey(m.scheduledAt) === today || m.status === 'live')
     case 'finished': return matches.filter(m => m.status === 'finished')
     default:         return matches
@@ -54,9 +55,13 @@ function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: stri
     .map(([key, ms]) => ({
       dateKey:   key,
       dateLabel: formatMatchDate(ms[0].scheduledAt),
-      matches:   [...ms].sort(
-        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-      ),
+      matches:   [...ms].sort((a, b) => {
+        // Live matches surface first within each day
+        const aLive = a.status === 'live' ? 0 : 1
+        const bLive = b.status === 'live' ? 0 : 1
+        if (aLive !== bLive) return aLive - bLive
+        return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+      }),
     }))
 }
 

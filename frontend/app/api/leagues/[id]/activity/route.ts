@@ -11,7 +11,7 @@ export async function GET(_req: Request, { params }: Params) {
   const token = store.get(SESSION_COOKIE)?.value
   if (!token) return Response.json([], { status: 200 })
 
-  const res = await fetch(`${API_BASE}/leagues/${id}/activity?limit=10`, {
+  const res = await fetch(`${API_BASE}/leagues/${id}/activity?limit=100`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   })

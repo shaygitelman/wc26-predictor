@@ -418,7 +418,7 @@ export function LeagueMatchBrowser({
   const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
-    apiFetch(`/api/leagues/${leagueId}/activity?limit=20`)
+    apiFetch(`/api/leagues/${leagueId}/activity?limit=100`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: LeagueActivityMatch[]) => setMatches(data))
       .catch(() => setError(true))

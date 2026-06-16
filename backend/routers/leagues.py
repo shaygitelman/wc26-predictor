@@ -482,7 +482,7 @@ async def leave_league(
 @router.get("/{league_id}/activity", response_model=list[ActivityMatchOut])
 async def league_activity(
     league_id: str,
-    limit: int = Query(default=10, ge=1, le=20),
+    limit: int = Query(default=100, ge=1, le=100),
     user:  User = Depends(get_current_user),
     db:    AsyncSession = Depends(get_db),
 ) -> list[ActivityMatchOut]:
@@ -496,11 +496,14 @@ async def league_activity(
     """
     await _require_member(league_id, user.id, db)
 
-    # 1. Most recent finished match IDs
+    # 1. Most recently finished match IDs.
+    #    Sort by updated_at DESC (when the match was marked finished),
+    #    then scheduled_at DESC (kickoff time) and id ASC as deterministic
+    #    tie-breakers for simultaneous group-stage finishes.
     match_id_rows = (await db.execute(
         select(Match.id)
         .where(Match.status == "finished")
-        .order_by(Match.scheduled_at.desc())
+        .order_by(Match.updated_at.desc(), Match.scheduled_at.desc(), Match.id.asc())
         .limit(limit)
     )).all()
     match_ids = [r[0] for r in match_id_rows]

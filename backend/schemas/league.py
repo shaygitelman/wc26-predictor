@@ -141,3 +141,31 @@ class LeagueTournamentPicksOut(BaseModel):
     picks:            list[LeagueMemberTournamentPickOut]
     mostPickedWinner: Optional[MostPickedOut] = None
     mostPickedScorer: Optional[MostPickedOut] = None
+
+
+class ActivityPredictionOut(BaseModel):
+    userId:        str
+    username:      str
+    avatarUrl:     Optional[str]  = None
+    avatarId:      Optional[str]  = None
+    predictedHome: Optional[int]  = None
+    predictedAway: Optional[int]  = None
+    outcome:       Optional[str]  = None  # exact | difference | outcome | wrong | None
+    pointsEarned:  Optional[int]  = None
+    isAutoPick:    bool           = False
+    isCurrentUser: bool           = False
+
+
+class ActivityMatchOut(BaseModel):
+    matchId:     str
+    homeTeam:    str
+    homeFlagUrl: Optional[str] = None
+    homeCode:    str
+    awayTeam:    str
+    awayFlagUrl: Optional[str] = None
+    awayCode:    str
+    homeScore:   int
+    awayScore:   int
+    round:       str
+    scheduledAt: str
+    predictions: list[ActivityPredictionOut]

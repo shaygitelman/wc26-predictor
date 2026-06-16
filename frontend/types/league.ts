@@ -71,3 +71,31 @@ export interface LeagueMemberPrediction {
   isCurrentUser: boolean
   prediction: MemberPick | null
 }
+
+export interface LeagueActivityPrediction {
+  userId: string
+  username: string
+  avatarUrl?: string | null
+  avatarId?: string | null
+  predictedHome: number | null
+  predictedAway: number | null
+  outcome: 'exact' | 'difference' | 'outcome' | 'wrong' | null
+  pointsEarned: number | null
+  isAutoPick: boolean
+  isCurrentUser: boolean
+}
+
+export interface LeagueActivityMatch {
+  matchId: string
+  homeTeam: string
+  homeFlagUrl: string | null
+  homeCode: string
+  awayTeam: string
+  awayFlagUrl: string | null
+  awayCode: string
+  homeScore: number
+  awayScore: number
+  round: string
+  scheduledAt: string
+  predictions: LeagueActivityPrediction[]
+}

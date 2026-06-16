@@ -12,6 +12,7 @@ import { useAuth } from '@/providers/auth-provider'
 import { apiFetch } from '@/lib/api-client'
 import type { League, LeagueStanding, LeagueTournamentPicksData, LeagueMemberTournamentPick, MostPicked } from '@/types/league'
 import { trackInviteLinkCopied } from '@/lib/analytics'
+import { LeagueActivityFeed } from '@/components/molecules/league-activity-feed'
 
 // Lazy-load the QR library (~80KB) — only downloaded when the modal opens.
 const QRCodeSVG = dynamic(
@@ -394,7 +395,7 @@ export function LeagueDetailClient({
 }) {
   const { user } = useAuth()
 
-  const [activeTab,  setActiveTab]  = useState<'standings' | 'picks'>('standings')
+  const [activeTab,  setActiveTab]  = useState<'standings' | 'activity' | 'picks'>('standings')
   const [copyState,  setCopyState]  = useState<'idle' | 'copied'>('idle')
   const [showQR,     setShowQR]     = useState(false)
   const [modal,      setModal]      = useState<'delete' | 'leave' | null>(null)
@@ -615,11 +616,11 @@ export function LeagueDetailClient({
           <span
             className="absolute top-1 bottom-1 rounded-[10px] bg-card shadow-sm border border-border/60 transition-transform duration-200 ease-out pointer-events-none"
             style={{
-              width: 'calc((100% - 8px) / 2)',
-              transform: activeTab === 'picks' ? 'translateX(100%)' : 'translateX(0)',
+              width: 'calc((100% - 8px) / 3)',
+              transform: `translateX(${(['standings', 'activity', 'picks'] as const).indexOf(activeTab) * 100}%)`,
             }}
           />
-          {(['standings', 'picks'] as const).map(tab => (
+          {(['standings', 'activity', 'picks'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -629,7 +630,7 @@ export function LeagueDetailClient({
                 activeTab === tab ? 'text-foreground font-bold' : 'text-muted-foreground hover:text-foreground/70',
               )}
             >
-              {tab === 'standings' ? 'Standings' : 'Tournament Picks'}
+              {tab === 'standings' ? 'Standings' : tab === 'activity' ? 'Activity' : 'Tournament'}
             </button>
           ))}
         </div>
@@ -657,6 +658,8 @@ export function LeagueDetailClient({
               ))}
             </div>
           )
+        ) : activeTab === 'activity' ? (
+          <LeagueActivityFeed leagueId={league.id} currentUserId={user?.sub} />
         ) : (
           <TournamentPicksTab data={initialTournamentPicks} currentUserId={user?.sub} />
         )}

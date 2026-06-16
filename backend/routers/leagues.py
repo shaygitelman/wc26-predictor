@@ -2,7 +2,7 @@ import logging
 import secrets
 import string
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased
@@ -19,6 +19,7 @@ from schemas.league import (
     LeagueCreate, LeagueJoin, LeagueOut, LeaguePreview, LeagueStandingOut,
     MemberPick, MemberPredictionOut,
     LeagueMemberTournamentPickOut, LeagueTournamentPicksOut, MostPickedOut,
+    ActivityPredictionOut, ActivityMatchOut,
 )
 
 log = logging.getLogger(__name__)
@@ -476,6 +477,126 @@ async def leave_league(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this league")
     await db.delete(member)
     await db.commit()
+
+
+@router.get("/{league_id}/activity", response_model=list[ActivityMatchOut])
+async def league_activity(
+    league_id: str,
+    limit: int = Query(default=10, ge=1, le=20),
+    user:  User = Depends(get_current_user),
+    db:    AsyncSession = Depends(get_db),
+) -> list[ActivityMatchOut]:
+    """Return the most recent finished matches with every league member's prediction.
+
+    Only members who submitted a prediction for a given match are included in that
+    match's prediction list — members with no pick are omitted entirely.
+    Matches where no member submitted a prediction are also omitted.
+    Results are sorted newest match first.  All picks are always revealed (finished
+    matches only), so no privacy masking is needed here.
+    """
+    await _require_member(league_id, user.id, db)
+
+    # 1. Most recent finished match IDs
+    match_id_rows = (await db.execute(
+        select(Match.id)
+        .where(Match.status == "finished")
+        .order_by(Match.scheduled_at.desc())
+        .limit(limit)
+    )).all()
+    match_ids = [r[0] for r in match_id_rows]
+
+    if not match_ids:
+        return []
+
+    # 2. Match details indexed by id
+    match_rows = (await db.execute(
+        select(Match).where(Match.id.in_(match_ids))
+    )).scalars().all()
+    matches_by_id: dict[str, Match] = {m.id: m for m in match_rows}
+
+    # 3. All league members (excluding test accounts)
+    member_rows = (await db.execute(
+        select(User)
+        .join(LeagueMember, LeagueMember.user_id == User.id)
+        .where(LeagueMember.league_id == league_id)
+        .where(~User.email.ilike("%@test.wc26"))
+    )).scalars().all()
+
+    if not member_rows:
+        return []
+
+    member_ids = [m.id for m in member_rows]
+    member_by_id: dict[str, User] = {m.id: m for m in member_rows}
+
+    # 4. All predictions for these matches from league members (single query)
+    pred_rows = (await db.execute(
+        select(Prediction)
+        .where(Prediction.match_id.in_(match_ids))
+        .where(Prediction.user_id.in_(member_ids))
+    )).scalars().all()
+
+    pred_map: dict[tuple[str, str], Prediction] = {
+        (p.user_id, p.match_id): p for p in pred_rows
+    }
+
+    _OUTCOME_ORDER: dict[str, int] = {
+        "exact":      0,
+        "difference": 1,
+        "outcome":    1,
+        "wrong":      2,
+    }
+
+    result: list[ActivityMatchOut] = []
+
+    for match_id in match_ids:
+        match = matches_by_id.get(match_id)
+        if not match:
+            continue
+
+        pred_entries: list[ActivityPredictionOut] = []
+        for uid in member_ids:
+            pred = pred_map.get((uid, match_id))
+            if pred is None:
+                continue  # omit members who didn't predict this match
+
+            member_user = member_by_id[uid]
+            pred_entries.append(ActivityPredictionOut(
+                userId        = uid,
+                username      = member_user.username,
+                avatarUrl     = member_user.avatar_url,
+                avatarId      = member_user.avatar_id,
+                predictedHome = pred.predicted_home,
+                predictedAway = pred.predicted_away,
+                outcome       = pred.outcome,
+                pointsEarned  = pred.points_earned,
+                isAutoPick    = bool(pred.is_auto_pick),
+                isCurrentUser = uid == user.id,
+            ))
+
+        if not pred_entries:
+            continue  # omit matches nobody in the league predicted
+
+        pred_entries.sort(key=lambda p: (
+            _OUTCOME_ORDER.get(p.outcome or "", 2),
+            -(p.pointsEarned or 0),
+        ))
+
+        result.append(ActivityMatchOut(
+            matchId     = match.id,
+            homeTeam    = match.home_team_name,
+            homeFlagUrl = match.home_flag_url,
+            homeCode    = match.home_team_code,
+            awayTeam    = match.away_team_name,
+            awayFlagUrl = match.away_flag_url,
+            awayCode    = match.away_team_code,
+            homeScore   = match.home_score or 0,
+            awayScore   = match.away_score or 0,
+            round       = match.round,
+            scheduledAt = match.scheduled_at.isoformat(),
+            predictions = pred_entries,
+        ))
+
+    return result
 
 
 async def _require_member(league_id: str, user_id: str, db: AsyncSession) -> None:

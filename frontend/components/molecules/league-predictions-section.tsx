@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Lock, Trophy, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { UserAvatar } from '@/components/atoms/user-avatar'
 import type {
   MatchLeaguePredictions,
   LeaguePredictionGroup,
@@ -23,42 +24,6 @@ function formatBeforeKickoff(submittedAt: string, scheduledAt: string): string |
   const h = Math.floor(diffS / 3600)
   const m = Math.floor((diffS % 3600) / 60)
   return m > 0 ? `${h}h ${m}m before kickoff` : `${h}h before kickoff`
-}
-
-// ─── Avatar ───────────────────────────────────────────────────
-
-const AVATAR_COLORS = [
-  'bg-violet-500/20 text-violet-400',
-  'bg-blue-500/20   text-blue-400',
-  'bg-emerald-500/20 text-emerald-400',
-  'bg-amber-500/20  text-amber-400',
-  'bg-rose-500/20   text-rose-400',
-  'bg-cyan-500/20   text-cyan-400',
-]
-
-function Avatar({ username, avatarId, size = 32 }: { username: string; avatarId?: string | null; size?: number }) {
-  const colorIdx = username.charCodeAt(0) % AVATAR_COLORS.length
-  const letter   = username[0]?.toUpperCase() ?? '?'
-
-  if (avatarId) {
-    return (
-      <div
-        className="rounded-full bg-surface-elevated flex items-center justify-center flex-shrink-0 text-base leading-none"
-        style={{ width: size, height: size }}
-      >
-        {avatarId}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className={cn('rounded-full flex items-center justify-center flex-shrink-0 font-black', AVATAR_COLORS[colorIdx])}
-      style={{ width: size, height: size, fontSize: size * 0.44 }}
-    >
-      {letter}
-    </div>
-  )
 }
 
 // ─── Outcome badge ────────────────────────────────────────────
@@ -131,7 +96,7 @@ function PredictionRow({
       </span>
 
       {/* Avatar */}
-      <Avatar username={entry.username} avatarId={entry.avatarId} size={30} />
+      <UserAvatar username={entry.username} avatarId={entry.avatarId ?? undefined} size="sm" />
 
       {/* Name + meta */}
       <div className="flex-1 min-w-0">

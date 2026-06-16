@@ -12,7 +12,7 @@ import { useAuth } from '@/providers/auth-provider'
 import { apiFetch } from '@/lib/api-client'
 import type { League, LeagueStanding, LeagueTournamentPicksData, LeagueMemberTournamentPick, MostPicked } from '@/types/league'
 import { trackInviteLinkCopied } from '@/lib/analytics'
-import { LeagueActivityFeed } from '@/components/molecules/league-activity-feed'
+import { LeagueMatchBrowser } from '@/components/molecules/league-activity-feed'
 
 // Lazy-load the QR library (~80KB) — only downloaded when the modal opens.
 const QRCodeSVG = dynamic(
@@ -380,6 +380,111 @@ function TournamentPicksTab({
   )
 }
 
+// ─── Tournament section (inline in Standings tab) ────────────────────────────
+
+const TOURNAMENT_INITIAL_SHOW = 10
+
+function TournamentSection({
+  data,
+  currentUserId,
+}: {
+  data:           LeagueTournamentPicksData | null | undefined
+  currentUserId?: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (!data) return null
+
+  const picksWithData  = data.picks.filter(p => p.winnerId || p.topScorerId)
+  const totalMembers   = data.picks.length
+  const pickedCount    = picksWithData.length
+  const hasMany        = data.isLocked && data.picks.length > TOURNAMENT_INITIAL_SHOW
+  const visiblePicks   = hasMany && !expanded ? data.picks.slice(0, TOURNAMENT_INITIAL_SHOW) : data.picks
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Section label */}
+      <div className="flex items-center gap-2 px-1 pt-1">
+        <div className="flex-1 h-px bg-border/50" />
+        <div className="flex items-center gap-1.5">
+          <Trophy className="size-3 text-gold flex-shrink-0" strokeWidth={2} />
+          <p className="text-[10px] font-black tracking-[0.14em] uppercase text-muted-foreground/50">
+            Tournament Picks
+          </p>
+        </div>
+        <div className="flex-1 h-px bg-border/50" />
+      </div>
+
+      {/* Before lock: count banner */}
+      {!data.isLocked && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-surface-elevated border border-border">
+          <Lock className="size-4 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.75} />
+          <div>
+            <p className="text-sm font-bold text-foreground">Picks revealed at kick-off</p>
+            <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+              {pickedCount} of {totalMembers} member{totalMembers !== 1 ? 's' : ''} have made their picks.
+              Individual selections are hidden until the tournament starts.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* After lock: insights + table */}
+      {data.isLocked && (data.mostPickedWinner || data.mostPickedScorer) && (
+        <div className="flex gap-3">
+          <InsightCard label="Top Pick — Winner">
+            {data.mostPickedWinner
+              ? <WinnerInsight w={data.mostPickedWinner} />
+              : <p className="text-sm text-muted-foreground italic">—</p>
+            }
+          </InsightCard>
+          <InsightCard label="Top Pick — Golden Boot">
+            {data.mostPickedScorer
+              ? <ScorerInsight s={data.mostPickedScorer} />
+              : <p className="text-sm text-muted-foreground italic">—</p>
+            }
+          </InsightCard>
+        </div>
+      )}
+
+      {data.isLocked && data.picks.length === 0 && (
+        <div className="bg-card rounded-xl border border-border p-5 text-center">
+          <p className="text-sm text-muted-foreground">No members have made tournament picks yet.</p>
+        </div>
+      )}
+
+      {data.isLocked && data.picks.length > 0 && (
+        <div>
+          <div className="flex items-center px-3 py-1.5 mb-1">
+            <span className="text-2xs font-bold text-muted-foreground w-[100px] flex-shrink-0">Member</span>
+            <span className="text-2xs font-bold text-muted-foreground flex-1">Winner</span>
+            <span className="text-2xs font-bold text-muted-foreground w-[110px] flex-shrink-0">Golden Boot</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {visiblePicks.map(pick => (
+              <PickRow
+                key={pick.userId}
+                pick={pick}
+                isCurrentUser={pick.userId === currentUserId}
+              />
+            ))}
+          </div>
+          {hasMany && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="w-full mt-2 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {expanded
+                ? 'Show less'
+                : `Show ${data.picks.length - TOURNAMENT_INITIAL_SHOW} more`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main client component ────────────────────────────────────────────────────
 
 export function LeagueDetailClient({
@@ -395,7 +500,7 @@ export function LeagueDetailClient({
 }) {
   const { user } = useAuth()
 
-  const [activeTab,  setActiveTab]  = useState<'standings' | 'activity' | 'picks'>('standings')
+  const [activeTab,  setActiveTab]  = useState<'standings' | 'picks'>('standings')
   const [copyState,  setCopyState]  = useState<'idle' | 'copied'>('idle')
   const [showQR,     setShowQR]     = useState(false)
   const [modal,      setModal]      = useState<'delete' | 'leave' | null>(null)
@@ -616,11 +721,11 @@ export function LeagueDetailClient({
           <span
             className="absolute top-1 bottom-1 rounded-[10px] bg-card shadow-sm border border-border/60 transition-transform duration-200 ease-out pointer-events-none"
             style={{
-              width: 'calc((100% - 8px) / 3)',
-              transform: `translateX(${(['standings', 'activity', 'picks'] as const).indexOf(activeTab) * 100}%)`,
+              width: 'calc((100% - 8px) / 2)',
+              transform: `translateX(${(['standings', 'picks'] as const).indexOf(activeTab) * 100}%)`,
             }}
           />
-          {(['standings', 'activity', 'picks'] as const).map(tab => (
+          {(['standings', 'picks'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -630,7 +735,7 @@ export function LeagueDetailClient({
                 activeTab === tab ? 'text-foreground font-bold' : 'text-muted-foreground hover:text-foreground/70',
               )}
             >
-              {tab === 'standings' ? 'Standings' : tab === 'activity' ? 'Activity' : 'Tournament'}
+              {tab === 'standings' ? 'Standings' : 'Picks'}
             </button>
           ))}
         </div>
@@ -639,29 +744,33 @@ export function LeagueDetailClient({
       {/* ── Tab content ──────────────────────────────────────── */}
       <div className="px-4 pb-4 pt-3">
         {activeTab === 'standings' ? (
-          initialStandings.length === 0 ? (
-            <div className="bg-card rounded-xl border border-border p-6 text-center">
-              <p className="text-sm text-muted-foreground">No standings yet — predictions needed.</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {initialStandings.map(s => (
-                <LeaderboardRow
-                  key={s.userId}
-                  rank={s.rank}
-                  username={s.username}
-                  avatarUrl={s.avatarUrl}
-                  avatarId={s.avatarId}
-                  points={s.totalPoints}
-                  isCurrentUser={user ? s.userId === user.sub : false}
-                />
-              ))}
-            </div>
-          )
-        ) : activeTab === 'activity' ? (
-          <LeagueActivityFeed leagueId={league.id} currentUserId={user?.sub} />
+          <div className="flex flex-col gap-4">
+            {/* Standings rows */}
+            {initialStandings.length === 0 ? (
+              <div className="bg-card rounded-xl border border-border p-6 text-center">
+                <p className="text-sm text-muted-foreground">No standings yet — predictions needed.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {initialStandings.map(s => (
+                  <LeaderboardRow
+                    key={s.userId}
+                    rank={s.rank}
+                    username={s.username}
+                    avatarUrl={s.avatarUrl}
+                    avatarId={s.avatarId}
+                    points={s.totalPoints}
+                    isCurrentUser={user ? s.userId === user.sub : false}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Tournament picks — inline below standings */}
+            <TournamentSection data={initialTournamentPicks} currentUserId={user?.sub} />
+          </div>
         ) : (
-          <TournamentPicksTab data={initialTournamentPicks} currentUserId={user?.sub} />
+          <LeagueMatchBrowser leagueId={league.id} currentUserId={user?.sub} />
         )}
       </div>
 

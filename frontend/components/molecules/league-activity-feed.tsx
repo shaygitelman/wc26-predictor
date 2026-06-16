@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { UserAvatar } from '@/components/atoms/user-avatar'
 import { PointsBadge } from '@/components/atoms/points-badge'
@@ -68,26 +69,19 @@ function computeHeadline(match: LeagueActivityMatch): Headline | null {
     const names      = exact.map(displayName)
     const actualDir  = getDirection(match.homeScore, match.awayScore)
     const winnerTeam = actualDir === 'home' ? match.homeTeam : actualDir === 'away' ? match.awayTeam : null
-    const scoreStr   = actualDir === 'home'
-      ? `${match.homeScore}–${match.awayScore}`
-      : actualDir === 'away'
-        ? `${match.awayScore}–${match.homeScore}`
-        : `${match.homeScore}–${match.awayScore}`
-
+    const scoreStr   = `${match.homeScore}–${match.awayScore}`
     const prefix = names.length === 1 && exact[0].isCurrentUser ? 'You' : null
 
     if (winnerTeam) {
       if (names.length === 1) {
         const subj = prefix ?? names[0]
-        const verb = prefix ? 'called' : 'called'
-        return { type: 'perfect', text: `${subj} ${verb} ${winnerTeam} ${scoreStr} exactly` }
+        return { type: 'perfect', text: `${subj} called ${winnerTeam} ${scoreStr} exactly` }
       }
       if (names.length === 2) {
         return { type: 'perfect', text: `${names[0]} and ${names[1]} both called ${winnerTeam} ${scoreStr} exactly` }
       }
       return { type: 'perfect', text: `${names[0]} and ${exact.length - 1} others called ${winnerTeam} ${scoreStr} exactly` }
     } else {
-      // Draw
       if (names.length === 1) {
         const subj = prefix ?? names[0]
         return { type: 'perfect', text: `${subj} called the ${scoreStr} draw exactly` }
@@ -120,7 +114,7 @@ function computeHeadline(match: LeagueActivityMatch): Headline | null {
       const dir = getPredictedDirection(p)
       wrongDirCounts[dir] = (wrongDirCounts[dir] ?? 0) + 1
     }
-    const crowdDir      = (Object.entries(wrongDirCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'home') as 'home' | 'draw' | 'away'
+    const crowdDir       = (Object.entries(wrongDirCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'home') as 'home' | 'draw' | 'away'
     const crowdPickCount = wrongDirCounts[crowdDir] ?? wrong.length
     const crowdTeam      = crowdDir === 'home' ? match.homeTeam : crowdDir === 'away' ? match.awayTeam : 'a draw'
     const contrarianText = nameList(correct.map(displayName))
@@ -146,7 +140,6 @@ function computeHeadline(match: LeagueActivityMatch): Headline | null {
 // ── Streak computation ────────────────────────────────────────────────────────
 
 function computeCurrentStreaks(matches: LeagueActivityMatch[]): Map<string, number> {
-  // matches are sorted newest-first; iterate that way so we count from the end backward
   const streaks = new Map<string, number>()
   const done    = new Set<string>()
 
@@ -168,17 +161,17 @@ function computeCurrentStreaks(matches: LeagueActivityMatch[]): Map<string, numb
 // ── Headline banner ───────────────────────────────────────────────────────────
 
 const HEADLINE_STYLE: Record<HeadlineType, { emoji: string; wrapper: string; text: string }> = {
-  perfect:       { emoji: '⭐', wrapper: 'bg-gold-muted border-gold-border',                    text: 'text-gold font-bold' },
-  sole_believer: { emoji: '🎯', wrapper: 'bg-status-partial-bg border-status-partial/25',       text: 'text-status-partial font-semibold' },
-  against_crowd: { emoji: '🔮', wrapper: 'bg-violet-500/[0.08] border-violet-500/20',           text: 'text-violet-300 font-semibold' },
-  sweep:         { emoji: '🎊', wrapper: 'bg-status-partial-bg border-status-partial/25',       text: 'text-status-partial font-semibold' },
-  nobody:        { emoji: '😬', wrapper: 'bg-surface-elevated border-border',                   text: 'text-muted-foreground font-semibold' },
+  perfect:       { emoji: '⭐', wrapper: 'bg-gold-muted border-gold-border',              text: 'text-gold font-bold' },
+  sole_believer: { emoji: '🎯', wrapper: 'bg-status-partial-bg border-status-partial/25', text: 'text-status-partial font-semibold' },
+  against_crowd: { emoji: '🔮', wrapper: 'bg-violet-500/[0.08] border-violet-500/20',    text: 'text-violet-300 font-semibold' },
+  sweep:         { emoji: '🎊', wrapper: 'bg-status-partial-bg border-status-partial/25', text: 'text-status-partial font-semibold' },
+  nobody:        { emoji: '😬', wrapper: 'bg-surface-elevated border-border',             text: 'text-muted-foreground font-semibold' },
 }
 
 function HeadlineBanner({ headline }: { headline: Headline }) {
   const style = HEADLINE_STYLE[headline.type]
   return (
-    <div className={cn('flex items-center gap-2.5 px-3 py-2.5 rounded-xl border', style.wrapper)}>
+    <div className={cn('flex items-center gap-2.5 px-3 py-2.5 rounded-xl border mx-3', style.wrapper)}>
       <span className="text-base leading-none flex-shrink-0">{style.emoji}</span>
       <p className={cn('text-[13px] leading-snug', style.text)}>{headline.text}</p>
     </div>
@@ -194,11 +187,9 @@ function formatPrediction(p: LeagueActivityPrediction): string {
 
 function PredictionRow({
   pred,
-  match,
   streak,
 }: {
   pred:   LeagueActivityPrediction
-  match:  LeagueActivityMatch
   streak: number
 }) {
   const isExact   = pred.outcome === 'exact'
@@ -207,23 +198,20 @@ function PredictionRow({
 
   return (
     <div className={cn(
-      'flex items-center gap-2.5 px-3 py-2 rounded-xl',
-      isExact   ? 'bg-gold-muted/60'                    : '',
-      isCorrect && !isExact ? 'bg-card'                 : '',
-      isWrong   ? 'bg-transparent'                      : '',
-      pred.isCurrentUser ? 'ring-1 ring-primary/40'     : '',
+      'flex items-center gap-2.5 px-3 py-2',
+      isExact   ? 'bg-gold-muted/60'                : '',
+      isCorrect && !isExact ? 'bg-card'             : '',
+      pred.isCurrentUser ? 'ring-1 ring-primary/40' : '',
     )}>
-      {/* Outcome icon */}
       <span className={cn(
         'text-[13px] leading-none flex-shrink-0 w-4 text-center',
-        isExact   ? 'text-gold'            : '',
+        isExact   ? 'text-gold'                 : '',
         isCorrect && !isExact ? 'text-status-partial' : '',
-        isWrong   ? 'text-muted-foreground/40' : '',
+        isWrong   ? 'text-muted-foreground/40'  : '',
       )}>
         {isExact ? '⭐' : isCorrect ? '✓' : '·'}
       </span>
 
-      {/* Avatar */}
       <UserAvatar
         username={pred.username}
         avatarUrl={pred.avatarUrl ?? undefined}
@@ -231,7 +219,6 @@ function PredictionRow({
         size="xs"
       />
 
-      {/* Name + streak */}
       <span className={cn(
         'flex-1 text-[13px] font-semibold truncate min-w-0',
         isWrong        ? 'text-muted-foreground' : 'text-foreground',
@@ -244,7 +231,6 @@ function PredictionRow({
         )}
       </span>
 
-      {/* Prediction */}
       <span className={cn(
         'text-[12px] tabular flex-shrink-0',
         isWrong ? 'text-muted-foreground/40' : 'text-muted-foreground',
@@ -252,7 +238,6 @@ function PredictionRow({
         {formatPrediction(pred)}
       </span>
 
-      {/* Points — only shown for correct predictions; wrong = 0 is universally understood */}
       {pred.pointsEarned !== null && !isWrong && (
         <PointsBadge
           points={pred.pointsEarned}
@@ -264,9 +249,9 @@ function PredictionRow({
   )
 }
 
-// ── Match block ───────────────────────────────────────────────────────────────
+// ── Match card ────────────────────────────────────────────────────────────────
 
-function MatchBlock({
+function MatchCard({
   match,
   streaks,
 }: {
@@ -275,41 +260,29 @@ function MatchBlock({
 }) {
   const preds     = match.predictions
   const headline  = computeHeadline(match)
-
-  const exactCount   = preds.filter(p => p.outcome === 'exact').length
-  const correctCount = preds.filter(p => p.outcome === 'difference' || p.outcome === 'outcome').length
-  const wrongCount   = preds.filter(p => p.outcome === 'wrong').length
-
-  const summaryParts: string[] = []
-  if (exactCount   > 0) summaryParts.push(`${exactCount} nailed it`)
-  if (correctCount > 0) summaryParts.push(`${correctCount} correct`)
-  if (wrongCount   > 0) summaryParts.push(`${wrongCount} missed`)
-
   const roundLabel = ROUND_LABELS[match.round] ?? match.round
 
   const correct = preds.filter(p => isCorrectOutcome(p.outcome))
   const wrong   = preds.filter(p => p.outcome === 'wrong')
 
   return (
-    <div className="flex flex-col gap-2">
-      {/* Match context strip */}
-      <div className="flex items-center justify-between gap-2 px-1">
+    <div className="bg-card rounded-2xl border border-border overflow-hidden">
+      {/* Match header */}
+      <div className="px-3 py-3 border-b border-border/50 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          {/* Flags + score */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {match.homeFlagUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={match.homeFlagUrl} alt={match.homeTeam} className="w-5 h-[13px] rounded-[3px] object-cover" />
+              <img src={match.homeFlagUrl} alt={match.homeTeam} className="w-6 h-[15px] rounded-[3px] object-cover" />
             )}
-            <span className="text-[13px] font-black tabular text-foreground">
+            <span className="text-[15px] font-black tabular text-foreground">
               {match.homeScore}–{match.awayScore}
             </span>
             {match.awayFlagUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={match.awayFlagUrl} alt={match.awayTeam} className="w-5 h-[13px] rounded-[3px] object-cover" />
+              <img src={match.awayFlagUrl} alt={match.awayTeam} className="w-6 h-[15px] rounded-[3px] object-cover" />
             )}
           </div>
-          {/* Team names + round */}
           <span className="text-[12px] text-muted-foreground truncate">
             {match.homeTeam} vs {match.awayTeam}
           </span>
@@ -319,25 +292,25 @@ function MatchBlock({
         </span>
       </div>
 
-      {/* Summary line */}
-      {summaryParts.length > 0 && (
-        <p className="text-[11px] text-muted-foreground/70 px-1">
-          {summaryParts.join(' · ')}
-        </p>
+      {/* Headline banner */}
+      {headline && (
+        <div className="py-2.5">
+          <HeadlineBanner headline={headline} />
+        </div>
       )}
 
-      {/* Headline banner */}
-      {headline && <HeadlineBanner headline={headline} />}
-
-      {/* Prediction rows: exact → correct → wrong */}
-      <div className="flex flex-col gap-1">
+      {/* Prediction rows */}
+      <div className={cn('flex flex-col gap-0', !headline && 'pt-1')}>
         {correct.map(pred => (
-          <PredictionRow key={pred.userId} pred={pred} match={match} streak={streaks.get(pred.userId) ?? 0} />
+          <PredictionRow key={pred.userId} pred={pred} streak={streaks.get(pred.userId) ?? 0} />
         ))}
         {wrong.map(pred => (
-          <PredictionRow key={pred.userId} pred={pred} match={match} streak={streaks.get(pred.userId) ?? 0} />
+          <PredictionRow key={pred.userId} pred={pred} streak={streaks.get(pred.userId) ?? 0} />
         ))}
       </div>
+
+      {/* Bottom padding */}
+      <div className="h-2" />
     </div>
   )
 }
@@ -345,15 +318,11 @@ function MatchBlock({
 // ── League Pulse bar ──────────────────────────────────────────────────────────
 
 function PulseBar({ matches, streaks }: { matches: LeagueActivityMatch[]; streaks: Map<string, number> }) {
-  // Highest current streak ≥3
   let topStreakUserId = ''
   let topStreakCount  = 0
   let topStreakName   = ''
   for (const [uid, count] of streaks) {
-    if (count > topStreakCount) {
-      topStreakCount  = count
-      topStreakUserId = uid
-    }
+    if (count > topStreakCount) { topStreakCount = count; topStreakUserId = uid }
   }
   if (topStreakCount >= 3 && topStreakUserId) {
     for (const match of matches) {
@@ -362,7 +331,6 @@ function PulseBar({ matches, streaks }: { matches: LeagueActivityMatch[]; streak
     }
   }
 
-  // Most exact scores across the feed
   const exactCounts = new Map<string, { count: number; name: string }>()
   for (const match of matches) {
     for (const pred of match.predictions) {
@@ -404,20 +372,53 @@ function PulseBar({ matches, streaks }: { matches: LeagueActivityMatch[]; streak
   )
 }
 
+// ── Loading skeleton ──────────────────────────────────────────────────────────
+
+function LoadingSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Nav skeleton */}
+      <div className="flex items-center gap-2">
+        <div className="h-8 w-16 rounded-xl bg-muted animate-pulse" />
+        <div className="flex-1 h-4 mx-4 rounded-full bg-muted animate-pulse" />
+        <div className="h-8 w-16 rounded-xl bg-muted animate-pulse" />
+      </div>
+      {/* Card skeleton */}
+      <div className="bg-card rounded-2xl border border-border overflow-hidden">
+        <div className="px-3 py-3 border-b border-border/50 flex items-center gap-2">
+          <div className="h-4 w-6 rounded-sm bg-surface-elevated animate-pulse" />
+          <div className="h-4 w-8 rounded bg-surface-elevated animate-pulse" />
+          <div className="h-4 w-6 rounded-sm bg-surface-elevated animate-pulse" />
+          <div className="h-3 w-32 rounded-full bg-surface-elevated animate-pulse ml-1" />
+        </div>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="flex items-center gap-2.5 px-3 py-2">
+            <div className="w-4 h-3 rounded-full bg-surface-elevated animate-pulse" />
+            <div className="size-6 rounded-full bg-surface-elevated animate-pulse" />
+            <div className="flex-1 h-3 rounded-full bg-surface-elevated animate-pulse" />
+            <div className="h-3 w-8 rounded-full bg-surface-elevated animate-pulse" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function LeagueActivityFeed({
+export function LeagueMatchBrowser({
   leagueId,
-  currentUserId,
+  currentUserId: _currentUserId,
 }: {
-  leagueId:      string
+  leagueId:       string
   currentUserId?: string
 }) {
-  const [matches, setMatches] = useState<LeagueActivityMatch[] | null>(null)
-  const [error,   setError]   = useState(false)
+  const [matches,      setMatches]      = useState<LeagueActivityMatch[] | null>(null)
+  const [error,        setError]        = useState(false)
+  const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
-    apiFetch(`/api/leagues/${leagueId}/activity`)
+    apiFetch(`/api/leagues/${leagueId}/activity?limit=20`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: LeagueActivityMatch[]) => setMatches(data))
       .catch(() => setError(true))
@@ -426,25 +427,12 @@ export function LeagueActivityFeed({
   if (error) {
     return (
       <div className="bg-card rounded-xl border border-border p-6 text-center">
-        <p className="text-sm text-muted-foreground">Could not load activity. Please try again.</p>
+        <p className="text-sm text-muted-foreground">Could not load picks. Please try again.</p>
       </div>
     )
   }
 
-  if (matches === null) {
-    return (
-      <div className="flex flex-col gap-4">
-        {[0, 1, 2].map(i => (
-          <div key={i} className="flex flex-col gap-2">
-            <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-            <div className="h-10 w-full bg-muted rounded-xl animate-pulse" />
-            <div className="h-8 w-full bg-muted/60 rounded-xl animate-pulse" />
-            <div className="h-8 w-full bg-muted/40 rounded-xl animate-pulse" />
-          </div>
-        ))}
-      </div>
-    )
-  }
+  if (matches === null) return <LoadingSkeleton />
 
   if (matches.length === 0) {
     return (
@@ -457,14 +445,56 @@ export function LeagueActivityFeed({
     )
   }
 
-  const streaks = computeCurrentStreaks(matches)
+  const streaks   = computeCurrentStreaks(matches)
+  const total     = matches.length
+  const match     = matches[currentIndex]
+  // matches[0] = most recent; higher index = older
+  const canOlder  = currentIndex < total - 1
+  const canNewer  = currentIndex > 0
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       <PulseBar matches={matches} streaks={streaks} />
-      {matches.map(match => (
-        <MatchBlock key={match.matchId} match={match} streaks={streaks} />
-      ))}
+
+      {/* Navigation bar */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setCurrentIndex(i => i + 1)}
+          disabled={!canOlder}
+          aria-label="Older match"
+          className={cn(
+            'flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold transition-colors select-none',
+            canOlder
+              ? 'text-foreground bg-surface-elevated hover:bg-accent active:scale-95'
+              : 'text-muted-foreground/25 cursor-not-allowed',
+          )}
+        >
+          <ChevronLeft className="size-3.5 flex-shrink-0" />
+          Older
+        </button>
+
+        <span className="flex-1 text-center text-[11px] font-semibold text-muted-foreground tabular-nums select-none">
+          Match {currentIndex + 1} of {total}
+        </span>
+
+        <button
+          onClick={() => setCurrentIndex(i => i - 1)}
+          disabled={!canNewer}
+          aria-label="Newer match"
+          className={cn(
+            'flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold transition-colors select-none',
+            canNewer
+              ? 'text-foreground bg-surface-elevated hover:bg-accent active:scale-95'
+              : 'text-muted-foreground/25 cursor-not-allowed',
+          )}
+        >
+          Newer
+          <ChevronRight className="size-3.5 flex-shrink-0" />
+        </button>
+      </div>
+
+      {/* Single match card */}
+      <MatchCard key={currentIndex} match={match} streaks={streaks} />
     </div>
   )
 }

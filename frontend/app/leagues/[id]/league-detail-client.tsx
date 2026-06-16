@@ -474,6 +474,7 @@ export function LeagueDetailClient({
                       winnerName={pick?.winnerName}
                       winnerFlagUrl={pick?.winnerFlagUrl}
                       scorerName={pick?.scorerName}
+                      scorerPhotoUrl={pick?.scorerPhotoUrl}
                     />
                   )
                 })}

@@ -10,9 +10,10 @@ interface LeaderboardRowProps {
   isCurrentUser?: boolean
   className?:    string
   // Optional tournament picks — rendered as a secondary line under the username
-  winnerName?:    string | null
-  winnerFlagUrl?: string | null
-  scorerName?:    string | null
+  winnerName?:     string | null
+  winnerFlagUrl?:  string | null
+  scorerName?:     string | null
+  scorerPhotoUrl?: string | null
 }
 
 const PODIUM: Record<number, {
@@ -52,6 +53,7 @@ export function LeaderboardRow({
   winnerName,
   winnerFlagUrl,
   scorerName,
+  scorerPhotoUrl,
 }: LeaderboardRowProps) {
   const podium        = rank !== null ? PODIUM[rank] : undefined
   const hasTournament = !!(winnerName || scorerName)
@@ -96,7 +98,8 @@ export function LeaderboardRow({
         </span>
 
         {hasTournament && (
-          <div className="flex items-center gap-1 mt-[3px] overflow-hidden">
+          <div className="flex items-center gap-1 mt-[3px] min-w-0">
+            {/* Winner: flag + country name */}
             {winnerFlagUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -105,13 +108,37 @@ export function LeaderboardRow({
                 className="w-3.5 h-[9px] rounded-[2px] object-cover flex-shrink-0"
               />
             )}
-            <span className="text-[11px] text-muted-foreground/70 truncate leading-none">
+            <span className="text-[11px] text-muted-foreground/70 leading-none flex-shrink-0">
               {winnerName ?? '—'}
-              {winnerName && scorerName && (
-                <span className="text-muted-foreground/40"> · </span>
-              )}
-              {scorerName}
             </span>
+
+            {/* Separator */}
+            {scorerName && (
+              <span className="text-[11px] text-muted-foreground/40 leading-none flex-shrink-0"> · </span>
+            )}
+
+            {/* Scorer: photo or initials fallback */}
+            {scorerName && (
+              scorerPhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={scorerPhotoUrl}
+                  alt={scorerName}
+                  className="size-4 rounded-full object-cover flex-shrink-0"
+                />
+              ) : (
+                <span className="size-4 rounded-full bg-surface-elevated border border-border/60 flex items-center justify-center text-[8px] font-bold text-muted-foreground flex-shrink-0">
+                  {scorerName.split(' ').pop()?.[0]?.toUpperCase() ?? '?'}
+                </span>
+              )
+            )}
+
+            {/* Scorer name — truncates to fill remaining space */}
+            {scorerName && (
+              <span className="text-[11px] text-muted-foreground/70 leading-none truncate min-w-0">
+                {scorerName}
+              </span>
+            )}
           </div>
         )}
       </div>

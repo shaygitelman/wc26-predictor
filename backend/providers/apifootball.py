@@ -107,7 +107,15 @@ class ApiFootballProvider(FootballDataProvider):
                         res.raise_for_status()
                     continue
                 res.raise_for_status()
-                return res.json()
+                data = res.json()
+                # API-Football returns HTTP 200 even when rate-limited or quota-exceeded;
+                # the error is buried in the JSON body. Raise so callers see it.
+                errors = data.get("errors")
+                if errors:
+                    msg = str(errors)
+                    log.error("API-Football error for %s %s: %s", path, params, msg)
+                    raise RuntimeError(f"API-Football error: {msg}")
+                return data
 
     # ── Teams ─────────────────────────────────────────────────────
 
@@ -152,10 +160,11 @@ class ApiFootballProvider(FootballDataProvider):
         return self._parse_fixtures(data)
 
     async def fetch_live(self, league_id: str) -> list[ProviderFixture]:
-        # API-Football v3: "live=<league_id>" fetches only that league's live fixtures.
-        # "live=all" with a separate "league" param is undocumented and silently drops
-        # the league filter, causing this call to return nothing or all competitions.
-        data = await self._get("/fixtures", {"live": league_id})
+        # Use "live=all" to fetch all live fixtures across every competition.
+        # We then filter in-DB by external_id, so only WC2026 matches are affected.
+        # "live=<league_id>" is the league-scoped variant, but API-Football's live
+        # index sometimes lags behind the full feed — "live=all" is more reliable.
+        data = await self._get("/fixtures", {"live": "all"})
         await asyncio.sleep(0.2)
         return self._parse_fixtures(data)
 

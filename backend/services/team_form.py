@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from models.team import Team
 from providers.apifootball import ApiFootballProvider
+from services import api_stats
 
 log = logging.getLogger(__name__)
 
@@ -107,8 +108,10 @@ async def _fetch_stats_for_team(
     now = time.time()
     cached = _FIXTURE_STATS_CACHE.get(fixture_id)
     if cached and now - cached[0] < _FIXTURE_STATS_TTL:
+        api_stats.record_cache_hit("fixture_stats")
         raw = cached[1]
     else:
+        api_stats.record_cache_miss("fixture_stats")
         try:
             raw = await provider.fetch_fixture_statistics(fixture_id)
             _FIXTURE_STATS_CACHE[fixture_id] = (now, raw)
@@ -308,7 +311,9 @@ async def get_h2h(
         ts, cached = _H2H_CACHE[cache_key]
         if now - ts < _H2H_CACHE_TTL:
             log.debug("[H2H] cache hit %s vs %s", home_code, away_code)
+            api_stats.record_cache_hit("h2h")
             return cached
+    api_stats.record_cache_miss("h2h")
 
     provider = ApiFootballProvider(settings.apifootball_key)
 

@@ -26,6 +26,7 @@ from core.config import settings
 from models.match import Match
 from models.team import Team
 from providers.apifootball import ApiFootballProvider
+from services import api_stats
 
 log = logging.getLogger(__name__)
 
@@ -222,8 +223,10 @@ async def get_squad_availability(
     _t1_cached = _INJURIES_CACHE.get(_t1_key)
     if _t1_cached and now - _t1_cached[0] < _INJURIES_CACHE_TTL:
         log.debug("[SquadAvailability] cache hit fixture=%s", fixture_id)
+        api_stats.record_cache_hit("injuries_fixture")
         raw_entries = _t1_cached[1]
     else:
+        api_stats.record_cache_miss("injuries_fixture")
         try:
             raw_entries = await provider.fetch_injuries(fixture_id)
             _INJURIES_CACHE[_t1_key] = (now, raw_entries)
@@ -247,8 +250,10 @@ async def get_squad_availability(
         _t2_cached = _INJURIES_CACHE.get(_t2_key)
         if _t2_cached and now - _t2_cached[0] < _INJURIES_CACHE_TTL:
             log.debug("[SquadAvailability] cache hit team=%s", team_ext_id)
+            api_stats.record_cache_hit("injuries_team")
             team_raw = _t2_cached[1]
         else:
+            api_stats.record_cache_miss("injuries_team")
             try:
                 team_raw = await provider.fetch_injuries_by_team(team_ext_id)
                 _INJURIES_CACHE[_t2_key] = (now, team_raw)

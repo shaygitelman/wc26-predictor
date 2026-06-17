@@ -1142,3 +1142,26 @@ async def tournament_scoring_log(
         )
         for r in runs
     ]
+
+
+# ── API usage monitoring ──────────────────────────────────────────────
+
+@router.get("/api-usage", dependencies=[Depends(_verify_admin)])
+async def get_api_usage() -> dict:
+    """
+    Returns current API-Football usage stats for this server process.
+
+    Fields:
+      date             — UTC date the counters apply to
+      requests_today   — total successful API calls made today
+      daily_limit      — Pro plan daily cap (7,500)
+      quota_pct        — % of daily quota used (2 decimal places)
+      quota_remaining  — calls left before hitting the cap
+      top_consumers    — endpoints ranked by call count, highest first
+      cache_stats      — per-cache hit/miss counts and hit rate % (since server start)
+
+    Note: all counters are in-memory and reset on server restart.
+    Daily counters reset at UTC midnight regardless of restart.
+    """
+    from services import api_stats
+    return api_stats.get_stats()

@@ -9,8 +9,8 @@ Rate limit: ~100 req/min on paid plan.
 We sleep 0.2 s between requests (≤300/min burst headroom).
 """
 import asyncio
-import datetime
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -23,32 +23,11 @@ from core.wc2026_config import (
     WC2026_VENUE_CITY_MAP,
 )
 from providers.base import FootballDataProvider, ProviderFixture, ProviderPlayer, ProviderTeam
+from services import api_stats
 
 log = logging.getLogger(__name__)
 
 _BASE = "https://v3.football.api-sports.io"
-
-# ── Daily API usage monitoring ────────────────────────────────────────
-_DAILY_LIMIT      = 7500
-_WARN_THRESHOLDS  = (0.70, 0.85, 0.95)  # warn once when crossing each level
-_usage_count: int = 0
-_usage_day:   str = ""
-
-
-def _track_api_call() -> None:
-    global _usage_count, _usage_day
-    today = datetime.date.today().isoformat()
-    if _usage_day != today:
-        _usage_count = 0
-        _usage_day   = today
-    _usage_count += 1
-    pct = _usage_count / _DAILY_LIMIT
-    for threshold in _WARN_THRESHOLDS:
-        if _usage_count == int(threshold * _DAILY_LIMIT):
-            log.warning(
-                "API-Football daily usage: %d/%d (%.0f%%) — %d%% threshold reached",
-                _usage_count, _DAILY_LIMIT, pct * 100, int(threshold * 100),
-            )
 
 # Fallback name→code map for teams not in APIFOOTBALL_ID_TO_CODE.
 # (Should never be needed for WC 2026, but kept as a safety net.)
@@ -137,7 +116,7 @@ class ApiFootballProvider(FootballDataProvider):
                     msg = str(errors)
                     log.error("API-Football error for %s %s: %s", path, params, msg)
                     raise RuntimeError(f"API-Football error: {msg}")
-                _track_api_call()
+                api_stats.record_api_call(path)
                 return data
 
     # ── Teams ─────────────────────────────────────────────────────
@@ -211,9 +190,9 @@ class ApiFootballProvider(FootballDataProvider):
             ext_id   = str(fix.get("id", ""))
             dt_str   = fix.get("date", "")
             try:
-                scheduled = datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00")).astimezone(datetime.timezone.utc)
+                scheduled = datetime.fromisoformat(dt_str.replace("Z", "+00:00")).astimezone(timezone.utc)
             except Exception:
-                scheduled = datetime.datetime.now(datetime.timezone.utc)
+                scheduled = datetime.now(timezone.utc)
 
             home_t    = teams.get("home", {})
             away_t    = teams.get("away", {})

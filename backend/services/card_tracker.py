@@ -28,6 +28,7 @@ from core.config import settings
 from models.match import Match
 from models.team import Team
 from providers.apifootball import ApiFootballProvider
+from services import api_stats
 
 log = logging.getLogger(__name__)
 
@@ -250,8 +251,10 @@ async def get_card_tracking(
         cached = _EVENTS_CACHE.get(m.external_id)
         if cached and now - cached[0] < _EVENTS_CACHE_TTL:
             log.debug("[CardTracker] cache hit fixture=%s", m.external_id)
+            api_stats.record_cache_hit("events")
             match_events_list.append((m, cached[1]))
             continue
+        api_stats.record_cache_miss("events")
         try:
             events = await provider.fetch_fixture_events(m.external_id)
             _EVENTS_CACHE[m.external_id] = (now, events)

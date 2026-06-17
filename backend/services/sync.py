@@ -1067,14 +1067,15 @@ class SyncService:
                 errors.append(f"stale-live {stale.external_id}: {exc}")
 
         # ── Phase 3: stale-scheduled recovery ─────────────────────────
-        # Matches that never transitioned scheduled → live because the cron
-        # was down during kick-off.  Fetch each individually and update.
-        # Only runs when the match is >90 min past scheduled_at and still
-        # has a real (numeric) external_id.
+        # Matches that never transitioned scheduled → live because the live
+        # feed (Phase 1) missed them.  Fetch each individually and update.
+        # Threshold is 5 minutes: short enough to catch a missed kick-off
+        # quickly (within one cron tick) but long enough to avoid
+        # false-positives for late-starting matches.
         stale_scheduled = (await db.execute(
             select(Match).where(
                 Match.status == "scheduled",
-                Match.scheduled_at <= _now - timedelta(minutes=90),
+                Match.scheduled_at <= _now - timedelta(minutes=5),
                 Match.external_id.isnot(None),
             )
         )).scalars().all()

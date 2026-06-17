@@ -152,7 +152,10 @@ class ApiFootballProvider(FootballDataProvider):
         return self._parse_fixtures(data)
 
     async def fetch_live(self, league_id: str) -> list[ProviderFixture]:
-        data = await self._get("/fixtures", {"live": "all", "league": league_id})
+        # API-Football v3: "live=<league_id>" fetches only that league's live fixtures.
+        # "live=all" with a separate "league" param is undocumented and silently drops
+        # the league filter, causing this call to return nothing or all competitions.
+        data = await self._get("/fixtures", {"live": league_id})
         await asyncio.sleep(0.2)
         return self._parse_fixtures(data)
 

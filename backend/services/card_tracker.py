@@ -15,6 +15,7 @@ Rules (WC 2026 / FIFA standard):
 """
 import asyncio
 import logging
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timezone
@@ -32,6 +33,10 @@ log = logging.getLogger(__name__)
 
 # WC 2026: yellow card threshold per accumulation window (same as WC 2022)
 YELLOW_THRESHOLD = 2
+
+# Fixture events for finished matches never change — cache for 6 hours.
+_EVENTS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_EVENTS_CACHE_TTL = 6 * 3600
 
 
 @dataclass
@@ -237,12 +242,19 @@ async def get_card_tracking(
     provider = ApiFootballProvider(settings.apifootball_key)
     match_events_list: list[tuple[Match, list[dict]]] = []
 
+    now = time.time()
     for m in completed_matches:
         if not m.external_id or not m.external_id.isdigit():
             log.debug("[CardTracker] match=%s — skipping %s (no numeric external_id)", match_id, m.id)
             continue
+        cached = _EVENTS_CACHE.get(m.external_id)
+        if cached and now - cached[0] < _EVENTS_CACHE_TTL:
+            log.debug("[CardTracker] cache hit fixture=%s", m.external_id)
+            match_events_list.append((m, cached[1]))
+            continue
         try:
             events = await provider.fetch_fixture_events(m.external_id)
+            _EVENTS_CACHE[m.external_id] = (now, events)
             match_events_list.append((m, events))
             log.debug(
                 "[CardTracker] match=%s — fetched %d events for fixture=%s",

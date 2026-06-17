@@ -14,6 +14,7 @@ Returns None only when both tiers are empty (no data available at all).
 The caller is responsible for returning HTTP 501 when None is returned.
 """
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal, Optional
@@ -27,6 +28,10 @@ from models.team import Team
 from providers.apifootball import ApiFootballProvider
 
 log = logging.getLogger(__name__)
+
+# Injury data is slow-changing — cache for 6 hours.
+_INJURIES_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_INJURIES_CACHE_TTL = 6 * 3600
 
 # API-Football injury `type` → availability bucket.
 # API v3 may return either the detailed form ("Injured", "Out", …) or the
@@ -204,6 +209,7 @@ async def get_squad_availability(
 
     fixture_id = match.external_id
     provider   = ApiFootballProvider(settings.apifootball_key)
+    now        = time.time()
 
     log.info(
         "[SquadAvailability] match=%s side=%s team=%s — fetching injuries "
@@ -212,14 +218,21 @@ async def get_squad_availability(
     )
 
     # ── Tier 1: fixture-scoped ────────────────────────────────────────────────
-    try:
-        raw_entries = await provider.fetch_injuries(fixture_id)
-    except Exception as exc:
-        log.error(
-            "[SquadAvailability] match=%s side=%s — API-Football /injuries fixture-scope failed: %s",
-            match_id, side, exc,
-        )
-        raw_entries = []
+    _t1_key = f"fixture:{fixture_id}"
+    _t1_cached = _INJURIES_CACHE.get(_t1_key)
+    if _t1_cached and now - _t1_cached[0] < _INJURIES_CACHE_TTL:
+        log.debug("[SquadAvailability] cache hit fixture=%s", fixture_id)
+        raw_entries = _t1_cached[1]
+    else:
+        try:
+            raw_entries = await provider.fetch_injuries(fixture_id)
+            _INJURIES_CACHE[_t1_key] = (now, raw_entries)
+        except Exception as exc:
+            log.error(
+                "[SquadAvailability] match=%s side=%s — API-Football /injuries fixture-scope failed: %s",
+                match_id, side, exc,
+            )
+            raw_entries = []
 
     using_tournament_fallback = False
 
@@ -230,14 +243,21 @@ async def get_squad_availability(
             "trying team+tournament scope (team=%s league=1 season=2026)",
             match_id, side, team_ext_id,
         )
-        try:
-            team_raw = await provider.fetch_injuries_by_team(team_ext_id)
-        except Exception as exc:
-            log.error(
-                "[SquadAvailability] match=%s side=%s — team-scope /injuries failed: %s",
-                match_id, side, exc,
-            )
-            team_raw = []
+        _t2_key = f"team:{team_ext_id}"
+        _t2_cached = _INJURIES_CACHE.get(_t2_key)
+        if _t2_cached and now - _t2_cached[0] < _INJURIES_CACHE_TTL:
+            log.debug("[SquadAvailability] cache hit team=%s", team_ext_id)
+            team_raw = _t2_cached[1]
+        else:
+            try:
+                team_raw = await provider.fetch_injuries_by_team(team_ext_id)
+                _INJURIES_CACHE[_t2_key] = (now, team_raw)
+            except Exception as exc:
+                log.error(
+                    "[SquadAvailability] match=%s side=%s — team-scope /injuries failed: %s",
+                    match_id, side, exc,
+                )
+                team_raw = []
 
         if not team_raw:
             log.info(

@@ -30,14 +30,19 @@ log = logging.getLogger(__name__)
 # ─── Finished-status codes returned by API-Football ─────────────────
 _FT_STATUSES = frozenset({"FT", "AET", "PEN", "AWD", "WO"})
 
-# ─── In-process TTL cache (1 h) ──────────────────────────────────────
+# ─── In-process TTL caches ───────────────────────────────────────────
 # Key: "{api_id}:{last}" → (fetched_at_unix, TeamFormResult)
 _FORM_CACHE: dict[str, tuple[float, "TeamFormResult"]] = {}
 # Key: "h2h:{home_api_id}:{away_api_id}" → (fetched_at_unix, dict)
 _H2H_CACHE:  dict[str, tuple[float, dict]]             = {}
 # Key: "wc2026" → (fetched_at_unix, {team_api_id: [{player_id, name, goals, assists}]})
 _TOP_PERFORMERS_CACHE: dict[str, tuple[float, dict[str, list[dict]]]] = {}
-_CACHE_TTL   = 3600  # 1 hour
+# Key: fixture_id → (fetched_at_unix, list[dict]) — finished match stats are immutable
+_FIXTURE_STATS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+_CACHE_TTL         = 3600        # 1 hour  — form, top performers
+_H2H_CACHE_TTL     = 86400       # 24 hours — H2H history rarely changes
+_FIXTURE_STATS_TTL = 30 * 86400  # 30 days  — finished match stats never change
 
 
 # ─── Data structures ─────────────────────────────────────────────────
@@ -99,13 +104,20 @@ async def _fetch_stats_for_team(
     api_id: str,
 ) -> list[dict]:
     """Return the statistics list for this team from a specific fixture. Empty on failure."""
-    try:
-        raw = await provider.fetch_fixture_statistics(fixture_id)
-        for block in raw:
-            if str(block.get("team", {}).get("id", "")) == api_id:
-                return block.get("statistics", [])
-    except Exception as exc:
-        log.debug("[TeamForm] stats fetch failed fixture=%s team=%s: %s", fixture_id, api_id, exc)
+    now = time.time()
+    cached = _FIXTURE_STATS_CACHE.get(fixture_id)
+    if cached and now - cached[0] < _FIXTURE_STATS_TTL:
+        raw = cached[1]
+    else:
+        try:
+            raw = await provider.fetch_fixture_statistics(fixture_id)
+            _FIXTURE_STATS_CACHE[fixture_id] = (now, raw)
+        except Exception as exc:
+            log.debug("[TeamForm] stats fetch failed fixture=%s team=%s: %s", fixture_id, api_id, exc)
+            return []
+    for block in raw:
+        if str(block.get("team", {}).get("id", "")) == api_id:
+            return block.get("statistics", [])
     return []
 
 
@@ -294,7 +306,7 @@ async def get_h2h(
     now = time.time()
     if cache_key in _H2H_CACHE:
         ts, cached = _H2H_CACHE[cache_key]
-        if now - ts < _CACHE_TTL:
+        if now - ts < _H2H_CACHE_TTL:
             log.debug("[H2H] cache hit %s vs %s", home_code, away_code)
             return cached
 

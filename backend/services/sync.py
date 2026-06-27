@@ -704,8 +704,9 @@ class SyncService:
 
         _now = datetime.now(timezone.utc)
 
-        # Date gate — group stage cannot end before July 1
-        _ko_gate = datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
+        # Date gate — some R32 slots are confirmed as early as late June when
+        # individual groups finish their 3rd matchday before the full group stage ends
+        _ko_gate = datetime(2026, 6, 26, 0, 0, tzinfo=timezone.utc)
         if _now < _ko_gate:
             log.debug("[Sync/reconcile_knockout] skipped — before group-stage-end gate")
             return SyncResult(status="skipped", entity_type="reconcile_knockout", records_affected=0)
@@ -781,6 +782,173 @@ class SyncService:
                 )
                 continue
 
+            if round_code == "r32":
+                # R32 is published incrementally — each winner/runner-up pair is
+                # confirmed as its group finishes, before all 12 groups complete.
+                # The 4 best-3rd-place slots require all groups to finish and a
+                # FIFA ruling on which 8 of 12 third-place teams qualify.
+                # Use label-based matching (group position) instead of positional
+                # zip so partial reconciliation works without a count-equality gate.
+                from collections import defaultdict as _dd
+                from core.wc2026_config import CODE_TO_GROUP as _C2G
+
+                # Compute per-team stats from finished group matches
+                _grp_rows = (await db.execute(
+                    select(Match).where(
+                        Match.round == "group",
+                        Match.status == "finished",
+                        Match.home_score.isnot(None),
+                        Match.away_score.isnot(None),
+                    )
+                )).scalars().all()
+                _pts: dict[str, int] = {}
+                _gd:  dict[str, int] = {}
+                _gf:  dict[str, int] = {}
+                for _gm in _grp_rows:
+                    for _code, _f, _a in [
+                        (_gm.home_team_code.upper(), _gm.home_score, _gm.away_score),
+                        (_gm.away_team_code.upper(), _gm.away_score, _gm.home_score),
+                    ]:
+                        if _code == "TBD" or _code not in _C2G:
+                            continue
+                        _pts[_code] = _pts.get(_code, 0) + (3 if _f > _a else 1 if _f == _a else 0)
+                        _gd[_code]  = _gd.get(_code, 0) + (_f - _a)
+                        _gf[_code]  = _gf.get(_code, 0) + _f
+
+                # Rank each team within their group (pts → GD → GF)
+                _by_grp: dict[str, list[str]] = _dd(list)
+                for _code in _C2G:
+                    _by_grp[_C2G[_code]].append(_code)
+                _ranked: dict[str, list[str]] = {
+                    _g: sorted(_cc, key=lambda c: (-_pts.get(c, 0), -_gd.get(c, 0), -_gf.get(c, 0)))
+                    for _g, _cc in _by_grp.items()
+                }
+
+                def _label(code: str) -> str | None:
+                    g = _C2G.get(code)
+                    if not g:
+                        return None
+                    try:
+                        rk = _ranked[g].index(code) + 1
+                    except (KeyError, ValueError):
+                        return None
+                    if rk == 1:
+                        return f"1st Group {g}"
+                    if rk == 2:
+                        return f"2nd Group {g}"
+                    return "Best 3rd Place"
+
+                # Build (home_team_name, away_team_name) → placeholder lookup
+                _ph_by_label: dict[tuple[str, str], Match] = {}
+                for _ph in db_placeholders:
+                    _k = (_ph.home_team_name or "", _ph.away_team_name or "")
+                    _ph_by_label[_k] = _ph
+                _updated_ids: set[str] = set()
+
+                # Remove orphan rows for r32 (numeric external_id, no predictions)
+                from models.prediction import Prediction
+                _r32_orphans = [
+                    m for m in (await db.execute(
+                        select(Match).where(Match.round == "r32")
+                    )).scalars().all()
+                    if m.external_id and m.external_id.isdigit()
+                ]
+                for _orph in _r32_orphans:
+                    _pc = await db.scalar(
+                        select(func.count()).select_from(Prediction).where(
+                            Prediction.match_id == _orph.id
+                        )
+                    )
+                    if _pc:
+                        errors.append(
+                            f"r32 orphan ext={_orph.external_id} has {_pc} predictions — cannot remove"
+                        )
+                    else:
+                        await db.delete(_orph)
+                        log.info(
+                            "[Sync/reconcile_knockout] removed r32 orphan match=%s ext=%s",
+                            _orph.id, _orph.external_id,
+                        )
+                await db.flush()
+
+                for fx in api_fixtures:
+                    try:
+                        h_lbl = _label(fx.home_team_code.upper())
+                        a_lbl = _label(fx.away_team_code.upper())
+                        if not h_lbl or not a_lbl:
+                            errors.append(
+                                f"r32 {fx.external_id}: can't derive label for "
+                                f"{fx.home_team_code}/{fx.away_team_code}"
+                            )
+                            continue
+                        if "Best 3rd Place" in (h_lbl, a_lbl):
+                            # 3rd-place slots need all groups done + FIFA bracket ruling
+                            log.info(
+                                "[Sync/reconcile_knockout] r32 3rd-place deferred: %s vs %s",
+                                fx.home_team_code, fx.away_team_code,
+                            )
+                            continue
+
+                        ph = _ph_by_label.get((h_lbl, a_lbl)) or _ph_by_label.get((a_lbl, h_lbl))
+                        if not ph or ph.id in _updated_ids:
+                            if not ph:
+                                errors.append(
+                                    f"r32 {fx.external_id}: no placeholder for ({h_lbl}, {a_lbl})"
+                                )
+                            continue
+                        _updated_ids.add(ph.id)
+
+                        prev_status = ph.status
+                        needs_score = (
+                            fx.status == "finished"
+                            and prev_status != "finished"
+                            and fx.home_score is not None
+                            and fx.away_score is not None
+                        )
+                        vals: dict = {
+                            "external_id":    fx.external_id,
+                            "home_team_code": fx.home_team_code,
+                            "away_team_code": fx.away_team_code,
+                            "home_team_name": fx.home_team_name,
+                            "away_team_name": fx.away_team_name,
+                            "scheduled_at":   fx.scheduled_at,
+                            "minute":         fx.minute,
+                            "updated_at":     _now,
+                        }
+                        if fx.venue:
+                            vals["venue"] = fx.venue
+                        if fx.city:
+                            vals["city"] = fx.city
+                        if fx.home_flag_url:
+                            vals["home_flag_url"] = fx.home_flag_url
+                        if fx.away_flag_url:
+                            vals["away_flag_url"] = fx.away_flag_url
+                        if needs_score:
+                            vals["status"] = prev_status
+                        else:
+                            vals["status"]     = fx.status
+                            vals["home_score"] = fx.home_score
+                            vals["away_score"] = fx.away_score
+
+                        await db.execute(
+                            update(Match)
+                            .where(Match.id == ph.id)
+                            .values(**vals)
+                            .execution_options(synchronize_session=False)
+                        )
+                        count += 1
+                        log.info(
+                            "[Sync/reconcile_knockout] r32 %s(%s) vs %s(%s) → slot=%s ext=%s",
+                            fx.home_team_code, h_lbl, fx.away_team_code, a_lbl,
+                            ph.external_id, fx.external_id,
+                        )
+                        if needs_score:
+                            to_score.append((ph.id, fx.home_score, fx.away_score))
+
+                    except Exception as exc:
+                        errors.append(f"r32 {fx.external_id}: {exc}")
+                continue  # r32 done — move to next round
+
             if len(api_fixtures) != len(db_placeholders):
                 msg = (
                     f"round={round_code} count mismatch: "
@@ -818,7 +986,7 @@ class SyncService:
                     )
             await db.flush()  # commit orphan deletes before updating with same ext_ids
 
-            # Positional matching within round
+            # Positional matching within round (r16, qf, sf, 3rd, final)
             for fx, match in zip(api_fixtures, db_placeholders):
                 try:
                     prev_status = match.status
@@ -1130,7 +1298,7 @@ class SyncService:
         # if no manual KO placeholders remain.
         global _last_ko_reconcile_at
         _ko_due = (
-            _now >= datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
+            _now >= datetime(2026, 6, 26, 0, 0, tzinfo=timezone.utc)
             and (
                 _last_ko_reconcile_at is None
                 or _now >= _last_ko_reconcile_at + timedelta(hours=1)

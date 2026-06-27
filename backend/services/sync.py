@@ -724,19 +724,9 @@ class SyncService:
 
         _log_entry = await self._start_log("reconcile_knockout", db)
 
-        try:
-            fixtures = await self.provider.fetch_fixtures(self.league_id, self.season)
-        except Exception as exc:
-            return await self._fail_log(_log_entry, str(exc), db)
-
         count  = 0
         errors: list[str] = []
         to_score: list[tuple[str, int, int]] = []
-
-        # Build reverse map: round_code → set of int_round values
-        _code_to_int_rounds: dict[str, list[int]] = {}
-        for ir, rc in _ROUND_MAP.items():
-            _code_to_int_rounds.setdefault(rc, []).append(ir)
 
         def _slot_num(ext_id: str) -> int:
             """Extract slot integer from 'manual-wc2026-r32-7' → 7."""
@@ -744,6 +734,102 @@ class SyncService:
                 return int(ext_id.rsplit("-", 1)[-1])
             except (ValueError, IndexError):
                 return 999
+
+        # ── Phase A: bracket propagation (DB-internal, no API call required) ───
+        # As each previous-round match finishes, propagate the winner (or loser for
+        # 3rd-place) into the corresponding next-round placeholder slot.  Phase B
+        # (below) then enriches those slots with the real external ID and metadata
+        # once the API publishes confirmed fixtures.
+        from services.wc2026_seed import _BRACKET_FEEDERS, _PREV_ROUND
+
+        for _nr, _feeders in _BRACKET_FEEDERS.items():
+            _pr         = _PREV_ROUND[_nr]
+            _use_losers = (_nr == "3rd")
+
+            # Previous-round matches in slot order (ascending scheduled_at; ties
+            # broken by external_id string so manual-wc2026-*-1 < *-2 etc.)
+            _prev_all = sorted(
+                (await db.execute(select(Match).where(Match.round == _pr))).scalars().all(),
+                key=lambda m: (
+                    m.scheduled_at or datetime.min.replace(tzinfo=timezone.utc),
+                    m.external_id or "",
+                ),
+            )
+
+            # Next-round placeholders that still need teams assigned
+            _next_phs: dict[int, Match] = {
+                _slot_num(m.external_id or ""): m
+                for m in (await db.execute(
+                    select(Match).where(
+                        Match.round == _nr,
+                        Match.external_id.like("manual-wc2026-%"),
+                    )
+                )).scalars().all()
+                if (m.home_team_code or "TBD") in ("TBD", "", None)
+                   or (m.away_team_code or "TBD") in ("TBD", "", None)
+            }
+            if not _next_phs:
+                continue
+
+            for _si, (_hs, _as) in enumerate(_feeders, start=1):
+                _ph = _next_phs.get(_si)
+                if not _ph or _hs > len(_prev_all) or _as > len(_prev_all):
+                    continue
+                _hm, _am = _prev_all[_hs - 1], _prev_all[_as - 1]
+                if _hm.status != "finished" or _am.status != "finished":
+                    continue
+
+                def _outcome(m: Match, want_winner: bool):
+                    if (m.home_score is None or m.away_score is None
+                            or m.home_score == m.away_score):
+                        return None  # tied score — ET/PK winner unknown; wait for API
+                    use_home = (m.home_score > m.away_score) == want_winner
+                    return (
+                        (m.home_team_code, m.home_team_name, m.home_flag_url)
+                        if use_home else
+                        (m.away_team_code, m.away_team_name, m.away_flag_url)
+                    )
+
+                _h_info = _outcome(_hm, not _use_losers)
+                _a_info = _outcome(_am, not _use_losers)
+                if not _h_info or not _a_info:
+                    continue
+
+                _h_code, _h_name, _h_flag = _h_info
+                _a_code, _a_name, _a_flag = _a_info
+                _pv: dict = {
+                    "home_team_code": _h_code, "home_team_name": _h_name,
+                    "away_team_code": _a_code, "away_team_name": _a_name,
+                    "updated_at":     _now,
+                }
+                if _h_flag:
+                    _pv["home_flag_url"] = _h_flag
+                if _a_flag:
+                    _pv["away_flag_url"] = _a_flag
+
+                await db.execute(
+                    update(Match).where(Match.id == _ph.id)
+                    .values(**_pv)
+                    .execution_options(synchronize_session=False)
+                )
+                count += 1
+                log.info(
+                    "[Sync/reconcile_knockout] bracket-prop %s slot=%d: %s vs %s",
+                    _nr, _si, _h_code, _a_code,
+                )
+
+        await db.flush()
+
+        # ── Phase B: API-driven metadata sync ────────────────────────────────────
+        try:
+            fixtures = await self.provider.fetch_fixtures(self.league_id, self.season)
+        except Exception as exc:
+            return await self._fail_log(_log_entry, str(exc), db)
+
+        # Build reverse map: round_code → set of int_round values
+        _code_to_int_rounds: dict[str, list[int]] = {}
+        for ir, rc in _ROUND_MAP.items():
+            _code_to_int_rounds.setdefault(rc, []).append(ir)
 
         for round_code in ("r32", "r16", "qf", "sf", "3rd", "final"):
             valid_int_rounds = _code_to_int_rounds.get(round_code, [])
@@ -952,54 +1038,71 @@ class SyncService:
                         errors.append(f"r32 {fx.external_id}: {exc}")
                 continue  # r32 done — move to next round
 
-            if len(api_fixtures) != len(db_placeholders):
-                msg = (
-                    f"round={round_code} count mismatch: "
-                    f"api={len(api_fixtures)} db_manual={len(db_placeholders)} — skipping"
-                )
-                log.warning("[Sync/reconcile_knockout] %s", msg)
-                errors.append(msg)
-                continue
-
-            # Remove orphan rows (numeric external_id, same round, zero predictions)
-            # These can accumulate when sync_fixtures runs before reconcile.
+            # Progressive matching for R16 and later — no count-equality gate.
+            # API fixtures and DB placeholders are both in chronological (slot) order.
+            # Skip already-reconciled API fixtures; fill unreconciled DB slots in sequence.
+            # Inline per-fixture duplicate removal replaces the old upfront orphan sweep.
             from models.prediction import Prediction
-            orphans = [
-                m for m in (await db.execute(
-                    select(Match).where(Match.round == round_code)
-                )).scalars().all()
-                if m.external_id and m.external_id.isdigit()
-            ]
-            for orphan in orphans:
-                pred_count = await db.scalar(
-                    select(func.count()).select_from(Prediction).where(
-                        Prediction.match_id == orphan.id
-                    )
-                )
-                if pred_count:
-                    errors.append(
-                        f"round={round_code} orphan ext={orphan.external_id} "
-                        f"has {pred_count} predictions — cannot remove"
-                    )
-                else:
-                    await db.delete(orphan)
-                    log.info(
-                        "[Sync/reconcile_knockout] removed orphan match=%s ext=%s round=%s",
-                        orphan.id, orphan.external_id, round_code,
-                    )
-            await db.flush()  # commit orphan deletes before updating with same ext_ids
 
-            # Positional matching within round (r16, qf, sf, 3rd, final)
-            for fx, match in zip(api_fixtures, db_placeholders):
+            _all_rnd = (await db.execute(
+                select(Match).where(Match.round == round_code)
+            )).scalars().all()
+            _ph_ids  = {p.id for p in db_placeholders}
+            _rec_rnd: set[str] = {
+                m.external_id
+                for m in _all_rnd
+                if m.external_id and m.external_id.isdigit()
+                and m.id not in _ph_ids
+            }
+
+            _upd_rnd: set[str] = set()
+            _ph_iter = iter(db_placeholders)
+
+            for fx in api_fixtures:
                 try:
-                    prev_status = match.status
+                    if fx.external_id in _rec_rnd:
+                        continue
+
+                    ph = next(_ph_iter, None)
+                    if ph is None:
+                        if fx.external_id not in _rec_rnd:
+                            errors.append(
+                                f"{round_code} {fx.external_id}: no placeholder available"
+                            )
+                        continue
+                    if ph.id in _upd_rnd:
+                        continue
+                    _upd_rnd.add(ph.id)
+
+                    # Delete duplicate row (same external_id, different DB row)
+                    _dup = next(
+                        (m for m in _all_rnd
+                         if m.external_id == fx.external_id and m.id != ph.id),
+                        None,
+                    )
+                    if _dup:
+                        _pc = await db.scalar(
+                            select(func.count()).select_from(Prediction).where(
+                                Prediction.match_id == _dup.id
+                            )
+                        )
+                        if _pc:
+                            errors.append(
+                                f"{round_code} dup ext={_dup.external_id} "
+                                f"has {_pc} predictions — cannot remove"
+                            )
+                            _upd_rnd.discard(ph.id)
+                            continue
+                        await db.delete(_dup)
+                        await db.flush()
+
+                    prev_status = ph.status
                     needs_score = (
                         fx.status == "finished"
                         and prev_status != "finished"
                         and fx.home_score is not None
                         and fx.away_score is not None
                     )
-
                     values: dict = {
                         "external_id":    fx.external_id,
                         "home_team_code": fx.home_team_code,
@@ -1014,9 +1117,11 @@ class SyncService:
                         values["venue"] = fx.venue
                     if fx.city:
                         values["city"] = fx.city
-
+                    if fx.home_flag_url:
+                        values["home_flag_url"] = fx.home_flag_url
+                    if fx.away_flag_url:
+                        values["away_flag_url"] = fx.away_flag_url
                     if needs_score:
-                        # Leave status/scores unset; score_match will finalise them
                         values["status"] = prev_status
                     else:
                         values["status"]     = fx.status
@@ -1025,7 +1130,7 @@ class SyncService:
 
                     await db.execute(
                         update(Match)
-                        .where(Match.id == match.id)
+                        .where(Match.id == ph.id)
                         .values(**values)
                         .execution_options(synchronize_session=False)
                     )
@@ -1033,11 +1138,10 @@ class SyncService:
                     log.info(
                         "[Sync/reconcile_knockout] %s vs %s → ext=%s round=%s slot=%d",
                         fx.home_team_code, fx.away_team_code,
-                        fx.external_id, round_code, _slot_num(match.external_id or ""),
+                        fx.external_id, round_code, _slot_num(ph.external_id or ""),
                     )
-
                     if needs_score:
-                        to_score.append((match.id, fx.home_score, fx.away_score))
+                        to_score.append((ph.id, fx.home_score, fx.away_score))
 
                 except Exception as exc:
                     errors.append(f"{round_code} {fx.external_id}: {exc}")

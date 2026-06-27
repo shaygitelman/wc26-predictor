@@ -82,10 +82,10 @@ _R32_DATES: list[datetime] = [
 _KO_DATES: dict[str, list[datetime]] = {
     "r32": _R32_DATES,
     "r16": [
-        _dt(2026, 7,  9, 17), _dt(2026, 7,  9, 21),
-        _dt(2026, 7,  9, 17), _dt(2026, 7,  9, 21),
-        _dt(2026, 7, 10, 17), _dt(2026, 7, 10, 21),
-        _dt(2026, 7, 10, 17), _dt(2026, 7, 10, 21),
+        _dt(2026, 7,  9, 17), _dt(2026, 7,  9, 21),  # slots 1-2
+        _dt(2026, 7, 10, 17), _dt(2026, 7, 10, 21),  # slots 3-4
+        _dt(2026, 7, 11, 17), _dt(2026, 7, 11, 21),  # slots 5-6
+        _dt(2026, 7, 12, 17), _dt(2026, 7, 12, 21),  # slots 7-8
     ],
     "qf": [
         _dt(2026, 7, 13, 17), _dt(2026, 7, 13, 21),
@@ -128,6 +128,21 @@ _R32_LABELS: list[tuple[str, str]] = [
     ("1st Group G",    "Best 3rd Place"),  # slot 15: BEL vs 3rd-place (est.)
     ("Best 3rd Place", "Best 3rd Place"),  # slot 16: 3rd vs 3rd (est.)
 ]
+
+# Bracket progression: for each round, defines which two previous-round slots
+# feed into each slot of this round as (home_src_slot, away_src_slot).
+# Previous-round slots are resolved in ascending scheduled_at order (= slot order).
+# "3rd" uses losers of both SF slots; all other rounds use winners.
+_BRACKET_FEEDERS: dict[str, list[tuple[int, int]]] = {
+    "r16":   [(1,2), (3,4), (5,6), (7,8), (9,10), (11,12), (13,14), (15,16)],
+    "qf":    [(1,2), (3,4), (5,6), (7,8)],
+    "sf":    [(1,2), (3,4)],
+    "final": [(1,2)],
+    "3rd":   [(1,2)],
+}
+_PREV_ROUND: dict[str, str] = {
+    "r16": "r32", "qf": "r16", "sf": "qf", "final": "sf", "3rd": "sf",
+}
 
 
 @dataclass
@@ -188,6 +203,27 @@ class WC2026SeedService:
         )
         await self.db.commit()
         return res.rowcount
+
+    async def fix_r16_dates(self) -> int:
+        """
+        One-time fix: update R16 placeholder scheduled_at values to unique times
+        (the original seed accidentally wrote duplicate times for slots 1&3 and 2&4).
+        Only updates rows that still have a manual-wc2026-r16-N external_id.
+        """
+        from sqlalchemy import update as _upd
+        r16_dates = [d for d in _KO_DATES["r16"]]
+        count = 0
+        for idx, sched in enumerate(r16_dates, start=1):
+            ext_id = f"manual-wc2026-r16-{idx}"
+            res = await self.db.execute(
+                _upd(Match)
+                .where(Match.external_id == ext_id)
+                .values(scheduled_at=sched)
+                .execution_options(synchronize_session=False)
+            )
+            count += res.rowcount
+        await self.db.commit()
+        return count
 
     async def update_r32_labels(self) -> int:
         """

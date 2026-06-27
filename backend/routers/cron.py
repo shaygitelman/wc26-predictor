@@ -55,3 +55,15 @@ async def cron_update_r32_labels(db: AsyncSession = Depends(get_db)) -> dict:
     from services.wc2026_seed import WC2026SeedService
     updated = await WC2026SeedService(db).update_r32_labels()
     return {"status": "ok", "updated": updated}
+
+
+@router.post(
+    "/fix-r16-dates",
+    dependencies=[Depends(_verify_cron)],
+    summary="One-time: fix R16 placeholder scheduled_at (corrects duplicate seed times).",
+    include_in_schema=False,
+)
+async def cron_fix_r16_dates(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+    updated = await WC2026SeedService(db).fix_r16_dates()
+    return {"status": "ok", "updated": updated}

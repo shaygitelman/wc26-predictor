@@ -51,7 +51,7 @@ class MatchOut(BaseModel):
             venue       = m.venue,
             city        = m.city,
             round       = m.round,
-            group       = m.group_name or CODE_TO_GROUP.get(m.home_team_code) or CODE_TO_GROUP.get(m.away_team_code),
+            group       = (m.group_name or CODE_TO_GROUP.get(m.home_team_code) or CODE_TO_GROUP.get(m.away_team_code)) if m.round == "group" else None,
             status      = m.status,
             homeScore   = m.home_score,
             awayScore   = m.away_score,

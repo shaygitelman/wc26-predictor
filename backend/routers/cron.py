@@ -79,3 +79,22 @@ async def cron_fix_r32_dates(db: AsyncSession = Depends(get_db)) -> dict:
     from services.wc2026_seed import WC2026SeedService
     updated = await WC2026SeedService(db).fix_r32_dates()
     return {"status": "ok", "updated": updated}
+
+
+@router.post(
+    "/fix-knockout-groups",
+    dependencies=[Depends(_verify_cron)],
+    summary="One-time: clear group_name on all knockout matches (group stage data leaked into R32).",
+    include_in_schema=False,
+)
+async def cron_fix_knockout_groups(db: AsyncSession = Depends(get_db)) -> dict:
+    from sqlalchemy import update as _upd
+    from models.match import Match
+    res = await db.execute(
+        _upd(Match)
+        .where(Match.round.notin_(["group"]))
+        .values(group_name=None)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return {"status": "ok", "updated": res.rowcount}

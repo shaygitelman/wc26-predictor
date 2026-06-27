@@ -202,17 +202,21 @@ class SyncService:
                 away_flag    = away_team.flag_url   if away_team else fx.away_flag_url
                 home_group   = home_team.group_name if home_team else None
                 away_group   = away_team.group_name if away_team else None
-                group_name   = home_group or away_group  # same group for both teams
 
                 round_code   = _ROUND_MAP.get(fx.int_round, "group")
 
-                # Provider may supply group letter directly (API-Football does)
-                if fx.group_name:
-                    group_name = fx.group_name
-                    if not home_group:
-                        home_group = group_name
-                    if not away_group:
-                        away_group = group_name
+                if round_code == "group":
+                    group_name = home_group or away_group
+                    # Provider may supply group letter directly (API-Football does)
+                    if fx.group_name:
+                        group_name = fx.group_name
+                        if not home_group:
+                            home_group = group_name
+                        if not away_group:
+                            away_group = group_name
+                else:
+                    # Knockout matches have no group; don't inherit from team records
+                    group_name = None
 
                 # Two-step build: we need insert_stmt.excluded to write COALESCE
                 # expressions that protect non-null venue/city from being overwritten.

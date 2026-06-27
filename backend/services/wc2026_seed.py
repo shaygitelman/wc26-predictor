@@ -225,6 +225,27 @@ class WC2026SeedService:
         await self.db.commit()
         return count
 
+    async def fix_r32_dates(self) -> int:
+        """
+        One-time fix: update R32 placeholder scheduled_at values for slots 10-16
+        to the correct non-duplicate estimates from _R32_DATES.
+        Only updates rows that still have a manual-wc2026-r32-N external_id
+        (slots 1-9 are already reconciled to real API fixtures and won't match).
+        """
+        from sqlalchemy import update as _upd
+        count = 0
+        for idx, sched in enumerate(_R32_DATES, start=1):
+            ext_id = f"manual-wc2026-r32-{idx}"
+            res = await self.db.execute(
+                _upd(Match)
+                .where(Match.external_id == ext_id)
+                .values(scheduled_at=sched)
+                .execution_options(synchronize_session=False)
+            )
+            count += res.rowcount
+        await self.db.commit()
+        return count
+
     async def update_r32_labels(self) -> int:
         """
         In-place update of existing R32 placeholder rows to match the real

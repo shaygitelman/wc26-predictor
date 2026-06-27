@@ -43,3 +43,15 @@ async def cron_sync_live(db: AsyncSession = Depends(get_db)) -> SyncResponse:
 async def cron_reconcile_knockouts(db: AsyncSession = Depends(get_db)) -> SyncResponse:
     result = await _make_service().reconcile_knockout_slots(db)
     return SyncResponse(**vars(result))
+
+
+@router.post(
+    "/update-r32-labels",
+    dependencies=[Depends(_verify_cron)],
+    summary="One-time: update R32 placeholder labels to match the real FIFA WC 2026 bracket.",
+    include_in_schema=False,
+)
+async def cron_update_r32_labels(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+    updated = await WC2026SeedService(db).update_r32_labels()
+    return {"status": "ok", "updated": updated}

@@ -838,38 +838,25 @@ class SyncService:
                         return f"2nd Group {g}"
                     return "Best 3rd Place"
 
-                # Build (home_team_name, away_team_name) → placeholder lookup
+                # All r32 DB rows (placeholders + already-reconciled)
+                from models.prediction import Prediction
+                _all_r32 = (await db.execute(
+                    select(Match).where(Match.round == "r32")
+                )).scalars().all()
+                # External IDs that were once placeholders but are now reconciled
+                _placeholder_ids = {p.id for p in db_placeholders}
+                _reconciled_ext: set[str] = {
+                    m.external_id
+                    for m in _all_r32
+                    if m.external_id and m.external_id.isdigit()
+                    and m.id not in _placeholder_ids
+                }
+
                 _ph_by_label: dict[tuple[str, str], Match] = {}
                 for _ph in db_placeholders:
                     _k = (_ph.home_team_name or "", _ph.away_team_name or "")
                     _ph_by_label[_k] = _ph
                 _updated_ids: set[str] = set()
-
-                # Remove orphan rows for r32 (numeric external_id, no predictions)
-                from models.prediction import Prediction
-                _r32_orphans = [
-                    m for m in (await db.execute(
-                        select(Match).where(Match.round == "r32")
-                    )).scalars().all()
-                    if m.external_id and m.external_id.isdigit()
-                ]
-                for _orph in _r32_orphans:
-                    _pc = await db.scalar(
-                        select(func.count()).select_from(Prediction).where(
-                            Prediction.match_id == _orph.id
-                        )
-                    )
-                    if _pc:
-                        errors.append(
-                            f"r32 orphan ext={_orph.external_id} has {_pc} predictions — cannot remove"
-                        )
-                    else:
-                        await db.delete(_orph)
-                        log.info(
-                            "[Sync/reconcile_knockout] removed r32 orphan match=%s ext=%s",
-                            _orph.id, _orph.external_id,
-                        )
-                await db.flush()
 
                 for fx in api_fixtures:
                     try:
@@ -881,22 +868,38 @@ class SyncService:
                                 f"{fx.home_team_code}/{fx.away_team_code}"
                             )
                             continue
-                        if "Best 3rd Place" in (h_lbl, a_lbl):
-                            # 3rd-place slots need all groups done + FIFA bracket ruling
-                            log.info(
-                                "[Sync/reconcile_knockout] r32 3rd-place deferred: %s vs %s",
-                                fx.home_team_code, fx.away_team_code,
-                            )
-                            continue
 
                         ph = _ph_by_label.get((h_lbl, a_lbl)) or _ph_by_label.get((a_lbl, h_lbl))
                         if not ph or ph.id in _updated_ids:
                             if not ph:
-                                errors.append(
-                                    f"r32 {fx.external_id}: no placeholder for ({h_lbl}, {a_lbl})"
-                                )
+                                if fx.external_id not in _reconciled_ext:
+                                    errors.append(
+                                        f"r32 {fx.external_id}: no placeholder for ({h_lbl}, {a_lbl})"
+                                    )
                             continue
                         _updated_ids.add(ph.id)
+
+                        # Remove any duplicate row from sync_fixtures before updating
+                        # the placeholder's external_id (avoids unique-constraint clash)
+                        _dup = next(
+                            (m for m in _all_r32
+                             if m.external_id == fx.external_id and m.id != ph.id),
+                            None,
+                        )
+                        if _dup:
+                            _pc = await db.scalar(
+                                select(func.count()).select_from(Prediction).where(
+                                    Prediction.match_id == _dup.id
+                                )
+                            )
+                            if _pc:
+                                errors.append(
+                                    f"r32 dup ext={_dup.external_id} has {_pc} predictions — cannot remove"
+                                )
+                                _updated_ids.discard(ph.id)
+                                continue
+                            await db.delete(_dup)
+                            await db.flush()
 
                         prev_status = ph.status
                         needs_score = (

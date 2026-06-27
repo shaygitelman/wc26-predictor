@@ -57,16 +57,26 @@ def _dt(y: int, mo: int, d: int, h: int = 20) -> datetime:
     return datetime(y, mo, d, h, 0, 0, tzinfo=timezone.utc)
 
 
-# R32: 16 matches across 4 days
+# R32: 16 matches.  Slots 1-9 use confirmed API-Football dates; slots 10-16
+# are estimates that will be overwritten by reconcile_knockout_slots once the
+# fixtures are published.
 _R32_DATES: list[datetime] = [
-    _dt(2026, 7,  4, 17), _dt(2026, 7,  4, 21),
-    _dt(2026, 7,  4, 17), _dt(2026, 7,  4, 21),   # same day slots
-    _dt(2026, 7,  5, 17), _dt(2026, 7,  5, 21),
-    _dt(2026, 7,  5, 17), _dt(2026, 7,  5, 21),
-    _dt(2026, 7,  6, 17), _dt(2026, 7,  6, 21),
-    _dt(2026, 7,  6, 17), _dt(2026, 7,  6, 21),
-    _dt(2026, 7,  7, 17), _dt(2026, 7,  7, 21),
-    _dt(2026, 7,  7, 17), _dt(2026, 7,  7, 21),
+    _dt(2026, 6, 28, 21),   # slot  1: RSA vs CAN
+    _dt(2026, 6, 29, 17),   # slot  2: BRA vs JPN
+    _dt(2026, 6, 29, 21),   # slot  3: GER vs PAR
+    _dt(2026, 6, 30, 14),   # slot  4: NED vs MAR
+    _dt(2026, 6, 30, 18),   # slot  5: CIV vs NOR
+    _dt(2026, 6, 30, 21),   # slot  6: FRA vs SWE
+    _dt(2026, 7,  2, 21),   # slot  7: USA vs BIH
+    _dt(2026, 7,  3, 17),   # slot  8: AUS vs EGY
+    _dt(2026, 7,  3, 21),   # slot  9: ARG vs CPV
+    _dt(2026, 7,  4, 17),   # slot 10: ESP vs AUT (est.)
+    _dt(2026, 7,  4, 21),   # slot 11: 1st K vs 2nd L (est.)
+    _dt(2026, 7,  5, 17),   # slot 12: 1st L vs 2nd K (est.)
+    _dt(2026, 7,  5, 21),   # slot 13: MEX vs 3rd-place (est.)
+    _dt(2026, 7,  6, 17),   # slot 14: SUI vs 3rd-place (est.)
+    _dt(2026, 7,  6, 21),   # slot 15: BEL vs 3rd-place (est.)
+    _dt(2026, 7,  7, 17),   # slot 16: 3rd vs 3rd (est.)
 ]
 
 _KO_DATES: dict[str, list[datetime]] = {
@@ -90,35 +100,33 @@ _KO_DATES: dict[str, list[datetime]] = {
 }
 
 # ---------------------------------------------------------------------------
-# R32 bracket labels (approximate — official bracket depends on which 8 of
-# 12 third-place teams qualify, determined after group stage ends).
+# Real FIFA WC 2026 R32 bracket (derived from confirmed API-Football fixtures).
 #
-# Structure:
-#   Matches 1-12: group winner vs runner-up (cross-group pairings)
-#   Matches 13-16: best 3rd-place vs best 3rd-place (4 matches, 8 teams)
+# The bracket uses three pod types:
+#   A/B, D/G, E/I pods: "2nd vs 2nd" — the two runners-up play each other;
+#     the two winners each play a best-3rd-place team.
+#   C/F, H/J, K/L pods: "cross-pairing" — each winner plays the other group's
+#     runner-up (1st X vs 2nd Y and 1st Y vs 2nd X).
 #
-# Cross-group pairing pattern (FIFA typical convention):
-#   Adjacent group winners face the runner-up from the paired group.
+# Slots 1-9 confirmed by API-Football; slots 10-16 inferred/estimated.
 # ---------------------------------------------------------------------------
 _R32_LABELS: list[tuple[str, str]] = [
-    # Winner vs runner-up pairings (12 matches, using all 12 groups)
-    ("1st Group A",     "2nd Group B"),
-    ("1st Group C",     "2nd Group D"),
-    ("1st Group E",     "2nd Group F"),
-    ("1st Group G",     "2nd Group H"),
-    ("1st Group I",     "2nd Group J"),
-    ("1st Group K",     "2nd Group L"),
-    ("1st Group B",     "2nd Group A"),
-    ("1st Group D",     "2nd Group C"),
-    ("1st Group F",     "2nd Group E"),
-    ("1st Group H",     "2nd Group G"),
-    ("1st Group J",     "2nd Group I"),
-    ("1st Group L",     "2nd Group K"),
-    # Best 3rd-place slots (4 matches, determined after group stage)
-    ("Best 3rd Place",  "Best 3rd Place"),
-    ("Best 3rd Place",  "Best 3rd Place"),
-    ("Best 3rd Place",  "Best 3rd Place"),
-    ("Best 3rd Place",  "Best 3rd Place"),
+    ("2nd Group A",    "2nd Group B"),     # slot  1: RSA vs CAN  (confirmed)
+    ("1st Group C",    "2nd Group F"),     # slot  2: BRA vs JPN  (confirmed)
+    ("1st Group E",    "Best 3rd Place"),  # slot  3: GER vs PAR  (confirmed)
+    ("1st Group F",    "2nd Group C"),     # slot  4: NED vs MAR  (confirmed)
+    ("2nd Group E",    "2nd Group I"),     # slot  5: CIV vs NOR  (confirmed)
+    ("1st Group I",    "Best 3rd Place"),  # slot  6: FRA vs SWE  (confirmed)
+    ("1st Group D",    "Best 3rd Place"),  # slot  7: USA vs BIH  (confirmed)
+    ("2nd Group D",    "2nd Group G"),     # slot  8: AUS vs EGY  (confirmed)
+    ("1st Group J",    "2nd Group H"),     # slot  9: ARG vs CPV  (confirmed)
+    ("1st Group H",    "2nd Group J"),     # slot 10: ESP vs AUT  (est.)
+    ("1st Group K",    "2nd Group L"),     # slot 11: 1st K vs 2nd L (est.)
+    ("1st Group L",    "2nd Group K"),     # slot 12: 1st L vs 2nd K (est.)
+    ("1st Group A",    "Best 3rd Place"),  # slot 13: MEX vs 3rd-place (est.)
+    ("1st Group B",    "Best 3rd Place"),  # slot 14: SUI vs 3rd-place (est.)
+    ("1st Group G",    "Best 3rd Place"),  # slot 15: BEL vs 3rd-place (est.)
+    ("Best 3rd Place", "Best 3rd Place"),  # slot 16: 3rd vs 3rd (est.)
 ]
 
 
@@ -180,6 +188,27 @@ class WC2026SeedService:
         )
         await self.db.commit()
         return res.rowcount
+
+    async def update_r32_labels(self) -> int:
+        """
+        In-place update of existing R32 placeholder rows to match the real
+        FIFA WC 2026 bracket labels.  Safe to call even if reconciliation has
+        already run for some slots (those rows will have a numeric external_id
+        and won't be found by the manual-wc2026-r32-N lookup).
+        """
+        from sqlalchemy import update as _upd
+        count = 0
+        for idx, (h_name, a_name) in enumerate(_R32_LABELS, start=1):
+            ext_id = f"manual-wc2026-r32-{idx}"
+            res = await self.db.execute(
+                _upd(Match)
+                .where(Match.external_id == ext_id)
+                .values(home_team_name=h_name, away_team_name=a_name)
+                .execution_options(synchronize_session=False)
+            )
+            count += res.rowcount
+        await self.db.commit()
+        return count
 
     # ── Helpers ──────────────────────────────────────────────────
 

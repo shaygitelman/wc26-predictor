@@ -72,11 +72,11 @@ _R32_DATES: list[datetime] = [
     _dt(2026, 7,  3, 21),   # slot  9: ARG vs CPV
     _dt(2026, 7,  1, 17),   # slot 10: ESP vs AUT (est.)
     _dt(2026, 7,  1, 21),   # slot 11: 1st K vs 2nd L (est.)
-    _dt(2026, 7,  4, 17),   # slot 12: 1st L vs 2nd K (est.)
-    _dt(2026, 7,  4, 21),   # slot 13: MEX vs 3rd-place (est.)
-    _dt(2026, 7,  5, 17),   # slot 14: SUI vs 3rd-place (est.)
-    _dt(2026, 7,  5, 21),   # slot 15: BEL vs 3rd-place (est.)
-    _dt(2026, 7,  6, 17),   # slot 16: 3rd vs 3rd (est.)
+    _dt(2026, 7,  3, 18),   # slot 12: 1st L vs Best 3rd (POR vs CRO — confirmed, est. time)
+    _dt(2026, 7,  4, 17),   # slot 13: MEX vs 3rd-place (est.)
+    _dt(2026, 7,  4, 21),   # slot 14: SUI vs 3rd-place (est.)
+    _dt(2026, 7,  5, 17),   # slot 15: BEL vs 3rd-place (est.)
+    _dt(2026, 7,  5, 21),   # slot 16: 2nd K vs 2nd L (COL vs GHA — confirmed, est. time)
 ]
 
 _KO_DATES: dict[str, list[datetime]] = {
@@ -121,12 +121,12 @@ _R32_LABELS: list[tuple[str, str]] = [
     ("2nd Group D",    "2nd Group G"),     # slot  8: AUS vs EGY  (confirmed)
     ("1st Group J",    "2nd Group H"),     # slot  9: ARG vs CPV  (confirmed)
     ("1st Group H",    "2nd Group J"),     # slot 10: ESP vs AUT  (est.)
-    ("1st Group K",    "2nd Group L"),     # slot 11: 1st K vs 2nd L (est.)
-    ("1st Group L",    "2nd Group K"),     # slot 12: 1st L vs 2nd K (est.)
+    ("1st Group K",    "Best 3rd Place"),  # slot 11: ENG vs CGO  (confirmed)
+    ("1st Group L",    "Best 3rd Place"),  # slot 12: POR vs CRO  (confirmed)
     ("1st Group A",    "Best 3rd Place"),  # slot 13: MEX vs 3rd-place (est.)
     ("1st Group B",    "Best 3rd Place"),  # slot 14: SUI vs 3rd-place (est.)
     ("1st Group G",    "Best 3rd Place"),  # slot 15: BEL vs 3rd-place (est.)
-    ("Best 3rd Place", "Best 3rd Place"),  # slot 16: 3rd vs 3rd (est.)
+    ("2nd Group K",    "2nd Group L"),     # slot 16: COL vs GHA  (confirmed)
 ]
 
 # Bracket progression: for each round, defines which two previous-round slots

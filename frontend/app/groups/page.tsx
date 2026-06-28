@@ -6,7 +6,7 @@ import type { ApiGroupStandings, ApiBracketEntry } from '@/types/standings'
 export default async function GroupsPage() {
   const [standings, bracket] = await Promise.all([
     apiGetCached<ApiGroupStandings[]>('/groups/standings', 300).catch(() => [] as ApiGroupStandings[]),
-    apiGetCached<ApiBracketEntry[]>('/groups/bracket', 300).catch(() => [] as ApiBracketEntry[]),
+    apiGetCached<ApiBracketEntry[]>('/groups/bracket', 60).catch(() => [] as ApiBracketEntry[]),
   ])
 
   return (

@@ -274,15 +274,43 @@ class WC2026SeedService:
         await self.db.commit()
         return count
 
+    async def fix_r32_placeholder_rounds(self) -> int:
+        """
+        Targeted one-time fix: any 'manual-wc2026-r32-*' placeholder row whose
+        round column is not 'r32' (misclassified) is corrected back to 'r32'.
+
+        Root cause: an older version of fix_knockout_rounds Strategy 2 would
+        reclassify r32 placeholders as 'r16'/'qf'/etc. when their estimated
+        scheduled_at dates accidentally fell inside those rounds' date windows
+        (e.g., old estimates had slots 14-16 on July 9-12, inside the R16 window).
+        After fix_r32_dates corrected the dates, the round column stayed wrong.
+
+        Idempotent — safe to call multiple times.
+        """
+        from sqlalchemy import update as _upd
+        res = await self.db.execute(
+            _upd(Match)
+            .where(
+                Match.external_id.like("manual-wc2026-r32-%"),
+                Match.round != "r32",
+            )
+            .values(round="r32")
+            .execution_options(synchronize_session=False)
+        )
+        await self.db.commit()
+        return res.rowcount
+
     async def fix_knockout_rounds(self) -> int:
         """
         Correct knockout matches that have an incorrect round code.
 
         Two complementary strategies run in sequence:
 
-        1. Placeholder fix: manual-wc2026-{round}-{slot} rows whose round column
-           doesn't match the round encoded in their external_id are corrected.
-           Handles seeds that were created with wrong round values.
+        1. Placeholder fix: any manual-wc2026-{round}-{slot} row whose round column
+           doesn't match the round encoded in its external_id is corrected.
+           Covers ALL rounds including r32 — r32 placeholders that were mis-set to
+           'r16' or another value (due to date-window misclassification) are fixed
+           here before Strategy 2 runs.
 
         2. Date-window fix: any knockout match whose scheduled_at falls inside the
            official WC 2026 window for a specific round but carries the wrong round
@@ -297,10 +325,10 @@ class WC2026SeedService:
 
         count = 0
 
-        # ── Strategy 1: fix manual placeholders by external_id prefix ────────
+        # ── Strategy 1: fix ALL manual placeholders by external_id prefix ────
+        # Includes r32 — r32 placeholders with wrong rounds (e.g. 'r16' due to
+        # old date estimates overlapping with the R16 window) must be fixed first.
         for round_code, dates in _KO_DATES.items():
-            if round_code == "r32":
-                continue  # R32 placeholders are expected to have round='r32'
             for slot_idx in range(len(dates)):
                 ext_id = f"manual-wc2026-{round_code}-{slot_idx + 1}"
                 res = await self.db.execute(

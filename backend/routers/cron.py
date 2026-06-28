@@ -117,6 +117,22 @@ async def cron_fix_placeholder_dates(db: AsyncSession = Depends(get_db)) -> dict
 
 
 @router.post(
+    "/fix-r32-placeholder-rounds",
+    dependencies=[Depends(_verify_cron)],
+    summary=(
+        "One-time: reset round='r32' on all manual-wc2026-r32-* placeholders "
+        "that were mis-classified as r16/qf/etc. Run this to recover the "
+        "missing R32 matches when the DB shows fewer than 16."
+    ),
+    include_in_schema=False,
+)
+async def cron_fix_r32_placeholder_rounds(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+    updated = await WC2026SeedService(db).fix_r32_placeholder_rounds()
+    return {"status": "ok", "updated": updated}
+
+
+@router.post(
     "/fix-knockout-rounds",
     dependencies=[Depends(_verify_cron)],
     summary=(

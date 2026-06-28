@@ -363,6 +363,32 @@ class TestKOChronologicalOrder:
                 assert dt.year == 2026, \
                     f"{round_code} match has year {dt.year}, expected 2026"
 
+    def test_r32_dates_all_before_r16_window(self):
+        """
+        Every R32 date must be strictly before July 9 (start of R16 window).
+        If any R32 date falls inside the R16/QF/SF/3rd/Final window, the
+        fix_knockout_rounds Strategy-2 date-window pass would mis-classify
+        that R32 placeholder as r16/qf/etc., reducing visible R32 count below 16.
+
+        This is the exact bug that caused only 13 R32 matches to show in the DB:
+        old estimated dates (slots 14-16) were in July 9-12 and got reclassified
+        to 'r16' by Strategy 2.
+        """
+        r16_window_start = datetime(2026, 7, 9, 0, tzinfo=timezone.utc)
+        for i, dt in enumerate(_KO_DATES["r32"], start=1):
+            assert dt < r16_window_start, (
+                f"R32 slot {i} at {dt} falls inside or after R16 window "
+                f"(starts {r16_window_start}). fix_knockout_rounds Strategy 2 "
+                "would mis-classify this placeholder as r16."
+            )
+
+    def test_r32_count_matches_expected_16(self):
+        """The seed must produce exactly 16 R32 placeholder slots — no more, no less."""
+        assert len(_KO_DATES["r32"]) == 16, (
+            f"Expected 16 R32 slots in seed, found {len(_KO_DATES['r32'])}. "
+            "DB will show fewer than 16 R32 matches."
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Bracket feeders — slot references are in-range and logically consistent

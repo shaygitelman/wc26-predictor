@@ -1144,6 +1144,101 @@ async def tournament_scoring_log(
     ]
 
 
+# ── Schedule audit ───────────────────────────────────────────────────
+
+@router.get(
+    "/stats/schedule",
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "Audit match schedule: count matches by UTC date and round. "
+        "Use this to verify the DB matches the real tournament schedule "
+        "and to spot missing dates or wrong round classifications."
+    ),
+)
+async def schedule_audit(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Returns:
+      by_date                  — [{date, total, by_round}] chronological.
+      by_round                 — total counts per round code.
+      status_totals            — counts per status.
+      total_matches            — grand total.
+      unreconciled_placeholders — manual-wc2026-* rows not yet mapped to API IDs.
+      expected_empty_dates     — knockout-window dates with 0 matches.
+      summary_verdict          — plain-English diagnosis.
+    """
+    from collections import defaultdict as _dd
+    from datetime import date as _date, timedelta as _td
+
+    all_matches = (
+        await db.execute(select(Match).order_by(Match.scheduled_at))
+    ).scalars().all()
+
+    date_round_counts: dict[str, dict[str, int]] = _dd(lambda: _dd(int))
+    round_totals: dict[str, int] = _dd(int)
+    status_totals: dict[str, int] = _dd(int)
+    unreconciled = 0
+
+    for m in all_matches:
+        if m.scheduled_at:
+            d_str = m.scheduled_at.strftime("%Y-%m-%d")
+            date_round_counts[d_str][m.round or "unknown"] += 1
+        round_totals[m.round or "unknown"] += 1
+        status_totals[m.status or "unknown"] += 1
+        if m.external_id and m.external_id.startswith("manual-wc2026-"):
+            unreconciled += 1
+
+    by_date = [
+        {
+            "date":     d,
+            "total":    sum(rc.values()),
+            "by_round": dict(sorted(rc.items())),
+        }
+        for d, rc in sorted(date_round_counts.items())
+    ]
+
+    # Knockout date windows where we expect at least 1 match
+    _ko_windows = [
+        ("r32",   _date(2026, 6, 28), _date(2026, 7,  7)),
+        ("r16",   _date(2026, 7,  9), _date(2026, 7, 12)),
+        ("qf",    _date(2026, 7, 13), _date(2026, 7, 14)),
+        ("sf",    _date(2026, 7, 17), _date(2026, 7, 18)),
+        ("3rd",   _date(2026, 7, 21), _date(2026, 7, 21)),
+        ("final", _date(2026, 7, 22), _date(2026, 7, 22)),
+    ]
+    expected_empty: list[dict] = []
+    for rnd, win_start, win_end in _ko_windows:
+        cur = win_start
+        while cur <= win_end:
+            d_str = cur.strftime("%Y-%m-%d")
+            if sum(date_round_counts.get(d_str, {}).values()) == 0:
+                expected_empty.append({"date": d_str, "expected_round": rnd})
+            cur += _td(days=1)
+
+    issues = []
+    expected_counts = {"group": 72, "r32": 16, "r16": 8, "qf": 4, "sf": 2, "3rd": 1, "final": 1}
+    for rnd, exp in expected_counts.items():
+        got = round_totals.get(rnd, 0)
+        if got != exp:
+            issues.append(f"{rnd}: {got}/{exp}")
+    if expected_empty:
+        issues.append(
+            f"{len(expected_empty)} KO date(s) with 0 matches: "
+            + ", ".join(e["date"] for e in expected_empty[:8])
+        )
+
+    verdict = "OK — schedule looks complete" if not issues else "ISSUES: " + "; ".join(issues)
+
+    return {
+        "summary_verdict":            verdict,
+        "total_matches":              len(all_matches),
+        "unreconciled_placeholders":  unreconciled,
+        "by_round":                   dict(round_totals),
+        "status_totals":              dict(status_totals),
+        "expected_empty_dates":       expected_empty,
+        "by_date":                    by_date,
+    }
+
+
 # ── API usage monitoring ──────────────────────────────────────────────
 
 @router.get("/api-usage", dependencies=[Depends(_verify_admin)])

@@ -70,13 +70,13 @@ _R32_DATES: list[datetime] = [
     _dt(2026, 7,  2, 21),   # slot  7: USA vs BIH
     _dt(2026, 7,  3, 17),   # slot  8: AUS vs EGY
     _dt(2026, 7,  3, 21),   # slot  9: ARG vs CPV
-    _dt(2026, 7,  4, 17),   # slot 10: ESP vs AUT (est.)
-    _dt(2026, 7,  4, 21),   # slot 11: 1st K vs 2nd L (est.)
-    _dt(2026, 7,  5, 17),   # slot 12: 1st L vs 2nd K (est.)
-    _dt(2026, 7,  5, 21),   # slot 13: MEX vs 3rd-place (est.)
-    _dt(2026, 7,  6, 17),   # slot 14: SUI vs 3rd-place (est.)
-    _dt(2026, 7,  6, 21),   # slot 15: BEL vs 3rd-place (est.)
-    _dt(2026, 7,  7, 17),   # slot 16: 3rd vs 3rd (est.)
+    _dt(2026, 7,  1, 17),   # slot 10: ESP vs AUT (est.)
+    _dt(2026, 7,  1, 21),   # slot 11: 1st K vs 2nd L (est.)
+    _dt(2026, 7,  4, 17),   # slot 12: 1st L vs 2nd K (est.)
+    _dt(2026, 7,  4, 21),   # slot 13: MEX vs 3rd-place (est.)
+    _dt(2026, 7,  5, 17),   # slot 14: SUI vs 3rd-place (est.)
+    _dt(2026, 7,  5, 21),   # slot 15: BEL vs 3rd-place (est.)
+    _dt(2026, 7,  6, 17),   # slot 16: 3rd vs 3rd (est.)
 ]
 
 _KO_DATES: dict[str, list[datetime]] = {
@@ -243,6 +243,34 @@ class WC2026SeedService:
                 .execution_options(synchronize_session=False)
             )
             count += res.rowcount
+        await self.db.commit()
+        return count
+
+    async def fix_placeholder_dates(self) -> int:
+        """
+        Update scheduled_at for ALL manually-seeded knockout placeholder rows
+        to the values in _KO_DATES.  Covers every round (r32 through final),
+        not just R32.  Only touches rows that still carry a manual-wc2026-*
+        external_id — reconciled rows (numeric external_id) are left alone.
+
+        Use this after updating _KO_DATES estimates to correct existing DB rows
+        without re-seeding from scratch.  Idempotent.
+        """
+        from sqlalchemy import update as _upd
+        count = 0
+        for round_code, dates in _KO_DATES.items():
+            for idx, sched in enumerate(dates, start=1):
+                ext_id = f"manual-wc2026-{round_code}-{idx}"
+                res = await self.db.execute(
+                    _upd(Match)
+                    .where(
+                        Match.external_id == ext_id,
+                        Match.scheduled_at != sched,
+                    )
+                    .values(scheduled_at=sched)
+                    .execution_options(synchronize_session=False)
+                )
+                count += res.rowcount
         await self.db.commit()
         return count
 

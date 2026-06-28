@@ -1052,6 +1052,47 @@ class SyncService:
 
                     except Exception as exc:
                         errors.append(f"r32 {fx.external_id}: {exc}")
+
+                # Secondary TBD date-update pass: API-Football publishes R32 fixture
+                # dates (with TBD teams) before all groups finish.  Update scheduled_at
+                # on remaining unreconciled placeholders so the app shows the correct
+                # match date as soon as the schedule is confirmed — even before teams
+                # are known.  Only touches scheduled_at; does not change team codes.
+                _tbd_api_r32 = sorted(
+                    [
+                        fx for fx in fixtures
+                        if fx.int_round in valid_int_rounds
+                        and fx.home_team_code
+                        and fx.home_team_code.upper() in ("TBD", "?", "")
+                    ],
+                    key=lambda x: (
+                        x.scheduled_at,
+                        int(x.external_id) if x.external_id.isdigit() else 0,
+                    ),
+                )
+                _remaining_phs = sorted(
+                    [ph for ph in db_placeholders if ph.id not in _updated_ids],
+                    key=lambda m: _slot_num(m.external_id or ""),
+                )
+                for _tbd_fx, _tbd_ph in zip(_tbd_api_r32, _remaining_phs):
+                    if _tbd_fx.scheduled_at and _tbd_ph.scheduled_at != _tbd_fx.scheduled_at:
+                        try:
+                            await db.execute(
+                                update(Match)
+                                .where(Match.id == _tbd_ph.id)
+                                .values(scheduled_at=_tbd_fx.scheduled_at, updated_at=_now)
+                                .execution_options(synchronize_session=False)
+                            )
+                            count += 1
+                            log.info(
+                                "[Sync/reconcile_knockout] r32 TBD date-update slot=%d: %s → %s",
+                                _slot_num(_tbd_ph.external_id or ""),
+                                _tbd_ph.scheduled_at, _tbd_fx.scheduled_at,
+                            )
+                        except Exception as exc:
+                            errors.append(
+                                f"r32 tbd-date slot={_slot_num(_tbd_ph.external_id or '')}: {exc}"
+                            )
                 continue  # r32 done — move to next round
 
             # Progressive matching for R16 and later — no count-equality gate.

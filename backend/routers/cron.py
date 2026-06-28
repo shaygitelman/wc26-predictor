@@ -101,6 +101,22 @@ async def cron_fix_knockout_groups(db: AsyncSession = Depends(get_db)) -> dict:
 
 
 @router.post(
+    "/fix-placeholder-dates",
+    dependencies=[Depends(_verify_cron)],
+    summary=(
+        "One-time: update scheduled_at for ALL manual-wc2026-* knockout placeholders "
+        "to match the current _KO_DATES estimates. Run after updating seed constants "
+        "to fix existing DB rows without re-seeding."
+    ),
+    include_in_schema=False,
+)
+async def cron_fix_placeholder_dates(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+    updated = await WC2026SeedService(db).fix_placeholder_dates()
+    return {"status": "ok", "updated": updated}
+
+
+@router.post(
     "/fix-knockout-rounds",
     dependencies=[Depends(_verify_cron)],
     summary=(

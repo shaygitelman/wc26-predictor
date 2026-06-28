@@ -285,9 +285,30 @@ class TestNoAdvancedRoundAsR32:
 class TestKOChronologicalOrder:
     """Within each round dates are ascending; rounds do not overlap."""
 
-    def test_r32_dates_ascending(self):
-        dates = _KO_DATES["r32"]
-        assert dates == sorted(dates), "R32 dates are not in ascending order"
+    def test_r32_confirmed_slots_ascending(self):
+        # Slots 1-9 are confirmed by API-Football and must be strictly ascending.
+        # Slots 10-16 are estimates that may not be interleaved chronologically with
+        # the confirmed slots (e.g. estimated July 1 slots follow confirmed July 2-3
+        # slots in the list).  Only the confirmed portion is checked here.
+        confirmed = _KO_DATES["r32"][:9]
+        assert confirmed == sorted(confirmed), "Confirmed R32 slots 1-9 not ascending"
+
+    def test_r32_estimated_slots_ascending(self):
+        # Estimated slots (10-16) must be ascending among themselves.
+        estimated = _KO_DATES["r32"][9:]
+        assert estimated == sorted(estimated), "Estimated R32 slots 10-16 not ascending"
+
+    def test_r32_has_matches_on_july_1(self):
+        """At least 2 R32 placeholder slots must be estimated for July 1."""
+        from datetime import date
+        july1_matches = [
+            dt for dt in _KO_DATES["r32"]
+            if dt.date() == date(2026, 7, 1)
+        ]
+        assert len(july1_matches) >= 2, (
+            f"Expected ≥2 R32 slots on July 1, found {len(july1_matches)}. "
+            "Update _R32_DATES estimates so July 1 is not empty."
+        )
 
     def test_r16_dates_ascending(self):
         dates = _KO_DATES["r16"]

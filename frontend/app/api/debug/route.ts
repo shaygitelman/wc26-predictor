@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
   }
 
   return Response.json({
+    backend_url: process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || '(not set — defaults to localhost:8000)',
     jwt_secret_set: !!secret,
     jwt_secret_length: secret?.length ?? 0,
     token_present: !!token,

@@ -1246,6 +1246,39 @@ async def schedule_audit(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
+# ── Auth-check diagnostic (no auth required — safe metadata only) ─────────────
+
+@router.get(
+    "/debug/auth-check",
+    include_in_schema=False,
+    summary=(
+        "Returns auth diagnostics without requiring a valid key. "
+        "Safe: only returns presence, length, and mismatch reason — never values."
+    ),
+)
+async def debug_auth_check(x_admin_key: str | None = Header(default=None)) -> dict:
+    stored   = (settings.admin_key or "").strip()
+    received = (x_admin_key or "").strip()
+
+    if not stored:
+        reason = "missing_env"
+    elif not received:
+        reason = "missing_header"
+    elif not _secrets.compare_digest(received, stored):
+        reason = "length_mismatch_or_wrong_value"
+    else:
+        reason = "ok"
+
+    return {
+        "admin_key_present":       bool(stored),
+        "admin_key_length":        len(stored),
+        "received_header_present": bool(received),
+        "received_header_length":  len(received),
+        "reason":                  reason,
+        "auth_ok":                 reason == "ok",
+    }
+
+
 # ── Env debug (safe — no secret values exposed) ───────────────────────────────
 
 @router.get(

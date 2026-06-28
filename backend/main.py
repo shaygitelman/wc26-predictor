@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -686,6 +687,16 @@ async def lifespan(app: FastAPI):
     #   3. group fixtures  — needs: matches + teams (API call if APIFOOTBALL_KEY set)
     #   4. knockout matches — needs: matches table; no dependencies
     #   5. critical players — needs: teams with external_ids (API call if key set)
+    _admin_key_val    = (settings.admin_key or "").strip()
+    _cron_secret_val  = (settings.cron_secret or "").strip()
+    log.info(
+        "AUTH CONFIG — ADMIN_KEY: present=%s length=%d | CRON_SECRET: present=%s length=%d | commit=%s env=%s",
+        bool(_admin_key_val), len(_admin_key_val),
+        bool(_cron_secret_val), len(_cron_secret_val),
+        os.environ.get("RENDER_GIT_COMMIT", "unknown"),
+        settings.app_env,
+    )
+
     await _bootstrap_default_league()       # world league + user memberships
     await _bootstrap_teams()               # 48 WC2026 teams from config
     await _bootstrap_group_fixtures()               # 72 group fixtures (skips if no API key)
@@ -751,3 +762,16 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict:
             status_code=503,
             content={"status": "degraded", "db": "unreachable"},
         )
+
+
+@app.get("/health/version")
+async def health_version() -> dict:
+    """Public — no auth. Returns safe metadata to verify which commit is running."""
+    from datetime import datetime, timezone
+    return {
+        "app":       "WC26 Predictor API",
+        "version":   "0.1.0",
+        "commit":    os.environ.get("RENDER_GIT_COMMIT", "unknown"),
+        "env":       settings.app_env,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

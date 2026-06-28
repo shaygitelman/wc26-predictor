@@ -44,9 +44,9 @@ from models.match import Match
 # ---------------------------------------------------------------------------
 # Official WC 2026 schedule (approximate UTC, confirmed by FIFA)
 #
-# Group stage: June 11 – July 2
-# R32:   July 4–7   (4 matches/day, 4 days)
-# R16:   July 9–10  (4 matches/day, 2 days)
+# Group stage: June 11 – July 2  (some groups finish as early as June 26-28)
+# R32:   June 28 – July 7  (staggered; each group's R32 match ~2 days after they finish)
+# R16:   July 9–12  (2 matches/day, 4 days)
 # QF:    July 13–14 (2 matches/day, 2 days)
 # SF:    July 17–18 (1 match/day,  2 days)
 # 3rd:   July 21
@@ -243,6 +243,77 @@ class WC2026SeedService:
                 .execution_options(synchronize_session=False)
             )
             count += res.rowcount
+        await self.db.commit()
+        return count
+
+    async def fix_knockout_rounds(self) -> int:
+        """
+        Correct knockout matches that have an incorrect round code.
+
+        Two complementary strategies run in sequence:
+
+        1. Placeholder fix: manual-wc2026-{round}-{slot} rows whose round column
+           doesn't match the round encoded in their external_id are corrected.
+           Handles seeds that were created with wrong round values.
+
+        2. Date-window fix: any knockout match whose scheduled_at falls inside the
+           official WC 2026 window for a specific round but carries the wrong round
+           code is corrected.  This catches reconciled matches whose round was
+           overwritten to 'r32' by sync_fixtures when the API returned an incorrect
+           round label.
+
+        Idempotent — safe to call multiple times.
+        """
+        from datetime import timezone
+        from sqlalchemy import update as _upd
+
+        count = 0
+
+        # ── Strategy 1: fix manual placeholders by external_id prefix ────────
+        for round_code, dates in _KO_DATES.items():
+            if round_code == "r32":
+                continue  # R32 placeholders are expected to have round='r32'
+            for slot_idx in range(len(dates)):
+                ext_id = f"manual-wc2026-{round_code}-{slot_idx + 1}"
+                res = await self.db.execute(
+                    _upd(Match)
+                    .where(
+                        Match.external_id == ext_id,
+                        Match.round != round_code,
+                    )
+                    .values(round=round_code)
+                    .execution_options(synchronize_session=False)
+                )
+                count += res.rowcount
+
+        # ── Strategy 2: fix by scheduled_at date window ───────────────────────
+        # Each advanced KO round occupies a distinct date window in the official
+        # WC 2026 schedule.  Any match in that window marked 'r32' or 'group'
+        # is mis-classified and must be corrected.
+        from sqlalchemy import and_
+
+        _ko_windows = [
+            # (round_code, window_start [inclusive], window_end [exclusive])
+            ("r16",   _dt(2026, 7,  9,  0), _dt(2026, 7, 13,  0)),
+            ("qf",    _dt(2026, 7, 13,  0), _dt(2026, 7, 15,  0)),
+            ("sf",    _dt(2026, 7, 17,  0), _dt(2026, 7, 19,  0)),
+            ("3rd",   _dt(2026, 7, 21,  0), _dt(2026, 7, 22,  0)),
+            ("final", _dt(2026, 7, 22,  0), _dt(2026, 7, 23,  0)),
+        ]
+        for round_code, win_start, win_end in _ko_windows:
+            res = await self.db.execute(
+                _upd(Match)
+                .where(
+                    Match.round != round_code,
+                    Match.round.in_(["r32", "group"]),
+                    Match.scheduled_at >= win_start,
+                    Match.scheduled_at < win_end,
+                )
+                .values(round=round_code)
+                .execution_options(synchronize_session=False)
+            )
+            count += res.rowcount
+
         await self.db.commit()
         return count
 

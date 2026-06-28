@@ -98,3 +98,19 @@ async def cron_fix_knockout_groups(db: AsyncSession = Depends(get_db)) -> dict:
     )
     await db.commit()
     return {"status": "ok", "updated": res.rowcount}
+
+
+@router.post(
+    "/fix-knockout-rounds",
+    dependencies=[Depends(_verify_cron)],
+    summary=(
+        "One-time: correct knockout matches mis-classified as r32. "
+        "Fixes both unreconciled placeholders (by external_id) and "
+        "reconciled rows (by scheduled_at date window). Idempotent."
+    ),
+    include_in_schema=False,
+)
+async def cron_fix_knockout_rounds(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+    updated = await WC2026SeedService(db).fix_knockout_rounds()
+    return {"status": "ok", "updated": updated}

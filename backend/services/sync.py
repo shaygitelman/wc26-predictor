@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -261,7 +261,19 @@ class SyncService:
                         "city": func.coalesce(
                             insert_stmt.excluded.city, Match.__table__.c.city
                         ),
-                        "round":          round_code,
+                        # Protect advanced knockout round classifications: if the row
+                        # already has round r16/qf/sf/3rd/final (set by seed or a prior
+                        # reconcile), do NOT overwrite it with a potentially wrong label
+                        # from the API (e.g. "Round of 32" used for TBD fixtures).
+                        "round": case(
+                            (
+                                Match.__table__.c.round.in_(
+                                    ["r16", "qf", "sf", "3rd", "final"]
+                                ),
+                                Match.__table__.c.round,
+                            ),
+                            else_=insert_stmt.excluded.round,
+                        ),
                         "group_name":     group_name,
                         "status":         fx.status,
                         "home_score":     fx.home_score,

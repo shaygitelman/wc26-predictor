@@ -5,6 +5,8 @@ These endpoints require CRON_SECRET (not ADMIN_KEY), so the frontend
 cron route can call them using process.env.CRON_SECRET which is already
 set in Vercel.  The backend reads CRON_SECRET from its own env var.
 """
+import secrets as _secrets
+
 from fastapi import APIRouter, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
@@ -17,7 +19,13 @@ router = APIRouter(prefix="/cron", tags=["cron"])
 
 
 def _verify_cron(x_cron_secret: str = Header(...)) -> None:
-    if not settings.cron_secret or x_cron_secret != settings.cron_secret:
+    stored = (settings.cron_secret or "").strip()
+    if not stored:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CRON_SECRET is not configured on this service",
+        )
+    if not _secrets.compare_digest(x_cron_secret.strip(), stored):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid cron secret")
 
 

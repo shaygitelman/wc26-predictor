@@ -1,3 +1,4 @@
+import secrets as _secrets
 import uuid
 from datetime import datetime, timezone
 
@@ -30,7 +31,13 @@ _WC2026_SEASON    = "2026"
 # ── Auth guard ────────────────────────────────────────────────────
 
 def _verify_admin(x_admin_key: str = Header(...)) -> None:
-    if not settings.admin_key or x_admin_key != settings.admin_key:
+    stored = (settings.admin_key or "").strip()
+    if not stored:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ADMIN_KEY is not configured on this service",
+        )
+    if not _secrets.compare_digest(x_admin_key.strip(), stored):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin key")
 
 
@@ -1236,6 +1243,82 @@ async def schedule_audit(db: AsyncSession = Depends(get_db)) -> dict:
         "status_totals":              dict(status_totals),
         "expected_empty_dates":       expected_empty,
         "by_date":                    by_date,
+    }
+
+
+# ── Env debug (safe — no secret values exposed) ───────────────────────────────
+
+@router.get(
+    "/debug/env",
+    dependencies=[Depends(_verify_admin)],
+    include_in_schema=False,
+    summary=(
+        "Safe env-var audit: presence, length, and 8-char SHA-256 prefix only. "
+        "Never returns secret values. Use to verify Render picked up the latest rotation."
+    ),
+)
+async def debug_env() -> dict:
+    import hashlib
+    import os
+
+    def _safe_info(val: str) -> dict:
+        v = (val or "").strip()
+        return {
+            "present":       bool(v),
+            "length":        len(v),
+            "sha256_prefix": hashlib.sha256(v.encode()).hexdigest()[:8] if v else None,
+        }
+
+    return {
+        "cron_secret":      _safe_info(settings.cron_secret),
+        "admin_key":        _safe_info(settings.admin_key),
+        "expected_headers": {"cron": "X-Cron-Secret", "admin": "X-Admin-Key"},
+        "commit":           os.environ.get("RENDER_GIT_COMMIT", "unknown"),
+        "app_env":          settings.app_env,
+    }
+
+
+# ── Admin maintenance (fallback when cron auth is unreachable) ────────────────
+
+@router.post(
+    "/maintenance/fix-r32-placeholder-rounds",
+    dependencies=[Depends(_verify_admin)],
+    include_in_schema=False,
+    summary=(
+        "Fallback maintenance: same as POST /cron/fix-r32-placeholder-rounds but "
+        "protected by X-Admin-Key instead of X-Cron-Secret. "
+        "Resets round='r32' on any manual-wc2026-r32-* placeholder mis-classified "
+        "as r16/qf/etc. Idempotent. Returns updated count + live round counts."
+    ),
+)
+async def admin_fix_r32_placeholder_rounds(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+
+    updated = await WC2026SeedService(db).fix_r32_placeholder_rounds()
+
+    rows = (
+        await db.execute(
+            select(func.coalesce(Match.round, "unknown").label("rnd"), func.count(Match.id).label("cnt"))
+            .group_by(Match.round)
+        )
+    ).all()
+    counts = {r.rnd: r.cnt for r in rows}
+
+    r32 = counts.get("r32", 0)
+    r16 = counts.get("r16", 0)
+    expected = {"r32": 16, "r16": 8}
+    issues = [
+        f"{k}: got {counts.get(k, 0)}, expected {v}"
+        for k, v in expected.items()
+        if counts.get(k, 0) != v
+    ]
+
+    return {
+        "status":           "ok",
+        "updated":          updated,
+        "r32_count":        r32,
+        "r16_count":        r16,
+        "summary_verdict":  "OK — r32=16, r16=8" if not issues else "ISSUES: " + "; ".join(issues),
     }
 
 

@@ -51,6 +51,8 @@ class ProviderFixture:
     status:           str = 'scheduled'      # scheduled|live|finished
     home_score:       Optional[int] = None
     away_score:       Optional[int] = None
+    penalty_home:     Optional[int] = None   # penalty shootout goals (None if not applicable)
+    penalty_away:     Optional[int] = None
     thumb_url:        Optional[str] = None   # match thumbnail / poster
     group_name:       Optional[str] = None   # group letter if provider exposes it ('A'–'L')
     minute:           Optional[int] = None   # live match minute

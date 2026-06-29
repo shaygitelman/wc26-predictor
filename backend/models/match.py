@@ -31,10 +31,12 @@ class Match(Base):
     group_name:  Mapped[str | None] = mapped_column(String(5), nullable=True)   # A … L
     external_id: Mapped[str | None] = mapped_column(String(50), nullable=True, unique=True, index=True)
 
-    status:     Mapped[str]       = mapped_column(String(20), nullable=False, default="scheduled", index=True)
-    home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    minute:     Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status:       Mapped[str]       = mapped_column(String(20), nullable=False, default="scheduled", index=True)
+    home_score:   Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_score:   Mapped[int | None] = mapped_column(Integer, nullable=True)
+    penalty_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    penalty_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    minute:       Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     auto_picks_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 

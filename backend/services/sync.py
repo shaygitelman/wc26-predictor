@@ -42,6 +42,35 @@ _ROUND_MAP: dict[int, str] = {
 _last_ko_reconcile_at: Optional[datetime] = None
 
 
+def _ko_winner(
+    m: "Match",
+    want_winner: bool,
+) -> "tuple[str, str, str | None] | None":
+    """
+    Return (team_code, team_name, flag_url) for the winner (or loser when
+    want_winner=False) of a finished knockout match.
+
+    Handles extra time / penalties: when the 90-min score is level the function
+    falls back to penalty_home / penalty_away.  Returns None when the outcome
+    cannot yet be determined (e.g. still in ET with no penalty data stored).
+    """
+    h, a = m.home_score, m.away_score
+    if h is None or a is None:
+        return None
+    if h != a:
+        use_home = (h > a) == want_winner
+    else:
+        ph, pa = m.penalty_home, m.penalty_away
+        if ph is None or pa is None or ph == pa:
+            return None  # ET/PK outcome still unknown
+        use_home = (ph > pa) == want_winner
+    return (
+        (m.home_team_code, m.home_team_name, m.home_flag_url)
+        if use_home else
+        (m.away_team_code, m.away_team_name, m.away_flag_url)
+    )
+
+
 @dataclass
 class SyncResult:
     status:           str
@@ -792,47 +821,68 @@ class SyncService:
                 if not _ph or _hs > len(_prev_all) or _as > len(_prev_all):
                     continue
                 _hm, _am = _prev_all[_hs - 1], _prev_all[_as - 1]
-                if _hm.status != "finished" or _am.status != "finished":
-                    continue
 
-                def _outcome(m: Match, want_winner: bool):
-                    if (m.home_score is None or m.away_score is None
-                            or m.home_score == m.away_score):
-                        return None  # tied score — ET/PK winner unknown; wait for API
-                    use_home = (m.home_score > m.away_score) == want_winner
-                    return (
-                        (m.home_team_code, m.home_team_name, m.home_flag_url)
-                        if use_home else
-                        (m.away_team_code, m.away_team_name, m.away_flag_url)
+                _pv: dict = {"updated_at": _now}
+                _slot_updated = False
+
+                # Home team — propagate as soon as its feeder finishes,
+                # independently of whether the away-side feeder is done yet.
+                _h_is_tbd = (_ph.home_team_code or "TBD").upper() in ("TBD", "", "NONE")
+                if _hm.status == "finished" and _h_is_tbd:
+                    _h_info = _ko_winner(_hm, not _use_losers)
+                    if _h_info:
+                        _h_code, _h_name, _h_flag = _h_info
+                        _pv["home_team_code"] = _h_code
+                        _pv["home_team_name"] = _h_name
+                        if _h_flag:
+                            _pv["home_flag_url"] = _h_flag
+                        _slot_updated = True
+                        _src_score = (
+                            f"{_hm.home_score}-{_hm.away_score}"
+                            + (f" (P {_hm.penalty_home}-{_hm.penalty_away})"
+                               if _hm.penalty_home is not None else "")
+                        )
+                        log.info(
+                            "[Sync/bracket-prop] %s→%s slot=%d HOME=%s "
+                            "(match %s: %sv%s %s)",
+                            _pr, _nr, _si, _h_code,
+                            _hm.external_id,
+                            _hm.home_team_code, _hm.away_team_code,
+                            _src_score,
+                        )
+
+                # Away team — propagate independently of home team
+                _a_is_tbd = (_ph.away_team_code or "TBD").upper() in ("TBD", "", "NONE")
+                if _am.status == "finished" and _a_is_tbd:
+                    _a_info = _ko_winner(_am, not _use_losers)
+                    if _a_info:
+                        _a_code, _a_name, _a_flag = _a_info
+                        _pv["away_team_code"] = _a_code
+                        _pv["away_team_name"] = _a_name
+                        if _a_flag:
+                            _pv["away_flag_url"] = _a_flag
+                        _slot_updated = True
+                        _src_score = (
+                            f"{_am.home_score}-{_am.away_score}"
+                            + (f" (P {_am.penalty_home}-{_am.penalty_away})"
+                               if _am.penalty_home is not None else "")
+                        )
+                        log.info(
+                            "[Sync/bracket-prop] %s→%s slot=%d AWAY=%s "
+                            "(match %s: %sv%s %s)",
+                            _pr, _nr, _si, _a_code,
+                            _am.external_id,
+                            _am.home_team_code, _am.away_team_code,
+                            _src_score,
+                        )
+
+                if _slot_updated:
+                    await db.execute(
+                        update(Match).where(Match.id == _ph.id)
+                        .values(**_pv)
+                        .execution_options(synchronize_session=False)
                     )
-
-                _h_info = _outcome(_hm, not _use_losers)
-                _a_info = _outcome(_am, not _use_losers)
-                if not _h_info or not _a_info:
-                    continue
-
-                _h_code, _h_name, _h_flag = _h_info
-                _a_code, _a_name, _a_flag = _a_info
-                _pv: dict = {
-                    "home_team_code": _h_code, "home_team_name": _h_name,
-                    "away_team_code": _a_code, "away_team_name": _a_name,
-                    "updated_at":     _now,
-                }
-                if _h_flag:
-                    _pv["home_flag_url"] = _h_flag
-                if _a_flag:
-                    _pv["away_flag_url"] = _a_flag
-
-                await db.execute(
-                    update(Match).where(Match.id == _ph.id)
-                    .values(**_pv)
-                    .execution_options(synchronize_session=False)
-                )
-                count += 1
-                log.info(
-                    "[Sync/reconcile_knockout] bracket-prop %s slot=%d: %s vs %s",
-                    _nr, _si, _h_code, _a_code,
-                )
+                    count += 1
 
         await db.flush()
 
@@ -1031,9 +1081,11 @@ class SyncService:
                         if needs_score:
                             vals["status"] = prev_status
                         else:
-                            vals["status"]     = fx.status
-                            vals["home_score"] = fx.home_score
-                            vals["away_score"] = fx.away_score
+                            vals["status"]       = fx.status
+                            vals["home_score"]   = fx.home_score
+                            vals["away_score"]   = fx.away_score
+                            vals["penalty_home"] = fx.penalty_home
+                            vals["penalty_away"] = fx.penalty_away
 
                         await db.execute(
                             update(Match)
@@ -1181,9 +1233,11 @@ class SyncService:
                     if needs_score:
                         values["status"] = prev_status
                     else:
-                        values["status"]     = fx.status
-                        values["home_score"] = fx.home_score
-                        values["away_score"] = fx.away_score
+                        values["status"]       = fx.status
+                        values["home_score"]   = fx.home_score
+                        values["away_score"]   = fx.away_score
+                        values["penalty_home"] = fx.penalty_home
+                        values["penalty_away"] = fx.penalty_away
 
                     await db.execute(
                         update(Match)
@@ -1283,11 +1337,13 @@ class SyncService:
                     update(Match)
                     .where(Match.id == match.id)
                     .values(
-                        status     = fx.status,
-                        home_score = fx.home_score,
-                        away_score = fx.away_score,
-                        minute     = fx.minute,
-                        updated_at = datetime.now(timezone.utc),
+                        status       = fx.status,
+                        home_score   = fx.home_score,
+                        away_score   = fx.away_score,
+                        penalty_home = fx.penalty_home,
+                        penalty_away = fx.penalty_away,
+                        minute       = fx.minute,
+                        updated_at   = datetime.now(timezone.utc),
                     )
                     .execution_options(synchronize_session=False)
                 )
@@ -1372,11 +1428,13 @@ class SyncService:
                     update(Match)
                     .where(Match.id == stale.id)
                     .values(
-                        status     = fx.status,
-                        home_score = fx.home_score,
-                        away_score = fx.away_score,
-                        minute     = fx.minute,
-                        updated_at = datetime.now(timezone.utc),
+                        status       = fx.status,
+                        home_score   = fx.home_score,
+                        away_score   = fx.away_score,
+                        penalty_home = fx.penalty_home,
+                        penalty_away = fx.penalty_away,
+                        minute       = fx.minute,
+                        updated_at   = datetime.now(timezone.utc),
                     )
                     .execution_options(synchronize_session=False)
                 )
@@ -1428,11 +1486,13 @@ class SyncService:
                     update(Match)
                     .where(Match.id == stale.id)
                     .values(
-                        status     = fx.status,
-                        home_score = fx.home_score,
-                        away_score = fx.away_score,
-                        minute     = fx.minute,
-                        updated_at = datetime.now(timezone.utc),
+                        status       = fx.status,
+                        home_score   = fx.home_score,
+                        away_score   = fx.away_score,
+                        penalty_home = fx.penalty_home,
+                        penalty_away = fx.penalty_away,
+                        minute       = fx.minute,
+                        updated_at   = datetime.now(timezone.utc),
                     )
                     .execution_options(synchronize_session=False)
                 )

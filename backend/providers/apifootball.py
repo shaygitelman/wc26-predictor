@@ -238,6 +238,11 @@ class ApiFootballProvider(FootballDataProvider):
             if away_score is None and fx_status == "finished":
                 away_score = (score.get("fulltime") or {}).get("away")
 
+            # Penalty shootout scores (only present for matches decided by penalties)
+            _pen = score.get("penalty") or {}
+            penalty_home: Optional[int] = _pen.get("home")
+            penalty_away: Optional[int] = _pen.get("away")
+
             round_str  = league.get("round", "")
             int_round  = _parse_round(round_str)
 
@@ -280,6 +285,8 @@ class ApiFootballProvider(FootballDataProvider):
                 status           = fx_status,
                 home_score       = home_score,
                 away_score       = away_score,
+                penalty_home     = penalty_home,
+                penalty_away     = penalty_away,
                 thumb_url        = None,
                 group_name       = group_name,
                 minute           = minute,

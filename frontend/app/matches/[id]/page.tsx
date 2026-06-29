@@ -35,7 +35,7 @@ export default async function MatchDetailPage({ params }: PageProps) {
 
   // Round 1 — match + own prediction
   const [matchRes, predRes] = await Promise.allSettled([
-    apiGetCached<Match>(`/matches/${id}`, 60, { auth: false }),
+    apiGetCached<Match>(`/matches/${id}`, 10, { auth: false }),
     apiGet<Prediction | null>(`/predictions/${id}/me`),
   ])
 

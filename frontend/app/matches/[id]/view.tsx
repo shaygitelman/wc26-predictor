@@ -5,6 +5,7 @@ import { Lock, MapPin, Calendar, Check, Clock } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { cn, formatMatchDate, formatKickoffTime } from '@/lib/utils'
 import { ContextHeader } from '@/components/layout/context-header'
+import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { TeamFlag } from '@/components/atoms/team-flag'
 import { StatusChip } from '@/components/atoms/status-chip'
 import { PointsBadge } from '@/components/atoms/points-badge'
@@ -41,9 +42,11 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialG
 
   const { isLocked: clientLocked, countdown, isUrgent } = useLockCountdown(match.scheduledAt)
   const showCountdown = match.status === 'scheduled' && !!countdown
+  const derivedMinute = useDerivedMinute(match)
 
   return (
     <div className="flex flex-col min-h-dvh pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+      <LiveRefresh active={isLive} />
       <ContextHeader title="Match" back="/matches" />
 
       {/* ── Hero — edge-to-edge, dissolves into page ─────── */}
@@ -67,7 +70,7 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialG
         <div className="relative px-5">
           <div className="flex items-center justify-between pt-5 pb-3">
             <RoundBadge round={match.round} group={match.group} />
-            <StatusChip status={match.status} minute={match.minute} />
+            <StatusChip status={match.status} minute={derivedMinute} />
           </div>
         </div>
 
@@ -135,10 +138,10 @@ export function MatchDetailView({ match, prediction: initialPrediction, initialG
                     </div>
 
                     {isLive && (
-                      match.minute ? (
+                      derivedMinute != null ? (
                         <div className="flex items-center gap-2 bg-status-live/10 border border-status-live/20 rounded-full px-3 py-1">
                           <span className="size-1.5 rounded-full bg-status-live animate-live-pulse flex-shrink-0" />
-                          <span className="text-xs font-bold text-status-live tabular">{match.minute}&apos;</span>
+                          <span className="text-xs font-bold text-status-live tabular">{derivedMinute}&apos;</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 bg-status-live/10 border border-status-live/20 rounded-full px-3 py-1">
@@ -716,6 +719,44 @@ function PredictionStrip({
       />
     </div>
   )
+}
+
+// ─── Derived minute hook ─────────────────────────────────────
+// Ticks the displayed minute forward in real time between API syncs.
+// Only active during 1H / 2H / ET / P. Returns null at HT → shows "Half Time".
+
+const ACTIVE_PERIODS = new Set(['1H', '2H', 'ET', 'P'])
+
+function useDerivedMinute(match: Match): number | null {
+  const isActive = match.status === 'live' && !!match.period && ACTIVE_PERIODS.has(match.period)
+
+  const syncedAtRef = useRef<number>(Date.now())
+  const [displayMinute, setDisplayMinute] = useState<number | null>(match.minute ?? null)
+
+  useEffect(() => {
+    // Record when this minute value arrived from the server
+    syncedAtRef.current = Date.now()
+
+    if (!isActive || match.minute == null) {
+      setDisplayMinute(match.minute ?? null)
+      return
+    }
+
+    const base = match.minute
+    const snap = syncedAtRef.current
+
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - snap) / 60_000)
+      setDisplayMinute(base + elapsed)
+    }
+
+    tick()
+    const id = setInterval(tick, 20_000)
+    return () => clearInterval(id)
+  }, [match.minute, match.period, match.status, isActive])
+
+  if (match.period === 'HT') return null
+  return displayMinute
 }
 
 // ─── Lock countdown hook ──────────────────────────────────────

@@ -787,109 +787,71 @@ class SyncService:
             except (ValueError, IndexError):
                 return 999
 
-        # ── Phase A: bracket propagation (DB-internal, no API call required) ───
-        # As each previous-round match finishes, propagate the winner (or loser for
-        # 3rd-place) into the corresponding next-round placeholder slot.  Phase B
-        # (below) then enriches those slots with the real external ID and metadata
-        # once the API publishes confirmed fixtures.
-        from services.wc2026_seed import _BRACKET_FEEDERS, _PREV_ROUND
+        # ── Phase A: bracket propagation using stable bracket_slot ────────────
+        # Uses the official bracket graph (core.bracket.BRACKET_EDGES) keyed on
+        # bracket_slot — immune to scheduled_at sort-order changes that broke the
+        # old positional-index approach.
+        from core.bracket import BRACKET_EDGES
 
-        for _nr, _feeders in _BRACKET_FEEDERS.items():
-            _pr         = _PREV_ROUND[_nr]
-            _use_losers = (_nr == "3rd")
-
-            # Previous-round matches in slot order (ascending scheduled_at; ties
-            # broken by external_id string so manual-wc2026-*-1 < *-2 etc.)
-            _prev_all = sorted(
-                (await db.execute(select(Match).where(Match.round == _pr))).scalars().all(),
-                key=lambda m: (
-                    m.scheduled_at or datetime.min.replace(tzinfo=timezone.utc),
-                    m.external_id or "",
-                ),
+        # Load all knockout matches that have a bracket_slot assigned
+        _all_ko = (await db.execute(
+            select(Match).where(
+                Match.round.in_(["r32", "r16", "qf", "sf", "3rd", "final"]),
+                Match.bracket_slot.isnot(None),
             )
+        )).scalars().all()
+        _slot_map: dict[str, Match] = {m.bracket_slot: m for m in _all_ko}
 
-            # Next-round placeholders that still need teams assigned
-            _next_phs: dict[int, Match] = {
-                _slot_num(m.external_id or ""): m
-                for m in (await db.execute(
-                    select(Match).where(
-                        Match.round == _nr,
-                        Match.external_id.like("manual-wc2026-%"),
-                    )
-                )).scalars().all()
-                if (m.home_team_code or "TBD") in ("TBD", "", None)
-                   or (m.away_team_code or "TBD") in ("TBD", "", None)
-            }
-            if not _next_phs:
+        for _edge in BRACKET_EDGES:
+            _src = _slot_map.get(_edge.source_slot)
+            _dst = _slot_map.get(_edge.dest_slot)
+            if not _src or not _dst:
+                continue
+            if _src.status != "finished":
                 continue
 
-            for _si, (_hs, _as) in enumerate(_feeders, start=1):
-                _ph = _next_phs.get(_si)
-                if not _ph or _hs > len(_prev_all) or _as > len(_prev_all):
+            _want_winner = (_edge.advancement_type == "winner")
+            _team_info = _ko_winner(_src, _want_winner)
+            if not _team_info:
+                continue
+
+            _t_code, _t_name, _t_flag = _team_info
+
+            if _edge.dest_side == "home":
+                _is_tbd = (_dst.home_team_code or "TBD").upper() in ("TBD", "", "NONE")
+                if not _is_tbd:
+                    log.debug("[Sync/bracket-prop] %s→%s HOME already set to %s — skip",
+                              _edge.source_slot, _edge.dest_slot, _dst.home_team_code)
                     continue
-                _hm, _am = _prev_all[_hs - 1], _prev_all[_as - 1]
+                _pv: dict = {"home_team_code": _t_code, "home_team_name": _t_name, "updated_at": _now}
+                if _t_flag:
+                    _pv["home_flag_url"] = _t_flag
+            else:
+                _is_tbd = (_dst.away_team_code or "TBD").upper() in ("TBD", "", "NONE")
+                if not _is_tbd:
+                    log.debug("[Sync/bracket-prop] %s→%s AWAY already set to %s — skip",
+                              _edge.source_slot, _edge.dest_slot, _dst.away_team_code)
+                    continue
+                _pv = {"away_team_code": _t_code, "away_team_name": _t_name, "updated_at": _now}
+                if _t_flag:
+                    _pv["away_flag_url"] = _t_flag
 
-                _pv: dict = {"updated_at": _now}
-                _slot_updated = False
-
-                # Home team — propagate as soon as its feeder finishes,
-                # independently of whether the away-side feeder is done yet.
-                _h_is_tbd = (_ph.home_team_code or "TBD").upper() in ("TBD", "", "NONE")
-                if _hm.status == "finished" and _h_is_tbd:
-                    _h_info = _ko_winner(_hm, not _use_losers)
-                    if _h_info:
-                        _h_code, _h_name, _h_flag = _h_info
-                        _pv["home_team_code"] = _h_code
-                        _pv["home_team_name"] = _h_name
-                        if _h_flag:
-                            _pv["home_flag_url"] = _h_flag
-                        _slot_updated = True
-                        _src_score = (
-                            f"{_hm.home_score}-{_hm.away_score}"
-                            + (f" (P {_hm.penalty_home}-{_hm.penalty_away})"
-                               if _hm.penalty_home is not None else "")
-                        )
-                        log.info(
-                            "[Sync/bracket-prop] %s→%s slot=%d HOME=%s "
-                            "(match %s: %sv%s %s)",
-                            _pr, _nr, _si, _h_code,
-                            _hm.external_id,
-                            _hm.home_team_code, _hm.away_team_code,
-                            _src_score,
-                        )
-
-                # Away team — propagate independently of home team
-                _a_is_tbd = (_ph.away_team_code or "TBD").upper() in ("TBD", "", "NONE")
-                if _am.status == "finished" and _a_is_tbd:
-                    _a_info = _ko_winner(_am, not _use_losers)
-                    if _a_info:
-                        _a_code, _a_name, _a_flag = _a_info
-                        _pv["away_team_code"] = _a_code
-                        _pv["away_team_name"] = _a_name
-                        if _a_flag:
-                            _pv["away_flag_url"] = _a_flag
-                        _slot_updated = True
-                        _src_score = (
-                            f"{_am.home_score}-{_am.away_score}"
-                            + (f" (P {_am.penalty_home}-{_am.penalty_away})"
-                               if _am.penalty_home is not None else "")
-                        )
-                        log.info(
-                            "[Sync/bracket-prop] %s→%s slot=%d AWAY=%s "
-                            "(match %s: %sv%s %s)",
-                            _pr, _nr, _si, _a_code,
-                            _am.external_id,
-                            _am.home_team_code, _am.away_team_code,
-                            _src_score,
-                        )
-
-                if _slot_updated:
-                    await db.execute(
-                        update(Match).where(Match.id == _ph.id)
-                        .values(**_pv)
-                        .execution_options(synchronize_session=False)
-                    )
-                    count += 1
+            _src_score = (
+                f"{_src.home_score}-{_src.away_score}"
+                + (f" (P {_src.penalty_home}-{_src.penalty_away})" if _src.penalty_home is not None else "")
+            )
+            log.info(
+                "[Sync/bracket-prop] %s %s→%s %s=%s (src: %sv%s %s)",
+                _edge.advancement_type.upper(),
+                _edge.source_slot, _edge.dest_slot, _edge.dest_side.upper(),
+                _t_code, _src.home_team_code, _src.away_team_code, _src_score,
+            )
+            await db.execute(
+                update(Match).where(Match.id == _dst.id)
+                .values(**_pv)
+                .execution_options(synchronize_session=False)
+            )
+            count += 1
 
         await db.flush()
 

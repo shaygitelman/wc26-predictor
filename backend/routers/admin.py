@@ -1442,6 +1442,160 @@ async def admin_fix_r32_placeholder_rounds(db: AsyncSession = Depends(get_db)) -
     }
 
 
+# ── Official bracket map ──────────────────────────────────────────────
+
+@router.get("/bracket-map", dependencies=[Depends(_verify_admin)], summary="Official bracket map with current state")
+async def bracket_map(dry_run: bool = False, db: AsyncSession = Depends(get_db)) -> dict:
+    from core.bracket import ALL_SLOTS, SLOT_ROUND, SLOT_MATCH_NO, edges_from, edges_to
+    from services.sync import _ko_winner
+    from datetime import timedelta
+
+    # Israel is UTC+3 during summer (EEST, no DST change between March and October)
+    _ISR = timedelta(hours=3)
+
+    now = datetime.now(timezone.utc)
+
+    all_ko = (await db.execute(
+        select(Match).where(
+            Match.round.in_(["r32", "r16", "qf", "sf", "3rd", "final"]),
+        )
+    )).scalars().all()
+
+    slot_map: dict[str, Match] = {m.bracket_slot: m for m in all_ko if m.bracket_slot}
+
+    def _isr_time(m: "Match") -> str:
+        return (m.scheduled_at + _ISR).strftime("%Y-%m-%d %H:%M")
+
+    def match_summary(m: "Match | None") -> "dict | None":
+        if not m:
+            return None
+        winner = loser = None
+        if m.status == "finished" and m.home_score is not None:
+            w = _ko_winner(m, True)
+            l = _ko_winner(m, False)
+            winner = w[0] if w else None
+            loser  = l[0] if l else None
+        score = None
+        if m.home_score is not None:
+            score = f"{m.home_score}-{m.away_score}"
+            if m.penalty_home is not None:
+                score += f" (P {m.penalty_home}-{m.penalty_away})"
+        return {
+            "id":                m.id,
+            "external_id":       m.external_id,
+            "official_match_no": SLOT_MATCH_NO.get(m.bracket_slot),  # FIFA M73–M104
+            "round":             m.round,
+            "bracket_slot":      m.bracket_slot,
+            "home":              m.home_team_code,
+            "away":              m.away_team_code,
+            "status":            m.status,
+            "score":             score,
+            "winner":            winner,
+            "loser":             loser,
+            "kickoff_utc":       m.scheduled_at.isoformat(),
+            "kickoff_israel":    _isr_time(m),
+            "updated_at":        m.updated_at.isoformat(),
+        }
+
+    slots = []
+    for slot_id in ALL_SLOTS:
+        m = slot_map.get(slot_id)
+        out_edges = edges_from(slot_id)
+        in_edges  = edges_to(slot_id)
+
+        # Source slots that feed this match's home and away sides
+        home_source = next((e.source_slot for e in in_edges if e.dest_side == "home"), None)
+        away_source = next((e.source_slot for e in in_edges if e.dest_side == "away"), None)
+
+        # Dry-run: show what would propagate from this finished match
+        propagations = []
+        if dry_run and m and m.status == "finished":
+            src_score = None
+            if m.home_score is not None:
+                src_score = f"{m.home_score}-{m.away_score}"
+                if m.penalty_home is not None:
+                    src_score += f" (P {m.penalty_home}-{m.penalty_away})"
+            for edge in out_edges:
+                dst = slot_map.get(edge.dest_slot)
+                team = _ko_winner(m, edge.advancement_type == "winner")
+                if not team:
+                    propagations.append({
+                        "source_slot":      slot_id,
+                        "source_ext_id":    m.external_id,
+                        "source_score":     src_score,
+                        "dest_slot":        edge.dest_slot,
+                        "dest_side":        edge.dest_side,
+                        "advancement_type": edge.advancement_type,
+                        "new_value":        None,
+                        "old_value":        None,
+                        "action":           "skipped",
+                        "skip_reason":      "cannot_determine_winner",
+                    })
+                    continue
+                t_code = team[0]
+                if dst:
+                    cur = dst.home_team_code if edge.dest_side == "home" else dst.away_team_code
+                    already_correct = cur == t_code
+                    already_set = (cur or "TBD").upper() not in ("TBD", "", "NONE")
+                    propagations.append({
+                        "source_slot":      slot_id,
+                        "source_ext_id":    m.external_id,
+                        "source_score":     src_score,
+                        "source_teams":     f"{m.home_team_code} vs {m.away_team_code}",
+                        "dest_slot":        edge.dest_slot,
+                        "dest_side":        edge.dest_side,
+                        "advancement_type": edge.advancement_type,
+                        "new_value":        t_code,
+                        "old_value":        cur,
+                        "action":           "already_correct" if already_correct else ("would_overwrite" if already_set else "would_set"),
+                        "skip_reason":      None,
+                    })
+                else:
+                    propagations.append({
+                        "source_slot":   slot_id,
+                        "dest_slot":     edge.dest_slot,
+                        "dest_side":     edge.dest_side,
+                        "action":        "skipped",
+                        "skip_reason":   "dest_slot_missing_from_db",
+                    })
+
+        slot_entry: dict = {
+            "bracket_slot":      slot_id,
+            "official_match_no": SLOT_MATCH_NO.get(slot_id),
+            "round":             SLOT_ROUND.get(slot_id),
+            "home_source":       home_source,
+            "away_source":       away_source,
+            "match":             match_summary(m),
+            "missing":           m is None,
+            "advances_to":       [
+                {"dest_slot": e.dest_slot, "dest_side": e.dest_side, "type": e.advancement_type}
+                for e in out_edges
+            ],
+        }
+        if dry_run and propagations:
+            slot_entry["dry_run_propagations"] = propagations
+        slots.append(slot_entry)
+
+    # Summary stats
+    missing   = [s["bracket_slot"] for s in slots if s["missing"]]
+    finished  = sum(1 for s in slots if s["match"] and s["match"]["status"] == "finished")
+    propagated = sum(
+        1 for s in slots
+        if s.get("dry_run_propagations") and
+           any(p["action"] in ("would_set", "already_correct") for p in s["dry_run_propagations"])
+    )
+
+    return {
+        "now":                  now.isoformat(),
+        "dry_run":              dry_run,
+        "total_slots":          len(ALL_SLOTS),
+        "missing_bracket_slot": missing,
+        "finished_matches":     finished,
+        "propagatable":         propagated if dry_run else None,
+        "slots":                slots,
+    }
+
+
 # ── API usage monitoring ──────────────────────────────────────────────
 
 @router.get("/api-usage", dependencies=[Depends(_verify_admin)])

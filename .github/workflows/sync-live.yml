@@ -17,6 +17,10 @@ on:
         required: false
         default: 'manual debug'
 
+concurrency:
+  group: live-sync
+  cancel-in-progress: true
+
 jobs:
   sync:
     name: Call live-cycle
@@ -87,46 +91,14 @@ jobs:
 
           echo ""
           echo "=== Summary ==="
-          python3 - << 'PYEOF'
-import json, sys
-try:
-    d = json.load(open('/tmp/cycle.json'))
-    print(f"  Timestamp      : {d.get('timestamp', '?')}")
-    print(f"  Elapsed        : {d.get('elapsed_ms', '?')} ms")
-    print(f"  Polling mode   : {d.get('polling_mode', '?')}")
-    print(f"  API calls today: {d.get('api_calls_today', '?')}")
-    print()
-
-    rec = d.get('reconcile', {})
-    print(f"  Reconcile      : status={rec.get('status','?')}  affected={rec.get('records_affected','?')}  elapsed={rec.get('elapsed_ms','?')}ms")
-    if rec.get('errors'):
-        print(f"  Reconcile errs : {rec['errors']}")
-
-    syn = d.get('sync', {})
-    print(f"  Sync-live      : status={syn.get('status','?')}  matches_updated={syn.get('matches_updated','?')}  elapsed={syn.get('elapsed_ms','?')}ms")
-    if syn.get('errors'):
-        print(f"  Sync errors    : {syn['errors']}")
-    print()
-
-    live = d.get('live_matches', [])
-    near = d.get('near_kickoff_count', 0)
-    post = d.get('post_ft_count', 0)
-    if live:
-        print(f"  Live matches   : {len(live)}")
-        for m in live:
-            stale = m.get('mins_since_update')
-            stale_str = f"{stale}min stale" if stale is not None else ""
-            print(f"    {m.get('match','?')}  |  {m.get('period','?')} {m.get('minute','?')}'  |  {m.get('score','?')}  |  src={m.get('sync_source','?')}  |  {stale_str}")
-    else:
-        print(f"  Live matches   : 0")
-    if near:
-        print(f"  Near kickoff   : {near} match(es)")
-    if post:
-        print(f"  Post-FT window : {post} match(es)")
-
-    errs = d.get('last_sync_errors', [])
-    if errs:
-        print(f"  Backend errors : {errs}")
-except Exception as e:
-    print(f"  (could not parse response: {e})", file=sys.stderr)
-PYEOF
+          if [ -f /tmp/cycle.json ]; then
+            jq -r '"  Timestamp   : " + (.timestamp // "?")' /tmp/cycle.json 2>/dev/null || true
+            jq -r '"  Elapsed     : " + ((.elapsed_ms // 0)|tostring) + " ms"' /tmp/cycle.json 2>/dev/null || true
+            jq -r '"  Polling     : " + (.polling_mode // "?")' /tmp/cycle.json 2>/dev/null || true
+            jq -r '"  API calls   : " + ((.api_calls_today // 0)|tostring)' /tmp/cycle.json 2>/dev/null || true
+            jq -r '"  Reconcile   : " + (.reconcile.status // "?") + "  affected=" + ((.reconcile.records_affected // 0)|tostring)' /tmp/cycle.json 2>/dev/null || true
+            jq -r '"  Sync-live   : " + (.sync.status // "?") + "  updated=" + ((.sync.matches_updated // 0)|tostring)' /tmp/cycle.json 2>/dev/null || true
+            jq -r '"  Context     : " + (.update_context // "(none)")' /tmp/cycle.json 2>/dev/null || true
+            jq -r 'if (.live_matches | length) > 0 then "  Live matches: " + ((.live_matches | length)|tostring) else "  Live matches: 0" end' /tmp/cycle.json 2>/dev/null || true
+            jq -r '.backend_errors // [] | if length > 0 then "  Backend errs: " + tostring else empty end' /tmp/cycle.json 2>/dev/null || true
+          fi

@@ -38,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.bracket import bracket_slot_from_ext_id
 from models.match import Match
 
 
@@ -411,6 +412,7 @@ class WC2026SeedService:
         sched:      datetime,
     ) -> bool:
         try:
+            _bracket_slot = bracket_slot_from_ext_id(ext_id)
             await self.db.execute(
                 pg_insert(Match)
                 .values(
@@ -426,6 +428,7 @@ class WC2026SeedService:
                     round          = round_code,
                     group_name     = None,
                     status         = "scheduled",
+                    bracket_slot   = _bracket_slot,
                 )
                 .on_conflict_do_nothing(index_elements=["external_id"])
             )

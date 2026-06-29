@@ -39,7 +39,7 @@ jobs:
             "${APP_URL}/api/cron/reconcile-knockouts") || HTTP_STATUS="000"
 
           echo "--- Reconcile HTTP ${HTTP_STATUS} ---"
-          cat /tmp/reconcile_body.json 2>/dev/null | head -c 500 || echo "(no body)"
+          cat /tmp/reconcile_body.json 2>/dev/null | head -c 3000 || echo "(no body)"
           echo ""
 
           if [ "${HTTP_STATUS}" = "401" ] || [ "${HTTP_STATUS}" = "403" ]; then
@@ -66,7 +66,7 @@ jobs:
 
           echo "http_status=${HTTP_STATUS}" >> "$GITHUB_OUTPUT"
           echo "--- HTTP ${HTTP_STATUS} ---"
-          cat /tmp/sync_body.json 2>/dev/null | head -c 1000 || echo "(no body)"
+          cat /tmp/sync_body.json 2>/dev/null | head -c 3000 || echo "(no body)"
           echo ""
 
           # 000 = network/timeout error

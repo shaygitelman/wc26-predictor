@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
       ok:               data.status !== 'error',
       status:           data.status,
       records_affected: data.records_affected,
+      errors:           data.errors ?? [],
       elapsed,
     })
   } catch (err) {

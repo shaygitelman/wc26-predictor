@@ -1305,15 +1305,24 @@ class SyncService:
             ).limit(1)
         )
         if not has_active:
-            log.debug("[Sync/live] skip — no live or imminent matches in DB")
+            log.info("[Sync/live] SKIP — no live or imminent matches in DB at %s", _now.isoformat())
             return SyncResult(status="skipped", entity_type="live", records_affected=0)
 
+        log.info("[Sync/live] START at %s — fetching live feed", _now.isoformat())
         _log_entry = await self._start_log("live", db)
 
         try:
             fixtures = await self.provider.fetch_live(self.league_id)
         except Exception as exc:
             return await self._fail_log(_log_entry, str(exc), db)
+
+        log.info("[Sync/live] fetch_live returned %d fixture(s)", len(fixtures))
+        for _fx in fixtures:
+            log.info(
+                "[Sync/live] feed: ext=%s %sv%s status=%s period=%s min=%s score=%s-%s",
+                _fx.external_id, _fx.home_team_code, _fx.away_team_code,
+                _fx.status, _fx.period, _fx.minute, _fx.home_score, _fx.away_score,
+            )
 
         count  = 0
         errors: list[str] = []
@@ -1328,6 +1337,10 @@ class SyncService:
                     select(Match).where(Match.external_id == fx.external_id)
                 )
                 if not match:
+                    log.info(
+                        "[Sync/live] Phase1 SKIP ext=%s %sv%s — no DB row with this external_id",
+                        fx.external_id, fx.home_team_code, fx.away_team_code,
+                    )
                     continue  # unknown fixture; skip
 
                 live_ext_ids_seen.add(fx.external_id)
@@ -1349,6 +1362,13 @@ class SyncService:
                     .execution_options(synchronize_session=False)
                 )
                 count += 1
+                log.info(
+                    "[Sync/live] Phase1 UPDATE match=%s ext=%s %sv%s %s→%s min=%s period=%s score=%s-%s",
+                    match.id, fx.external_id,
+                    fx.home_team_code, fx.away_team_code,
+                    prev_status, fx.status, fx.minute, fx.period,
+                    fx.home_score, fx.away_score,
+                )
 
                 # Generate auto-picks when a match goes live (60-second buffer after kick-off)
                 buffer_elapsed = (
@@ -1413,12 +1433,17 @@ class SyncService:
             select(Match).where(*stale_conds)
         )).scalars().all()
 
+        log.info("[Sync/live] Phase2 stale-live candidates: %d", len(stale_matches))
         for stale in stale_matches:
             if not stale.external_id or not stale.external_id.isdigit():
+                log.info(
+                    "[Sync/live] Phase2 SKIP match=%s ext=%s — placeholder ID cannot be queried",
+                    stale.id, stale.external_id,
+                )
                 continue  # manual/placeholder IDs cannot be queried from API
             try:
                 log.info(
-                    "[Sync/live] stale-live check match=%s external=%s",
+                    "[Sync/live] Phase2 stale-live check match=%s external=%s",
                     stale.id, stale.external_id,
                 )
                 fx = await self.provider.fetch_by_id(stale.external_id)
@@ -1471,12 +1496,37 @@ class SyncService:
             )
         )).scalars().all()
 
+        log.info("[Sync/live] Phase3 stale-scheduled candidates: %d", len(stale_scheduled))
+        _phase3_reconcile_triggered = False
         for stale in stale_scheduled:
             if not stale.external_id or not stale.external_id.isdigit():
+                log.info(
+                    "[Sync/live] Phase3 SKIP match=%s %sv%s ext=%s — placeholder ID; triggering reconcile",
+                    stale.id,
+                    getattr(stale, "home_team_code", "?"), getattr(stale, "away_team_code", "?"),
+                    stale.external_id,
+                )
+                if not _phase3_reconcile_triggered:
+                    _phase3_reconcile_triggered = True
+                    try:
+                        _recon = await self.reconcile_knockout_slots(db)
+                        log.info(
+                            "[Sync/live] Phase3 reconcile triggered → status=%s records=%d",
+                            _recon.status, _recon.records_affected,
+                        )
+                        if _recon.records_affected > 0:
+                            count += _recon.records_affected
+                        if _recon.errors:
+                            errors.extend(_recon.errors)
+                        # update throttle so Phase 4 doesn't double-fire
+                        _last_ko_reconcile_at = _now
+                    except Exception as _recon_exc:
+                        log.error("[Sync/live] Phase3 reconcile trigger FAIL: %s", _recon_exc)
+                        errors.append(f"phase3-reconcile: {_recon_exc}")
                 continue
             try:
                 log.info(
-                    "[Sync/live] stale-scheduled check match=%s external=%s",
+                    "[Sync/live] Phase3 stale-scheduled check match=%s external=%s",
                     stale.id, stale.external_id,
                 )
                 fx = await self.provider.fetch_by_id(stale.external_id)

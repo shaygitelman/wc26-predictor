@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.scoring import ROUND_POINTS, compute_outcome
+from core.scoring import compute_outcome
 from models.league import LeagueMember
 from models.match import Match
 from models.prediction import Prediction
@@ -91,11 +91,6 @@ async def score_match(
             home_score, away_score,
             match.round,
         )
-        # Auto-picks earn at most direction_pts — exact-score luck cannot reward absence.
-        if pred.is_auto_pick and outcome == "exact":
-            direction_pts, _ = ROUND_POINTS.get(match.round, ROUND_POINTS["group"])
-            outcome = "outcome"
-            points  = direction_pts
         pred.outcome = outcome
         pred.points_earned = points
         if pred.locked_at is None:

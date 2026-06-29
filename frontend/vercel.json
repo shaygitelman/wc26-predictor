@@ -2,15 +2,5 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
-  "outputDirectory": ".next",
-  "crons": [
-    {
-      "path": "/api/cron/sync-live",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/reconcile-knockouts",
-      "schedule": "0 1 * * *"
-    }
-  ]
+  "outputDirectory": ".next"
 }

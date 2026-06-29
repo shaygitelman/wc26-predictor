@@ -37,9 +37,15 @@ _ROUND_MAP: dict[int, str] = {
     9: "final",
 }
 
-# Throttle: only run knockout slot reconciliation at most once per hour from sync_live.
-# The bootstrap and admin/cron endpoints bypass this and always run to completion.
-_last_ko_reconcile_at: Optional[datetime] = None
+# Module-level throttle and monitoring state for sync_live.
+# These survive across cron ticks within the same process lifetime on Render.
+_last_ko_reconcile_at:         Optional[datetime] = None
+_last_pre_kickoff_poll_at:     Optional[datetime] = None  # throttle for 10-60 min pre-kickoff window
+_last_sync_at:                 Optional[datetime] = None  # last time a non-skipped sync ran
+_last_sync_records_affected:   int = 0
+_last_sync_errors:             list[str] = []
+_api_calls_today:              int = 0
+_api_calls_today_date:         Optional[str] = None       # YYYY-MM-DD; resets counter at midnight
 
 
 def _ko_winner(
@@ -1287,292 +1293,373 @@ class SyncService:
         When a match transitions to 'live' (after a 60-second buffer), auto-picks
         are generated for any user who has not yet submitted a prediction.
         """
-        global _last_ko_reconcile_at
+        global _last_ko_reconcile_at, _last_pre_kickoff_poll_at
+        global _last_sync_at, _last_sync_records_affected, _last_sync_errors
+        global _api_calls_today, _api_calls_today_date
         from datetime import timedelta
 
         from core.scorer import score_match as do_score
         from services.auto_pick import generate_auto_picks
 
-        # Skip external API call when no matches are live or starting within 5 minutes.
-        # Keeps API-Football call count well within plan limits during non-match windows.
         _now = datetime.now(timezone.utc)
-        has_active = await db.scalar(
-            select(Match.id).where(
-                (Match.status == "live")
-                | (
-                    (Match.status == "scheduled")
-                    & (Match.scheduled_at <= _now + timedelta(minutes=5))
-                )
-            ).limit(1)
-        )
-        if not has_active:
-            log.info("[Sync/live] SKIP — no live or imminent matches in DB at %s", _now.isoformat())
-            return SyncResult(status="skipped", entity_type="live", records_affected=0)
+        _today_str = _now.strftime("%Y-%m-%d")
+        if _api_calls_today_date != _today_str:
+            _api_calls_today = 0
+            _api_calls_today_date = _today_str
 
-        log.info("[Sync/live] START at %s — fetching live feed", _now.isoformat())
+        # ── Adaptive polling gate ──────────────────────────────────
+        # Priority 1: any live match → full sync every tick (1 min)
+        has_live = await db.scalar(select(Match.id).where(Match.status == "live").limit(1))
+
+        # Priority 2: match within 10 min of kickoff → full sync every tick
+        has_imminent = await db.scalar(select(Match.id).where(
+            Match.status == "scheduled",
+            Match.scheduled_at <= _now + timedelta(minutes=10),
+            Match.scheduled_at >= _now - timedelta(minutes=5),
+        ).limit(1))
+
+        # Priority 3: recently finished (within 10 min) → post-FT polling every tick
+        has_post_ft = await db.scalar(select(Match.id).where(
+            Match.status == "finished",
+            Match.updated_at >= _now - timedelta(minutes=10),
+            Match.external_id.isnot(None),
+        ).limit(1))
+
+        if has_live or has_imminent or has_post_ft:
+            _run_mode = "full"
+        else:
+            # Priority 4: match 10-60 min from kickoff → pre-kickoff mode, throttled to 5 min
+            has_near = await db.scalar(select(Match.id).where(
+                Match.status == "scheduled",
+                Match.scheduled_at > _now + timedelta(minutes=10),
+                Match.scheduled_at <= _now + timedelta(minutes=60),
+            ).limit(1))
+
+            if not has_near:
+                log.info("[Sync/live] SKIP — no live, imminent, post-FT, or near-kickoff matches at %s", _now.isoformat())
+                return SyncResult(status="skipped", entity_type="live", records_affected=0)
+
+            if _last_pre_kickoff_poll_at and _now < _last_pre_kickoff_poll_at + timedelta(minutes=5):
+                log.info(
+                    "[Sync/live] SKIP — pre-kickoff 5-min throttle (last=%s)",
+                    _last_pre_kickoff_poll_at.isoformat(),
+                )
+                return SyncResult(status="skipped", entity_type="live", records_affected=0)
+
+            _last_pre_kickoff_poll_at = _now
+            _run_mode = "pre_kickoff"  # reconcile only — no live feed, no stale checks
+
+        log.info("[Sync/live] START mode=%s at %s", _run_mode, _now.isoformat())
         _log_entry = await self._start_log("live", db)
 
-        try:
-            fixtures = await self.provider.fetch_live(self.league_id)
-        except Exception as exc:
-            return await self._fail_log(_log_entry, str(exc), db)
-
-        log.info("[Sync/live] fetch_live returned %d fixture(s)", len(fixtures))
-        for _fx in fixtures:
-            log.info(
-                "[Sync/live] feed: ext=%s %sv%s status=%s period=%s min=%s score=%s-%s",
-                _fx.external_id, _fx.home_team_code, _fx.away_team_code,
-                _fx.status, _fx.period, _fx.minute, _fx.home_score, _fx.away_score,
-            )
-
-        count  = 0
-        errors: list[str] = []
-
-        # Track external IDs seen in the live feed so we can detect
-        # matches that dropped off (likely just finished).
+        count              = 0
+        errors: list[str]  = []
         live_ext_ids_seen: set[str] = set()
 
-        for fx in fixtures:
+        if _run_mode != "pre_kickoff":
+            # ── Phase 1: bulk live feed ───────────────────────────
             try:
-                match = await db.scalar(
-                    select(Match).where(Match.external_id == fx.external_id)
-                )
-                if not match:
-                    log.info(
-                        "[Sync/live] Phase1 SKIP ext=%s %sv%s — no DB row with this external_id",
-                        fx.external_id, fx.home_team_code, fx.away_team_code,
-                    )
-                    continue  # unknown fixture; skip
+                fixtures = await self.provider.fetch_live(self.league_id)
+                _api_calls_today += 1
+            except Exception as exc:
+                return await self._fail_log(_log_entry, str(exc), db)
 
-                live_ext_ids_seen.add(fx.external_id)
-                prev_status = match.status
-
-                await db.execute(
-                    update(Match)
-                    .where(Match.id == match.id)
-                    .values(
-                        status       = fx.status,
-                        home_score   = fx.home_score,
-                        away_score   = fx.away_score,
-                        penalty_home = fx.penalty_home,
-                        penalty_away = fx.penalty_away,
-                        period       = fx.period,
-                        minute       = fx.minute,
-                        updated_at   = datetime.now(timezone.utc),
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-                count += 1
+            log.info("[Sync/live] fetch_live returned %d fixture(s)", len(fixtures))
+            for _fx in fixtures:
                 log.info(
-                    "[Sync/live] Phase1 UPDATE match=%s ext=%s %sv%s %s→%s min=%s period=%s score=%s-%s",
-                    match.id, fx.external_id,
-                    fx.home_team_code, fx.away_team_code,
-                    prev_status, fx.status, fx.minute, fx.period,
-                    fx.home_score, fx.away_score,
+                    "[Sync/live] feed: ext=%s %sv%s status=%s period=%s min=%s score=%s-%s",
+                    _fx.external_id, _fx.home_team_code, _fx.away_team_code,
+                    _fx.status, _fx.period, _fx.minute, _fx.home_score, _fx.away_score,
                 )
 
-                # Generate auto-picks when a match goes live (60-second buffer after kick-off)
-                buffer_elapsed = (
-                    datetime.now(timezone.utc) >= match.scheduled_at + timedelta(seconds=60)
-                )
-                if fx.status == "live" and buffer_elapsed and not match.auto_picks_generated:
-                    log.info(
-                        "[Sync/live] AUTO-PICK trigger match=%s external=%s round=%s",
-                        match.id, fx.external_id, match.round,
+            for fx in fixtures:
+                try:
+                    match = await db.scalar(
+                        select(Match).where(Match.external_id == fx.external_id)
                     )
-                    try:
-                        n = await generate_auto_picks(match.id, match.round, db)
-                        if n >= 0:
-                            await db.execute(
-                                update(Match)
-                                .where(Match.id == match.id)
-                                .values(auto_picks_generated=True)
-                                .execution_options(synchronize_session=False)
-                            )
-                    except Exception as auto_exc:
-                        log.error(
-                            "[Sync/live] AUTO-PICK FAIL match=%s: %s",
-                            match.id, auto_exc,
-                        )
-                        errors.append(f"auto-pick {fx.external_id}: {auto_exc}")
-
-                # Award points when a match just finished
-                if fx.status == "finished" and prev_status != "finished":
-                    if fx.home_score is not None and fx.away_score is not None:
+                    if not match:
                         log.info(
-                            "[Sync/live] AUTO-SCORE match=%s external=%s %d-%d "
-                            "(transitioned %s → finished)",
-                            match.id, fx.external_id,
-                            fx.home_score, fx.away_score, prev_status,
+                            "[Sync/live] Phase1 SKIP ext=%s %sv%s — no DB row with this external_id",
+                            fx.external_id, fx.home_team_code, fx.away_team_code,
+                        )
+                        continue
+
+                    live_ext_ids_seen.add(fx.external_id)
+                    prev_status = match.status
+
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == match.id)
+                        .values(
+                            status          = fx.status,
+                            home_score      = fx.home_score,
+                            away_score      = fx.away_score,
+                            penalty_home    = fx.penalty_home,
+                            penalty_away    = fx.penalty_away,
+                            period          = fx.period,
+                            provider_status = fx.provider_status,
+                            minute          = fx.minute,
+                            sync_source     = "live_feed",
+                            updated_at      = datetime.now(timezone.utc),
+                        )
+                        .execution_options(synchronize_session=False)
+                    )
+                    count += 1
+                    log.info(
+                        "[Sync/live] Phase1 UPDATE match=%s ext=%s %sv%s %s→%s min=%s period=%s score=%s-%s",
+                        match.id, fx.external_id,
+                        fx.home_team_code, fx.away_team_code,
+                        prev_status, fx.status, fx.minute, fx.period,
+                        fx.home_score, fx.away_score,
+                    )
+
+                    buffer_elapsed = (
+                        datetime.now(timezone.utc) >= match.scheduled_at + timedelta(seconds=60)
+                    )
+                    if fx.status == "live" and buffer_elapsed and not match.auto_picks_generated:
+                        log.info(
+                            "[Sync/live] AUTO-PICK trigger match=%s external=%s round=%s",
+                            match.id, fx.external_id, match.round,
                         )
                         try:
-                            await do_score(match.id, fx.home_score, fx.away_score, db)
+                            n = await generate_auto_picks(match.id, match.round, db)
+                            if n >= 0:
+                                await db.execute(
+                                    update(Match)
+                                    .where(Match.id == match.id)
+                                    .values(auto_picks_generated=True)
+                                    .execution_options(synchronize_session=False)
+                                )
+                        except Exception as auto_exc:
+                            log.error(
+                                "[Sync/live] AUTO-PICK FAIL match=%s: %s",
+                                match.id, auto_exc,
+                            )
+                            errors.append(f"auto-pick {fx.external_id}: {auto_exc}")
+
+                    if fx.status == "finished" and prev_status != "finished":
+                        if fx.home_score is not None and fx.away_score is not None:
+                            log.info(
+                                "[Sync/live] AUTO-SCORE match=%s external=%s %d-%d "
+                                "(transitioned %s → finished)",
+                                match.id, fx.external_id,
+                                fx.home_score, fx.away_score, prev_status,
+                            )
+                            try:
+                                await do_score(match.id, fx.home_score, fx.away_score, db)
+                            except Exception as score_exc:
+                                log.error(
+                                    "[Sync/live] SCORE-FAIL match=%s: %s",
+                                    match.id, score_exc,
+                                )
+                                errors.append(f"scoring {fx.external_id}: {score_exc}")
+
+                except Exception as exc:
+                    errors.append(f"{fx.external_id}: {exc}")
+
+            # ── Phase 2: stale-live recovery ──────────────────────
+            # Find DB matches still marked 'live' that weren't in the live feed
+            # and haven't been updated for 5+ minutes.  Catches HT dropouts
+            # (API-Football stops listing matches in live=all during the break).
+            stale_conds = [
+                Match.status == "live",
+                Match.updated_at <= _now - timedelta(minutes=5),
+            ]
+            if live_ext_ids_seen:
+                stale_conds.append(Match.external_id.notin_(live_ext_ids_seen))
+
+            stale_matches = (await db.execute(
+                select(Match).where(*stale_conds)
+            )).scalars().all()
+
+            log.info("[Sync/live] Phase2 stale-live candidates: %d", len(stale_matches))
+            for stale in stale_matches:
+                if not stale.external_id or not stale.external_id.isdigit():
+                    log.info(
+                        "[Sync/live] Phase2 SKIP match=%s ext=%s — placeholder ID cannot be queried",
+                        stale.id, stale.external_id,
+                    )
+                    continue
+                try:
+                    log.info(
+                        "[Sync/live] Phase2 stale-live check match=%s external=%s",
+                        stale.id, stale.external_id,
+                    )
+                    fx = await self.provider.fetch_by_id(stale.external_id)
+                    _api_calls_today += 1
+                    if not fx:
+                        continue
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == stale.id)
+                        .values(
+                            status          = fx.status,
+                            home_score      = fx.home_score,
+                            away_score      = fx.away_score,
+                            penalty_home    = fx.penalty_home,
+                            penalty_away    = fx.penalty_away,
+                            period          = fx.period,
+                            provider_status = fx.provider_status,
+                            minute          = fx.minute,
+                            sync_source     = "stale_live",
+                            updated_at      = datetime.now(timezone.utc),
+                        )
+                        .execution_options(synchronize_session=False)
+                    )
+                    count += 1
+                    if fx.status == "finished" and fx.home_score is not None \
+                            and fx.away_score is not None:
+                        log.info(
+                            "[Sync/live] Phase2 AUTO-SCORE match=%s %d-%d",
+                            stale.id, fx.home_score, fx.away_score,
+                        )
+                        try:
+                            await do_score(stale.id, fx.home_score, fx.away_score, db)
                         except Exception as score_exc:
                             log.error(
-                                "[Sync/live] SCORE-FAIL match=%s: %s",
-                                match.id, score_exc,
+                                "[Sync/live] Phase2 SCORE-FAIL match=%s: %s",
+                                stale.id, score_exc,
                             )
-                            errors.append(f"scoring {fx.external_id}: {score_exc}")
+                            errors.append(f"stale-live score {stale.external_id}: {score_exc}")
+                except Exception as exc:
+                    errors.append(f"stale-live {stale.external_id}: {exc}")
 
-            except Exception as exc:
-                errors.append(f"{fx.external_id}: {exc}")
-
-        # ── Phase 2: stale-live recovery ──────────────────────────
-        # Find DB matches still marked 'live' that weren't in the live feed
-        # and haven't been updated for 5+ minutes.  Fetch each individually
-        # to get their real status.  The 5-minute window catches HT dropouts
-        # (API-Football stops listing matches in live=all during the break)
-        # without false-triggering on momentary feed blips.
-        stale_conds = [
-            Match.status == "live",
-            Match.updated_at <= _now - timedelta(minutes=5),
-        ]
-        if live_ext_ids_seen:
-            stale_conds.append(Match.external_id.notin_(live_ext_ids_seen))
-
-        stale_matches = (await db.execute(
-            select(Match).where(*stale_conds)
-        )).scalars().all()
-
-        log.info("[Sync/live] Phase2 stale-live candidates: %d", len(stale_matches))
-        for stale in stale_matches:
-            if not stale.external_id or not stale.external_id.isdigit():
-                log.info(
-                    "[Sync/live] Phase2 SKIP match=%s ext=%s — placeholder ID cannot be queried",
-                    stale.id, stale.external_id,
+            # ── Phase 2.5: post-FT score verification ─────────────
+            # Re-fetch matches that finished in the last 10 minutes to catch
+            # VAR corrections or API-Football score adjustments after FT.
+            post_ft_matches = (await db.execute(
+                select(Match).where(
+                    Match.status == "finished",
+                    Match.updated_at >= _now - timedelta(minutes=10),
+                    Match.external_id.isnot(None),
                 )
-                continue  # manual/placeholder IDs cannot be queried from API
-            try:
-                log.info(
-                    "[Sync/live] Phase2 stale-live check match=%s external=%s",
-                    stale.id, stale.external_id,
-                )
-                fx = await self.provider.fetch_by_id(stale.external_id)
-                if not fx:
+            )).scalars().all()
+
+            log.info("[Sync/live] Phase2.5 post-FT candidates: %d", len(post_ft_matches))
+            for m in post_ft_matches:
+                if not m.external_id or not m.external_id.isdigit():
                     continue
-                await db.execute(
-                    update(Match)
-                    .where(Match.id == stale.id)
-                    .values(
-                        status       = fx.status,
-                        home_score   = fx.home_score,
-                        away_score   = fx.away_score,
-                        penalty_home = fx.penalty_home,
-                        penalty_away = fx.penalty_away,
-                        period       = fx.period,
-                        minute       = fx.minute,
-                        updated_at   = datetime.now(timezone.utc),
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-                count += 1
-                if fx.status == "finished" and fx.home_score is not None \
-                        and fx.away_score is not None:
+                if m.external_id in live_ext_ids_seen:
+                    continue  # already refreshed in Phase 1
+                try:
+                    fx = await self.provider.fetch_by_id(m.external_id)
+                    _api_calls_today += 1
+                    if not fx:
+                        continue
+                    if fx.home_score == m.home_score and fx.away_score == m.away_score:
+                        continue  # no change
                     log.info(
-                        "[Sync/live] stale-live AUTO-SCORE match=%s %d-%d",
-                        stale.id, fx.home_score, fx.away_score,
+                        "[Sync/live] Phase2.5 POST-FT score correction match=%s %s-%s → %s-%s",
+                        m.id, m.home_score, m.away_score, fx.home_score, fx.away_score,
                     )
-                    try:
-                        await do_score(stale.id, fx.home_score, fx.away_score, db)
-                    except Exception as score_exc:
-                        log.error(
-                            "[Sync/live] stale-live SCORE-FAIL match=%s: %s",
-                            stale.id, score_exc,
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == m.id)
+                        .values(
+                            home_score      = fx.home_score,
+                            away_score      = fx.away_score,
+                            penalty_home    = fx.penalty_home,
+                            penalty_away    = fx.penalty_away,
+                            provider_status = fx.provider_status,
+                            sync_source     = "post_ft",
+                            updated_at      = _now,
                         )
-                        errors.append(f"stale-live score {stale.external_id}: {score_exc}")
-            except Exception as exc:
-                errors.append(f"stale-live {stale.external_id}: {exc}")
-
-        # ── Phase 3: stale-scheduled recovery ─────────────────────────
-        # Matches that never transitioned scheduled → live because the live
-        # feed (Phase 1) missed them.  Fetch each individually and update.
-        # Threshold is 5 minutes: short enough to catch a missed kick-off
-        # quickly (within one cron tick) but long enough to avoid
-        # false-positives for late-starting matches.
-        stale_scheduled = (await db.execute(
-            select(Match).where(
-                Match.status == "scheduled",
-                Match.scheduled_at <= _now - timedelta(minutes=5),
-                Match.external_id.isnot(None),
-            )
-        )).scalars().all()
-
-        log.info("[Sync/live] Phase3 stale-scheduled candidates: %d", len(stale_scheduled))
-        _phase3_reconcile_triggered = False
-        for stale in stale_scheduled:
-            if not stale.external_id or not stale.external_id.isdigit():
-                log.info(
-                    "[Sync/live] Phase3 SKIP match=%s %sv%s ext=%s — placeholder ID; triggering reconcile",
-                    stale.id,
-                    getattr(stale, "home_team_code", "?"), getattr(stale, "away_team_code", "?"),
-                    stale.external_id,
-                )
-                if not _phase3_reconcile_triggered:
-                    _phase3_reconcile_triggered = True
+                        .execution_options(synchronize_session=False)
+                    )
+                    count += 1
+                    # re-score with corrected final score
                     try:
-                        _recon = await self.reconcile_knockout_slots(db)
+                        await do_score(m.id, fx.home_score, fx.away_score, db)
+                    except Exception as score_exc:
+                        errors.append(f"post-ft score {m.external_id}: {score_exc}")
+                except Exception as exc:
+                    errors.append(f"post-ft {m.external_id}: {exc}")
+
+            # ── Phase 3: stale-scheduled recovery ─────────────────
+            # Matches that never transitioned scheduled → live because the live
+            # feed (Phase 1) missed them.  Fetch each individually and update.
+            stale_scheduled = (await db.execute(
+                select(Match).where(
+                    Match.status == "scheduled",
+                    Match.scheduled_at <= _now - timedelta(minutes=5),
+                    Match.external_id.isnot(None),
+                )
+            )).scalars().all()
+
+            log.info("[Sync/live] Phase3 stale-scheduled candidates: %d", len(stale_scheduled))
+            _phase3_reconcile_triggered = False
+            for stale in stale_scheduled:
+                if not stale.external_id or not stale.external_id.isdigit():
+                    log.info(
+                        "[Sync/live] Phase3 SKIP match=%s %sv%s ext=%s — placeholder ID; triggering reconcile",
+                        stale.id,
+                        getattr(stale, "home_team_code", "?"),
+                        getattr(stale, "away_team_code", "?"),
+                        stale.external_id,
+                    )
+                    if not _phase3_reconcile_triggered:
+                        _phase3_reconcile_triggered = True
+                        try:
+                            _recon = await self.reconcile_knockout_slots(db)
+                            log.info(
+                                "[Sync/live] Phase3 reconcile triggered → status=%s records=%d",
+                                _recon.status, _recon.records_affected,
+                            )
+                            if _recon.records_affected > 0:
+                                count += _recon.records_affected
+                            if _recon.errors:
+                                errors.extend(_recon.errors)
+                            _last_ko_reconcile_at = _now
+                        except Exception as _recon_exc:
+                            log.error("[Sync/live] Phase3 reconcile trigger FAIL: %s", _recon_exc)
+                            errors.append(f"phase3-reconcile: {_recon_exc}")
+                    continue
+                try:
+                    log.info(
+                        "[Sync/live] Phase3 stale-scheduled check match=%s external=%s",
+                        stale.id, stale.external_id,
+                    )
+                    fx = await self.provider.fetch_by_id(stale.external_id)
+                    _api_calls_today += 1
+                    if not fx:
+                        continue
+                    await db.execute(
+                        update(Match)
+                        .where(Match.id == stale.id)
+                        .values(
+                            status          = fx.status,
+                            home_score      = fx.home_score,
+                            away_score      = fx.away_score,
+                            penalty_home    = fx.penalty_home,
+                            penalty_away    = fx.penalty_away,
+                            period          = fx.period,
+                            provider_status = fx.provider_status,
+                            minute          = fx.minute,
+                            sync_source     = "stale_scheduled",
+                            updated_at      = datetime.now(timezone.utc),
+                        )
+                        .execution_options(synchronize_session=False)
+                    )
+                    count += 1
+                    if fx.status == "finished" and fx.home_score is not None \
+                            and fx.away_score is not None:
                         log.info(
-                            "[Sync/live] Phase3 reconcile triggered → status=%s records=%d",
-                            _recon.status, _recon.records_affected,
+                            "[Sync/live] Phase3 AUTO-SCORE match=%s %d-%d",
+                            stale.id, fx.home_score, fx.away_score,
                         )
-                        if _recon.records_affected > 0:
-                            count += _recon.records_affected
-                        if _recon.errors:
-                            errors.extend(_recon.errors)
-                        # update throttle so Phase 4 doesn't double-fire
-                        _last_ko_reconcile_at = _now
-                    except Exception as _recon_exc:
-                        log.error("[Sync/live] Phase3 reconcile trigger FAIL: %s", _recon_exc)
-                        errors.append(f"phase3-reconcile: {_recon_exc}")
-                continue
-            try:
-                log.info(
-                    "[Sync/live] Phase3 stale-scheduled check match=%s external=%s",
-                    stale.id, stale.external_id,
-                )
-                fx = await self.provider.fetch_by_id(stale.external_id)
-                if not fx:
-                    continue
-                prev_status = stale.status
-                await db.execute(
-                    update(Match)
-                    .where(Match.id == stale.id)
-                    .values(
-                        status       = fx.status,
-                        home_score   = fx.home_score,
-                        away_score   = fx.away_score,
-                        penalty_home = fx.penalty_home,
-                        penalty_away = fx.penalty_away,
-                        period       = fx.period,
-                        minute       = fx.minute,
-                        updated_at   = datetime.now(timezone.utc),
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-                count += 1
-                if fx.status == "finished" and fx.home_score is not None \
-                        and fx.away_score is not None:
-                    log.info(
-                        "[Sync/live] stale-scheduled AUTO-SCORE match=%s %d-%d",
-                        stale.id, fx.home_score, fx.away_score,
-                    )
-                    try:
-                        await do_score(stale.id, fx.home_score, fx.away_score, db)
-                    except Exception as score_exc:
-                        log.error(
-                            "[Sync/live] stale-scheduled SCORE-FAIL match=%s: %s",
-                            stale.id, score_exc,
-                        )
-                        errors.append(f"stale-sched score {stale.external_id}: {score_exc}")
-            except Exception as exc:
-                errors.append(f"stale-sched {stale.external_id}: {exc}")
+                        try:
+                            await do_score(stale.id, fx.home_score, fx.away_score, db)
+                        except Exception as score_exc:
+                            log.error(
+                                "[Sync/live] Phase3 SCORE-FAIL match=%s: %s",
+                                stale.id, score_exc,
+                            )
+                            errors.append(f"stale-sched score {stale.external_id}: {score_exc}")
+                except Exception as exc:
+                    errors.append(f"stale-sched {stale.external_id}: {exc}")
 
-        # ── Phase 4: knockout slot reconciliation ─────────────────────
-        # Once the group stage ends, API-Football publishes knockout fixtures
-        # with real team codes.  Auto-reconcile placeholder rows so live sync
-        # can find them by numeric external_id.
-        # Date-gated (July 1+), throttled to once per hour, and fast-exits
-        # if no manual KO placeholders remain.
+        # ── Phase 4: knockout slot reconciliation ─────────────────
+        # Date-gated, throttled to once per hour, bypassed by Phase 3 trigger.
         _ko_due = (
             _now >= datetime(2026, 6, 26, 0, 0, tzinfo=timezone.utc)
             and (
@@ -1602,6 +1689,11 @@ class SyncService:
                 except Exception as ko_exc:
                     log.error("[Sync/live] Phase4 knockout reconcile FAILED: %s", ko_exc)
                     errors.append(f"ko-reconcile: {ko_exc}")
+
+        # Update monitoring state
+        _last_sync_at              = _now
+        _last_sync_records_affected = count
+        _last_sync_errors          = list(errors)
 
         await db.commit()
         return await self._finish_log(_log_entry, count, "\n".join(errors) if errors else None, db)

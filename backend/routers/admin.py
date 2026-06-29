@@ -1,6 +1,6 @@
 import secrets as _secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -466,6 +466,92 @@ async def sync_log(
         )
         for r in rows
     ]
+
+
+# ── Live-status diagnostic endpoint ──────────────────────────────
+
+
+@router.get(
+    "/live-status",
+    dependencies=[Depends(_verify_admin)],
+    summary="Live sync monitoring dashboard",
+)
+async def live_status(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Returns a snapshot of the live sync system:
+    - Last Football API call time and daily call count
+    - Currently live matches
+    - Matches within 60 min of kickoff
+    - Matches finished in last 10 min (post-FT window)
+    - Last sync run time, records affected, and errors
+    """
+    import services.sync as _sync_mod
+
+    _now = datetime.now(timezone.utc)
+
+    live_rows = (await db.execute(
+        select(Match).where(Match.status == "live")
+    )).scalars().all()
+
+    near_rows = (await db.execute(
+        select(Match).where(
+            Match.status == "scheduled",
+            Match.scheduled_at <= _now + timedelta(minutes=60),
+            Match.scheduled_at >= _now - timedelta(minutes=5),
+        ).order_by(Match.scheduled_at)
+    )).scalars().all()
+
+    post_ft_rows = (await db.execute(
+        select(Match).where(
+            Match.status == "finished",
+            Match.updated_at >= _now - timedelta(minutes=10),
+        ).order_by(Match.updated_at.desc())
+    )).scalars().all()
+
+    def _fmt(m: Match) -> dict:
+        return {
+            "id":              m.id,
+            "external_id":     m.external_id,
+            "match":           f"{m.home_team_code} v {m.away_team_code}",
+            "round":           m.round,
+            "status":          m.status,
+            "period":          m.period,
+            "provider_status": m.provider_status,
+            "minute":          m.minute,
+            "score":           f"{m.home_score}-{m.away_score}" if m.home_score is not None else None,
+            "sync_source":     m.sync_source,
+            "scheduled_at":    m.scheduled_at.isoformat(),
+            "updated_at":      m.updated_at.isoformat(),
+            "mins_since_update": round((_now - m.updated_at).total_seconds() / 60, 1),
+        }
+
+    last_live_sync = (await db.execute(
+        select(SyncLog)
+        .where(SyncLog.entity_type == "live")
+        .order_by(SyncLog.started_at.desc())
+        .limit(1)
+    )).scalar()
+
+    return {
+        "now":                      _now.isoformat(),
+        "api_calls_today":          _sync_mod._api_calls_today,
+        "api_calls_today_date":     _sync_mod._api_calls_today_date,
+        "last_sync_at":             _sync_mod._last_sync_at.isoformat() if _sync_mod._last_sync_at else None,
+        "last_sync_records_affected": _sync_mod._last_sync_records_affected,
+        "last_sync_errors":         _sync_mod._last_sync_errors,
+        "last_pre_kickoff_poll_at": _sync_mod._last_pre_kickoff_poll_at.isoformat() if _sync_mod._last_pre_kickoff_poll_at else None,
+        "last_ko_reconcile_at":     _sync_mod._last_ko_reconcile_at.isoformat() if _sync_mod._last_ko_reconcile_at else None,
+        "db_last_sync": {
+            "started_at":       last_live_sync.started_at.isoformat() if last_live_sync else None,
+            "finished_at":      last_live_sync.finished_at.isoformat() if last_live_sync and last_live_sync.finished_at else None,
+            "status":           last_live_sync.status if last_live_sync else None,
+            "records_affected": last_live_sync.records_affected if last_live_sync else None,
+            "error":            last_live_sync.error_message if last_live_sync else None,
+        },
+        "live_matches":        [_fmt(m) for m in live_rows],
+        "near_kickoff_matches": [_fmt(m) for m in near_rows],
+        "post_ft_matches":     [_fmt(m) for m in post_ft_rows],
+    }
 
 
 # ── Fixture-mapping audit ─────────────────────────────────────────

@@ -54,6 +54,7 @@ class ProviderFixture:
     penalty_home:     Optional[int] = None   # penalty shootout goals (None if not applicable)
     penalty_away:     Optional[int] = None
     period:           Optional[str] = None   # raw live period: "1H"|"HT"|"2H"|"ET"|"P" (None when not live)
+    provider_status:  Optional[str] = None   # raw API short-code: "NS"|"1H"|"HT"|"2H"|"ET"|"PEN"|"FT"|"AET"
     thumb_url:        Optional[str] = None   # match thumbnail / poster
     group_name:       Optional[str] = None   # group letter if provider exposes it ('A'–'L')
     minute:           Optional[int] = None   # live match minute

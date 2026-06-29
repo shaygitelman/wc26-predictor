@@ -36,8 +36,10 @@ class Match(Base):
     away_score:   Mapped[int | None] = mapped_column(Integer, nullable=True)
     penalty_home: Mapped[int | None] = mapped_column(Integer, nullable=True)
     penalty_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    period:       Mapped[str | None] = mapped_column(String(10), nullable=True)  # "1H"|"HT"|"2H"|"ET"|"P"
-    minute:       Mapped[int | None] = mapped_column(Integer, nullable=True)
+    period:          Mapped[str | None] = mapped_column(String(10), nullable=True)   # "1H"|"HT"|"2H"|"ET"|"P"
+    provider_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # raw API-Football short code
+    minute:          Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sync_source:     Mapped[str | None] = mapped_column(String(20), nullable=True)  # live_feed|stale_live|stale_scheduled|post_ft
 
     auto_picks_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 

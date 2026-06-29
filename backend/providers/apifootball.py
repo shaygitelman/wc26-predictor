@@ -289,6 +289,7 @@ class ApiFootballProvider(FootballDataProvider):
                 penalty_home     = penalty_home,
                 penalty_away     = penalty_away,
                 period           = period,
+                provider_status  = raw_status,
                 thumb_url        = None,
                 group_name       = group_name,
                 minute           = minute,

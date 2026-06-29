@@ -21,16 +21,40 @@ jobs:
     timeout-minutes: 2      # hard ceiling — prevents stuck jobs from blocking the next tick
 
     steps:
+      - name: Reconcile knockout slots
+        id: reconcile
+        run: |
+          APP_URL="${{ vars.APP_URL }}"
+          if [ -z "${APP_URL}" ]; then
+            echo "APP_URL is empty — set it as a GitHub repository variable (Settings → Variables)"
+            exit 1
+          fi
+
+          HTTP_STATUS=$(curl -s \
+            --max-time 30 \
+            --retry 0 \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -o /tmp/reconcile_body.json \
+            -w "%{http_code}" \
+            "${APP_URL}/api/cron/reconcile-knockouts") || HTTP_STATUS="000"
+
+          echo "--- Reconcile HTTP ${HTTP_STATUS} ---"
+          cat /tmp/reconcile_body.json 2>/dev/null | head -c 500 || echo "(no body)"
+          echo ""
+
+          if [ "${HTTP_STATUS}" = "401" ] || [ "${HTTP_STATUS}" = "403" ]; then
+            echo "Auth error ${HTTP_STATUS} on reconcile — verify CRON_SECRET"
+            exit 1
+          fi
+          # Non-auth errors are non-fatal: log and continue to sync-live
+          exit 0
+
       - name: Call /api/cron/sync-live
         id: sync
         run: |
           # -s (silent) only — intentionally no -f so curl does NOT exit non-zero
           # on HTTP 4xx/5xx.  We capture the status code and decide below.
           APP_URL="${{ vars.APP_URL }}"
-          if [ -z "${APP_URL}" ]; then
-            echo "APP_URL is empty — set it as a GitHub repository variable (Settings → Variables)"
-            exit 1
-          fi
 
           HTTP_STATUS=$(curl -s \
             --max-time 57 \

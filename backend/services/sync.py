@@ -1287,6 +1287,7 @@ class SyncService:
         When a match transitions to 'live' (after a 60-second buffer), auto-picks
         are generated for any user who has not yet submitted a prediction.
         """
+        global _last_ko_reconcile_at
         from datetime import timedelta
 
         from core.scorer import score_match as do_score
@@ -1572,7 +1573,6 @@ class SyncService:
         # can find them by numeric external_id.
         # Date-gated (July 1+), throttled to once per hour, and fast-exits
         # if no manual KO placeholders remain.
-        global _last_ko_reconcile_at
         _ko_due = (
             _now >= datetime(2026, 6, 26, 0, 0, tzinfo=timezone.utc)
             and (

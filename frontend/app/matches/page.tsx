@@ -6,7 +6,7 @@ import type { ApiGroupStandings } from '@/types/standings'
 
 export default async function MatchesPage() {
   const [matches, predictions, standings] = await Promise.all([
-    apiGetCached<Match[]>('/matches', 30, { auth: false }).catch(() => [] as Match[]),
+    apiGetCached<Match[]>('/matches', 15, { auth: false }).catch(() => [] as Match[]),
     apiGet<Prediction[]>('/predictions/me').catch(() => [] as Prediction[]),
     apiGetCached<ApiGroupStandings[]>('/groups/standings', 300).catch(() => [] as ApiGroupStandings[]),
   ])

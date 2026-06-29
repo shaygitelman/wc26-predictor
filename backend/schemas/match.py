@@ -26,6 +26,7 @@ class MatchOut(BaseModel):
     status:      str
     homeScore:   Optional[int] = None
     awayScore:   Optional[int] = None
+    period:      Optional[str] = None   # "1H"|"HT"|"2H"|"ET"|"P" — None when not live
     minute:      Optional[int] = None
     thumbUrl:    Optional[str] = None
 
@@ -55,6 +56,7 @@ class MatchOut(BaseModel):
             status      = m.status,
             homeScore   = m.home_score,
             awayScore   = m.away_score,
+            period      = m.period,
             minute      = m.minute,
             thumbUrl    = m.thumb_url,
         )

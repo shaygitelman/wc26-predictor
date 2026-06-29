@@ -33,7 +33,8 @@ export interface Match {
   status: MatchStatus
   homeScore?: number
   awayScore?: number
-  minute?: number       // live match minute
+  period?: string       // "1H"|"HT"|"2H"|"ET"|"P" — only present while live
+  minute?: number       // elapsed minutes from API
   thumbUrl?: string     // TheSportsDB match photo
 }
 

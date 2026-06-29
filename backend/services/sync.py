@@ -1342,6 +1342,7 @@ class SyncService:
                         away_score   = fx.away_score,
                         penalty_home = fx.penalty_home,
                         penalty_away = fx.penalty_away,
+                        period       = fx.period,
                         minute       = fx.minute,
                         updated_at   = datetime.now(timezone.utc),
                     )
@@ -1397,14 +1398,13 @@ class SyncService:
 
         # ── Phase 2: stale-live recovery ──────────────────────────
         # Find DB matches still marked 'live' that weren't in the live feed
-        # and are old enough to have finished.  Fetch each individually to
-        # get their real final status.  This covers the window between
-        # a match finishing and the next sync_live tick.
-        # 95 min = 90-min match + 5-min buffer; safe for extra-time matches
-        # because we re-check real status before acting (won't false-finish).
+        # and haven't been updated for 5+ minutes.  Fetch each individually
+        # to get their real status.  The 5-minute window catches HT dropouts
+        # (API-Football stops listing matches in live=all during the break)
+        # without false-triggering on momentary feed blips.
         stale_conds = [
             Match.status == "live",
-            Match.scheduled_at <= _now - timedelta(minutes=95),
+            Match.updated_at <= _now - timedelta(minutes=5),
         ]
         if live_ext_ids_seen:
             stale_conds.append(Match.external_id.notin_(live_ext_ids_seen))
@@ -1433,6 +1433,7 @@ class SyncService:
                         away_score   = fx.away_score,
                         penalty_home = fx.penalty_home,
                         penalty_away = fx.penalty_away,
+                        period       = fx.period,
                         minute       = fx.minute,
                         updated_at   = datetime.now(timezone.utc),
                     )
@@ -1491,6 +1492,7 @@ class SyncService:
                         away_score   = fx.away_score,
                         penalty_home = fx.penalty_home,
                         penalty_away = fx.penalty_away,
+                        period       = fx.period,
                         minute       = fx.minute,
                         updated_at   = datetime.now(timezone.utc),
                     )

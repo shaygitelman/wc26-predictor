@@ -220,7 +220,8 @@ class ApiFootballProvider(FootballDataProvider):
             raw_status = status.get("short", "NS")
             fx_status  = _STATUS_MAP.get(raw_status, "scheduled")
 
-            # Live minute
+            # Live period ("1H", "HT", "2H", "ET", "P") and elapsed minute
+            period: Optional[str] = raw_status if fx_status == "live" else None
             minute: Optional[int] = None
             if fx_status == "live":
                 raw_min = status.get("elapsed")
@@ -287,6 +288,7 @@ class ApiFootballProvider(FootballDataProvider):
                 away_score       = away_score,
                 penalty_home     = penalty_home,
                 penalty_away     = penalty_away,
+                period           = period,
                 thumb_url        = None,
                 group_name       = group_name,
                 minute           = minute,

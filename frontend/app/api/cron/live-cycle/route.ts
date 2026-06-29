@@ -2,12 +2,17 @@
  * Combined live-cycle cron endpoint.
  * Called every minute by cron-job.org — single URL, single secret.
  *
- * Runs in order:
+ * Order:
  *   1. reconcile-knockouts  (non-fatal)
  *   2. sync-live
- *   3. Fetches /admin/live-status for a current-state snapshot (non-fatal)
+ *   3. /admin/live-status snapshot  (non-fatal, needs ADMIN_KEY env var)
  *
- * Always returns HTTP 200 so cron-job.org doesn't alert on expected skips.
+ * Always returns HTTP 200 so cron-job.org doesn't page on expected skips.
+ *
+ * "updated_matches" merges live + post_ft + near_kickoff and filters to
+ * entries updated within the last 2 minutes — telling you exactly which
+ * match moved even when its status is "finished" (post-FT window) rather
+ * than "live".
  */
 import * as Sentry from '@sentry/nextjs'
 import { NextRequest, NextResponse } from 'next/server'
@@ -57,6 +62,57 @@ async function callBackend(
   }
 }
 
+// Subset of admin match fields we care about
+interface AdminMatch {
+  id?:              string
+  external_id?:     string
+  match?:           string
+  round?:           string
+  status?:          string
+  period?:          string
+  provider_status?: string
+  minute?:          number | null
+  score?:           string | null
+  sync_source?:     string | null
+  scheduled_at?:    string
+  updated_at?:      string
+  mins_since_update?: number
+}
+
+interface AdminData {
+  now?:                        string
+  last_polling_mode?:          string
+  api_calls_today?:            number
+  api_calls_today_date?:       string
+  last_sync_at?:               string | null
+  last_sync_records_affected?: number
+  last_sync_errors?:           string[]
+  last_ko_reconcile_at?:       string | null
+  db_last_sync?:               Record<string, unknown>
+  live_matches?:               AdminMatch[]
+  near_kickoff_matches?:       AdminMatch[]
+  post_ft_matches?:            AdminMatch[]
+}
+
+function fmtMatch(m: AdminMatch, bucket: string) {
+  return {
+    bucket,
+    match:             m.match,
+    id:                m.id,
+    external_id:       m.external_id,
+    round:             m.round,
+    status:            m.status,
+    period:            m.period,
+    provider_status:   m.provider_status,
+    minute:            m.minute,
+    score:             m.score,
+    sync_source:       m.sync_source,
+    updated_at:        m.updated_at,
+    mins_since_update: m.mins_since_update,
+    scheduled_at:      m.scheduled_at,
+  }
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -72,29 +128,64 @@ export async function GET(req: NextRequest) {
   // ── 2. Sync live matches ────────────────────────────────────
   const sync = await callBackend('/cron/sync-live', 'POST', cronHdr, 45_000)
 
-  // ── 3. Snapshot current state for logging (non-fatal) ───────
-  const adminSnap = ADMIN_KEY
-    ? await callBackend('/admin/live-status', 'GET', { 'X-Admin-Key': ADMIN_KEY }, 5_000)
-    : null
+  // ── 3. Admin snapshot for current state (non-fatal) ─────────
+  let adminSnap: BackendResult | null = null
+  let adminSkipReason: string | null  = null
 
-  const elapsed = Date.now() - cycleStart
-
-  type SyncData = { status?: string; records_affected?: number; errors?: string[] }
-  type LiveMatch = {
-    match?: string; minute?: number; period?: string; status?: string
-    score?: string; sync_source?: string; mins_since_update?: number
-  }
-  type AdminData = {
-    last_polling_mode?: string
-    api_calls_today?: number
-    live_matches?: LiveMatch[]
-    near_kickoff_matches?: unknown[]
-    post_ft_matches?: unknown[]
-    last_sync_errors?: string[]
+  if (!ADMIN_KEY) {
+    adminSkipReason = 'ADMIN_KEY env var not set on Vercel'
+  } else {
+    adminSnap = await callBackend(
+      '/admin/live-status', 'GET', { 'X-Admin-Key': ADMIN_KEY }, 8_000,
+    )
+    if (!adminSnap.ok) {
+      adminSkipReason = adminSnap.error
+        ?? `HTTP ${adminSnap.httpStatus}: ${JSON.stringify(adminSnap.data)}`
+    }
   }
 
-  const syncData  = sync.data      as SyncData  | null
-  const liveState = adminSnap?.data as AdminData | null
+  const elapsed   = Date.now() - cycleStart
+  const syncData  = sync.data  as { status?: string; records_affected?: number; errors?: string[] } | null
+  const liveState = (adminSnap?.ok ? adminSnap.data : null) as AdminData | null
+
+  // ── Compute update context ──────────────────────────────────
+  const liveMatches    = liveState?.live_matches        ?? []
+  const postFtMatches  = liveState?.post_ft_matches     ?? []
+  const nearKickoff    = liveState?.near_kickoff_matches ?? []
+
+  // All matches visible in any bucket, most-recently-updated first
+  const allMatches = [
+    ...liveMatches.map(m  => fmtMatch(m,  'live')),
+    ...postFtMatches.map(m => fmtMatch(m,  'post_ft')),
+    ...nearKickoff.map(m   => fmtMatch(m,  'near_kickoff')),
+  ].sort((a, b) => (a.mins_since_update ?? 99) - (b.mins_since_update ?? 99))
+
+  // Filter to just what changed this cycle (updated within last 2 min)
+  const updatedThisCycle = allMatches.filter(
+    m => m.mins_since_update != null && m.mins_since_update < 2,
+  )
+
+  // Human-readable explanation for why live_matches may be empty
+  let updateContext: string | null = null
+  if (syncData?.records_affected && syncData.records_affected > 0) {
+    if (updatedThisCycle.length > 0) {
+      const src = updatedThisCycle[0].sync_source ?? 'unknown'
+      const bucket = updatedThisCycle[0].bucket
+      const srcMap: Record<string, string> = {
+        live_feed:        'live feed (Phase 1)',
+        stale_live:       'stale-live recovery (Phase 2)',
+        post_ft:          'post-FT score correction (Phase 2.5)',
+        stale_scheduled:  'scheduled match correction (Phase 3)',
+      }
+      updateContext = `${srcMap[src] ?? src} — bucket: ${bucket}`
+    } else if (liveState) {
+      updateContext = 'updated match fell outside the 2-min window by the time admin snapshot ran'
+    } else {
+      updateContext = 'ADMIN_KEY unavailable — cannot determine which match was updated'
+    }
+  } else if (syncData?.status === 'skipped') {
+    updateContext = 'no live / imminent / post-FT matches — sync skipped, Football API not called'
+  }
 
   if (!sync.ok) {
     Sentry.captureMessage('live-cycle: sync-live failed', {
@@ -107,6 +198,7 @@ export async function GET(req: NextRequest) {
     timestamp,
     elapsed_ms: elapsed,
 
+    // ── Sync operations ──────────────────────────────────────
     reconcile: {
       ok:               reconcile.ok,
       http_status:      reconcile.httpStatus,
@@ -125,18 +217,31 @@ export async function GET(req: NextRequest) {
       errors:          syncData?.errors          ?? (sync.error ? [sync.error] : []),
     },
 
-    polling_mode:       liveState?.last_polling_mode ?? 'unknown',
-    api_calls_today:    liveState?.api_calls_today,
-    live_matches:       (liveState?.live_matches ?? []).map(m => ({
-      match:             m.match,
-      minute:            m.minute,
-      period:            m.period,
-      score:             m.score,
-      sync_source:       m.sync_source,
-      mins_since_update: m.mins_since_update,
-    })),
-    near_kickoff_count: liveState?.near_kickoff_matches?.length ?? 0,
-    post_ft_count:      liveState?.post_ft_matches?.length      ?? 0,
-    last_sync_errors:   liveState?.last_sync_errors             ?? [],
+    // ── Update explanation ───────────────────────────────────
+    update_context:    updateContext,
+
+    // ── Matches updated this cycle (< 2 min ago, any bucket) ─
+    updated_matches:   updatedThisCycle,
+
+    // ── Full state snapshot from backend ─────────────────────
+    polling_mode:      liveState?.last_polling_mode          ?? null,
+    api_calls_today:   liveState?.api_calls_today,
+    last_sync_at:      liveState?.last_sync_at               ?? null,
+    last_ko_reconcile: liveState?.last_ko_reconcile_at       ?? null,
+    backend_errors:    liveState?.last_sync_errors           ?? [],
+
+    // All buckets — full detail so nothing is hidden
+    live_matches:      liveMatches.map(m  => fmtMatch(m,  'live')),
+    post_ft_matches:   postFtMatches.map(m => fmtMatch(m,  'post_ft')),
+    near_kickoff:      nearKickoff.map(m   => fmtMatch(m,  'near_kickoff')),
+
+    // ── Admin call metadata (diagnose "unknown" issues) ──────
+    admin_snapshot: {
+      configured:  !!ADMIN_KEY,
+      ok:          adminSnap?.ok ?? false,
+      http_status: adminSnap?.httpStatus ?? null,
+      elapsed_ms:  adminSnap?.elapsed    ?? null,
+      skip_reason: adminSkipReason,
+    },
   })
 }

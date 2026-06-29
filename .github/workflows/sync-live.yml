@@ -1,91 +1,132 @@
-name: Live Match Sync
+name: Live Match Sync — Manual Debug
 
-# Triggers every minute during World Cup.
-# The backend's sync_live() skips the external API call when no matches
-# are live or within 5 minutes of kick-off, so this burns zero API quota
-# outside of active match windows.
+# ─────────────────────────────────────────────────────────────────────────────
+# Automatic live sync is handled by cron-job.org (every 1 minute).
+# Target: https://wc26-predictor-xi.vercel.app/api/cron/live-cycle
+# Header: X-Cron-Secret: <CRON_SECRET>
+#
+# This workflow is for manual debugging only.
+# It calls the same /api/cron/live-cycle endpoint so results are identical.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  schedule:
-    - cron: '* * * * *'    # every minute
-  workflow_dispatch:        # allow manual trigger for testing/debugging
-
-concurrency:
-  group: live-sync
-  cancel-in-progress: true  # drop stale ticks; never allow two syncs to overlap
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you triggering this run?'
+        required: false
+        default: 'manual debug'
 
 jobs:
   sync:
-    name: Trigger sync-live
+    name: Call live-cycle
     runs-on: ubuntu-latest
-    timeout-minutes: 2      # hard ceiling — prevents stuck jobs from blocking the next tick
+    timeout-minutes: 3
 
     steps:
-      - name: Reconcile knockout slots
-        id: reconcile
+      - name: Run info
+        run: |
+          echo "╔═════════════════════════════════════════╗"
+          echo "║   Live Match Sync — Manual Debug Run    ║"
+          echo "╚═════════════════════════════════════════╝"
+          echo ""
+          echo "  Trigger  : workflow_dispatch"
+          echo "  Reason   : ${{ github.event.inputs.reason }}"
+          echo "  Actor    : ${{ github.actor }}"
+          echo "  Time     : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "  Commit   : ${{ github.sha }}"
+          echo ""
+          echo "  cron-job.org → same endpoint every minute in production"
+          echo ""
+
+      - name: Call /api/cron/live-cycle
+        id: cycle
         run: |
           APP_URL="${{ vars.APP_URL }}"
           if [ -z "${APP_URL}" ]; then
-            echo "APP_URL is empty — set it as a GitHub repository variable (Settings → Variables)"
+            echo "ERROR: APP_URL is not set — add it in Settings → Variables → Repository variables"
             exit 1
           fi
 
-          HTTP_STATUS=$(curl -s \
-            --max-time 30 \
-            --retry 0 \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            -o /tmp/reconcile_body.json \
-            -w "%{http_code}" \
-            "${APP_URL}/api/cron/reconcile-knockouts") || HTTP_STATUS="000"
-
-          echo "--- Reconcile HTTP ${HTTP_STATUS} ---"
-          cat /tmp/reconcile_body.json 2>/dev/null | head -c 3000 || echo "(no body)"
+          ENDPOINT="${APP_URL}/api/cron/live-cycle"
+          echo "Endpoint : ${ENDPOINT}"
+          echo "Time     : $(date -u '+%H:%M:%S UTC')"
           echo ""
 
-          if [ "${HTTP_STATUS}" = "401" ] || [ "${HTTP_STATUS}" = "403" ]; then
-            echo "Auth error ${HTTP_STATUS} on reconcile — verify CRON_SECRET"
-            exit 1
-          fi
-          # Non-auth errors are non-fatal: log and continue to sync-live
-          exit 0
-
-      - name: Call /api/cron/sync-live
-        id: sync
-        run: |
-          # -s (silent) only — intentionally no -f so curl does NOT exit non-zero
-          # on HTTP 4xx/5xx.  We capture the status code and decide below.
-          APP_URL="${{ vars.APP_URL }}"
-
           HTTP_STATUS=$(curl -s \
-            --max-time 57 \
+            --max-time 90 \
             --retry 0 \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            -o /tmp/sync_body.json \
+            -o /tmp/cycle.json \
             -w "%{http_code}" \
-            "${APP_URL}/api/cron/sync-live") || HTTP_STATUS="000"
+            "${ENDPOINT}") || HTTP_STATUS="000"
 
-          echo "http_status=${HTTP_STATUS}" >> "$GITHUB_OUTPUT"
-          echo "--- HTTP ${HTTP_STATUS} ---"
-          cat /tmp/sync_body.json 2>/dev/null | head -c 3000 || echo "(no body)"
+          echo "HTTP status : ${HTTP_STATUS}"
           echo ""
 
-          # 000 = network/timeout error
           if [ "${HTTP_STATUS}" = "000" ]; then
-            echo "Network error or timeout — check APP_URL and Vercel reachability"
+            echo "ERROR: Network error or timeout — is APP_URL reachable?"
             exit 1
           fi
-
-          # 401/403 = auth misconfigured — fail loudly so the misconfiguration is visible
           if [ "${HTTP_STATUS}" = "401" ] || [ "${HTTP_STATUS}" = "403" ]; then
-            echo "Auth error ${HTTP_STATUS} — verify CRON_SECRET matches between GitHub Secrets and Vercel env vars"
+            echo "ERROR: Auth failed (${HTTP_STATUS})"
+            echo "Verify CRON_SECRET in GitHub Secrets matches the CRON_SECRET env var in Vercel."
+            cat /tmp/cycle.json 2>/dev/null || true
+            exit 1
+          fi
+          if [ "${HTTP_STATUS}" -ge 400 ] 2>/dev/null; then
+            echo "ERROR: HTTP ${HTTP_STATUS}"
+            cat /tmp/cycle.json 2>/dev/null || true
             exit 1
           fi
 
-          # Other 4xx = misconfigured URL or route missing
-          if [ "${HTTP_STATUS}" -ge 400 ] && [ "${HTTP_STATUS}" -lt 500 ]; then
-            echo "Client error ${HTTP_STATUS} — check APP_URL points to the correct production deployment"
-            exit 1
-          fi
+          echo "=== Full Response ==="
+          python3 -c "import json; print(json.dumps(json.load(open('/tmp/cycle.json')), indent=2))" 2>/dev/null \
+            || cat /tmp/cycle.json 2>/dev/null \
+            || echo "(no body)"
 
-          # 5xx / backend errors are Sentry-captured; don't fail the job
-          exit 0
+          echo ""
+          echo "=== Summary ==="
+          python3 - << 'PYEOF'
+import json, sys
+try:
+    d = json.load(open('/tmp/cycle.json'))
+    print(f"  Timestamp      : {d.get('timestamp', '?')}")
+    print(f"  Elapsed        : {d.get('elapsed_ms', '?')} ms")
+    print(f"  Polling mode   : {d.get('polling_mode', '?')}")
+    print(f"  API calls today: {d.get('api_calls_today', '?')}")
+    print()
+
+    rec = d.get('reconcile', {})
+    print(f"  Reconcile      : status={rec.get('status','?')}  affected={rec.get('records_affected','?')}  elapsed={rec.get('elapsed_ms','?')}ms")
+    if rec.get('errors'):
+        print(f"  Reconcile errs : {rec['errors']}")
+
+    syn = d.get('sync', {})
+    print(f"  Sync-live      : status={syn.get('status','?')}  matches_updated={syn.get('matches_updated','?')}  elapsed={syn.get('elapsed_ms','?')}ms")
+    if syn.get('errors'):
+        print(f"  Sync errors    : {syn['errors']}")
+    print()
+
+    live = d.get('live_matches', [])
+    near = d.get('near_kickoff_count', 0)
+    post = d.get('post_ft_count', 0)
+    if live:
+        print(f"  Live matches   : {len(live)}")
+        for m in live:
+            stale = m.get('mins_since_update')
+            stale_str = f"{stale}min stale" if stale is not None else ""
+            print(f"    {m.get('match','?')}  |  {m.get('period','?')} {m.get('minute','?')}'  |  {m.get('score','?')}  |  src={m.get('sync_source','?')}  |  {stale_str}")
+    else:
+        print(f"  Live matches   : 0")
+    if near:
+        print(f"  Near kickoff   : {near} match(es)")
+    if post:
+        print(f"  Post-FT window : {post} match(es)")
+
+    errs = d.get('last_sync_errors', [])
+    if errs:
+        print(f"  Backend errors : {errs}")
+except Exception as e:
+    print(f"  (could not parse response: {e})", file=sys.stderr)
+PYEOF

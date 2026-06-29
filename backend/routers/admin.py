@@ -1596,6 +1596,228 @@ async def bracket_map(dry_run: bool = False, db: AsyncSession = Depends(get_db))
     }
 
 
+# ── Bracket repair ────────────────────────────────────────────────────
+
+@router.get("/bracket-repair", dependencies=[Depends(_verify_admin)], summary="Diagnose and repair corrupted knockout bracket assignments")
+async def bracket_repair(apply: bool = False, db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    For every future knockout slot side (R16–Final), compare the current DB team
+    against what the official bracket says it should be. Returns a per-side action
+    report. With apply=true, actually fixes wrong/missing teams.
+
+    Safe rules (enforced even with apply=true):
+      - Never touches R32 source matches
+      - Never touches scores, status, external_id, scheduled_at, predictions
+      - Skips any destination match that has already started/finished
+      - Blocks replacement (not TBD-set) when predictions exist on the match
+    """
+    from core.bracket import ALL_SLOTS, SLOT_ROUND, SLOT_MATCH_NO, edges_to
+    from services.sync import _ko_winner
+    from models.prediction import Prediction
+    from sqlalchemy import update as sa_update
+
+    DEST_ROUNDS = {"r16", "qf", "sf", "3rd", "final"}
+    now = datetime.now(timezone.utc)
+
+    # Load all KO matches with bracket_slot
+    all_ko = (await db.execute(
+        select(Match).where(
+            Match.round.in_(["r32", "r16", "qf", "sf", "3rd", "final"]),
+            Match.bracket_slot.isnot(None),
+        )
+    )).scalars().all()
+    slot_map: dict[str, Match] = {m.bracket_slot: m for m in all_ko}
+
+    # Prediction counts per match (only load for dest-round matches to keep it tight)
+    dest_ids = [m.id for m in all_ko if SLOT_ROUND.get(m.bracket_slot) in DEST_ROUNDS]
+    pred_row = (await db.execute(
+        select(Prediction.match_id, func.count().label("cnt"))
+        .where(Prediction.match_id.in_(dest_ids))
+        .group_by(Prediction.match_id)
+    )).all()
+    pred_counts: dict[str, int] = {str(r.match_id): r.cnt for r in pred_row}
+
+    actions: list[dict] = []
+    apply_counts = {"repaired_wrong_team": 0, "cleared_wrong_team": 0, "set": 0}
+
+    for slot_id in ALL_SLOTS:
+        if SLOT_ROUND.get(slot_id) not in DEST_ROUNDS:
+            continue  # skip R32 source matches
+
+        dest = slot_map.get(slot_id)
+        if not dest:
+            # Missing dest slot — can't repair
+            for in_edge in edges_to(slot_id):
+                actions.append({
+                    "dest_slot":       slot_id,
+                    "dest_match_no":   SLOT_MATCH_NO.get(slot_id),
+                    "dest_side":       in_edge.dest_side,
+                    "source_slot":     in_edge.source_slot,
+                    "source_match_no": SLOT_MATCH_NO.get(in_edge.source_slot),
+                    "action":          "skipped_dest_missing",
+                    "current_team":    None,
+                    "expected_team":   None,
+                    "prediction_count": 0,
+                    "reason":          "Destination match not found in DB — no bracket_slot set",
+                })
+            continue
+
+        if dest.status in ("live", "finished"):
+            for in_edge in edges_to(slot_id):
+                actions.append({
+                    "dest_slot":       slot_id,
+                    "dest_match_no":   SLOT_MATCH_NO.get(slot_id),
+                    "dest_side":       in_edge.dest_side,
+                    "source_slot":     in_edge.source_slot,
+                    "source_match_no": SLOT_MATCH_NO.get(in_edge.source_slot),
+                    "action":          "skipped_match_started_or_finished",
+                    "current_team":    dest.home_team_code if in_edge.dest_side == "home" else dest.away_team_code,
+                    "expected_team":   None,
+                    "prediction_count": pred_counts.get(str(dest.id), 0),
+                    "reason":          f"Destination match status={dest.status!r} — will not modify",
+                })
+            continue
+
+        pred_count = pred_counts.get(str(dest.id), 0)
+
+        for in_edge in edges_to(slot_id):
+            src = slot_map.get(in_edge.source_slot)
+            side = in_edge.dest_side
+            want_winner = (in_edge.advancement_type == "winner")
+
+            # Current team on this side of the destination match
+            cur_code = dest.home_team_code if side == "home" else dest.away_team_code
+            is_tbd = not cur_code or cur_code.upper() in ("TBD", "", "NONE")
+
+            # Expected team (only known if source is finished)
+            expected_code: str | None = None
+            expected_name: str | None = None
+            expected_flag: str | None = None
+            if src and src.status == "finished":
+                result = _ko_winner(src, want_winner)
+                if result:
+                    expected_code, expected_name, expected_flag = result
+
+            entry: dict = {
+                "dest_slot":         slot_id,
+                "dest_match_no":     SLOT_MATCH_NO.get(slot_id),
+                "dest_side":         side,
+                "source_slot":       in_edge.source_slot,
+                "source_match_no":   SLOT_MATCH_NO.get(in_edge.source_slot),
+                "advancement_type":  in_edge.advancement_type,
+                "current_team":      cur_code if not is_tbd else "TBD",
+                "expected_team":     expected_code,
+                "prediction_count":  pred_count,
+                "action":            "",
+                "reason":            "",
+            }
+
+            if expected_code is None:
+                # Source not finished — side should be TBD
+                if is_tbd:
+                    entry["action"] = "skipped_source_not_finished"
+                    entry["reason"] = f"Source {in_edge.source_slot} not finished; side is TBD — normal"
+                else:
+                    # Corruption: non-TBD team but source isn't done yet
+                    if pred_count > 0:
+                        entry["action"] = "blocked_due_to_predictions"
+                        entry["reason"] = (
+                            f"Source {in_edge.source_slot} unfinished but {cur_code!r} is set; "
+                            f"{pred_count} predictions exist — cannot clear"
+                        )
+                    else:
+                        entry["action"] = "wrong_team_source_not_finished"
+                        entry["reason"] = (
+                            f"Source {in_edge.source_slot} unfinished but {cur_code!r} is already set "
+                            f"— suspected old propagation error; safe to clear to TBD"
+                        )
+                        if apply:
+                            ph_name = f"Winner M{SLOT_MATCH_NO.get(in_edge.source_slot, '?')}"
+                            vals: dict = {
+                                "updated_at": now,
+                                f"{side}_team_code": "TBD",
+                                f"{side}_team_name": ph_name,
+                                f"{side}_flag_url":  None,
+                            }
+                            await db.execute(
+                                sa_update(Match).where(Match.id == dest.id).values(**vals)
+                                .execution_options(synchronize_session=False)
+                            )
+                            entry["action"] = "cleared_wrong_team"
+                            apply_counts["cleared_wrong_team"] += 1
+            elif is_tbd:
+                entry["action"] = "would_set"
+                entry["reason"] = (
+                    f"Source {in_edge.source_slot} finished, side is TBD — should be {expected_code}"
+                )
+                if apply:
+                    vals = {
+                        "updated_at": now,
+                        f"{side}_team_code": expected_code,
+                        f"{side}_team_name": expected_name,
+                        f"{side}_flag_url":  expected_flag,
+                    }
+                    await db.execute(
+                        sa_update(Match).where(Match.id == dest.id).values(**vals)
+                        .execution_options(synchronize_session=False)
+                    )
+                    entry["action"] = "set"
+                    apply_counts["set"] += 1
+            elif cur_code == expected_code:
+                entry["action"] = "already_correct"
+                entry["reason"] = f"Current {cur_code!r} matches expected — no change"
+            else:
+                # Corruption: wrong team set, source is finished
+                if pred_count > 0:
+                    entry["action"] = "blocked_due_to_predictions"
+                    entry["reason"] = (
+                        f"Wrong team {cur_code!r} (expected {expected_code!r} from "
+                        f"{in_edge.source_slot} M{SLOT_MATCH_NO.get(in_edge.source_slot)}) "
+                        f"but {pred_count} predictions exist — cannot replace"
+                    )
+                else:
+                    entry["action"] = "would_replace_wrong_team"
+                    entry["reason"] = (
+                        f"Wrong team {cur_code!r}; expected {expected_code!r} "
+                        f"(winner of {in_edge.source_slot} / M{SLOT_MATCH_NO.get(in_edge.source_slot)})"
+                    )
+                    if apply:
+                        vals = {
+                            "updated_at": now,
+                            f"{side}_team_code": expected_code,
+                            f"{side}_team_name": expected_name,
+                            f"{side}_flag_url":  expected_flag,
+                        }
+                        await db.execute(
+                            sa_update(Match).where(Match.id == dest.id).values(**vals)
+                            .execution_options(synchronize_session=False)
+                        )
+                        entry["action"] = "repaired_wrong_team"
+                        apply_counts["repaired_wrong_team"] += 1
+
+            actions.append(entry)
+
+    if apply:
+        await db.commit()
+
+    # Build summary
+    corrupted = [a for a in actions if a["action"] in (
+        "would_replace_wrong_team", "wrong_team_source_not_finished", "blocked_due_to_predictions"
+    )]
+    needs_set = [a for a in actions if a["action"] == "would_set"]
+
+    return {
+        "mode":                  "apply" if apply else "dry_run",
+        "total_sides_checked":   len(actions),
+        "corrupted_count":       len(corrupted),
+        "needs_set_count":       len(needs_set),
+        "apply_counts":          apply_counts if apply else None,
+        "corrupted":             corrupted,
+        "needs_set":             needs_set,
+        "all_actions":           actions,
+    }
+
+
 # ── API usage monitoring ──────────────────────────────────────────────
 
 @router.get("/api-usage", dependencies=[Depends(_verify_admin)])

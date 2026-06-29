@@ -193,8 +193,7 @@ async def test_bulk_live_feed_updates_multiple_matches():
         scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
     ))
 
-    with patch("services.sync._start_log", new_callable=AsyncMock), \
-         patch.object(svc, "_start_log", new_callable=AsyncMock) as mock_start, \
+    with patch.object(svc, "_start_log", new_callable=AsyncMock) as mock_start, \
          patch.object(svc, "_finish_log", new_callable=AsyncMock) as mock_finish:
         mock_start.return_value = MagicMock()
         mock_finish.return_value = MagicMock(status="success", records_affected=2)
@@ -214,15 +213,17 @@ async def test_match_start_triggers_auto_picks():
     fx = _provider_fixture(status="live", period="1H", minute=2)
     svc.provider.fetch_live = AsyncMock(return_value=[fx])
 
-    # Match was scheduled, just kicked off (>60s ago)
-    kicked_off_at = _NOW - timedelta(seconds=90)
+    # Use real now so buffer_elapsed check (datetime.now >= scheduled_at + 60s) passes
+    from datetime import datetime as _dt_real
+    kicked_off_at = _dt_real.now(timezone.utc) - timedelta(seconds=90)
     m = _db_match(
         status="scheduled",
         scheduled_at=kicked_off_at,
         auto_picks_generated=False,
     )
 
-    scalar_seq = ["live-exists", m]
+    # Gate makes 3 queries (has_live, has_imminent, has_post_ft) before Phase 1 match lookup
+    scalar_seq = ["live-exists", None, None, m]
     scalar_idx = [0]
 
     db = AsyncMock()
@@ -240,7 +241,7 @@ async def test_match_start_triggers_auto_picks():
 
     db.scalar = _scalar
 
-    with patch("services.sync.generate_auto_picks", new_callable=AsyncMock, return_value=3) as mock_auto, \
+    with patch("services.auto_pick.generate_auto_picks", new_callable=AsyncMock, return_value=3) as mock_auto, \
          patch.object(svc, "_start_log", new_callable=AsyncMock) as mock_start, \
          patch.object(svc, "_finish_log", new_callable=AsyncMock) as mock_finish:
         mock_start.return_value = MagicMock()
@@ -340,7 +341,8 @@ async def test_fulltime_triggers_scoring():
 
     m = _db_match(status="live", home_score=2, away_score=1)
 
-    scalar_seq = ["live-exists", m]
+    # Gate makes 3 queries (has_live, has_imminent, has_post_ft) before Phase 1 match lookup
+    scalar_seq = ["live-exists", None, None, m]
     scalar_idx = [0]
 
     db = AsyncMock()
@@ -358,7 +360,7 @@ async def test_fulltime_triggers_scoring():
 
     db.scalar = _scalar
 
-    with patch("services.sync.score_match", new_callable=AsyncMock) as mock_score, \
+    with patch("core.scorer.score_match", new_callable=AsyncMock) as mock_score, \
          patch.object(svc, "_start_log", new_callable=AsyncMock) as mock_start, \
          patch.object(svc, "_finish_log", new_callable=AsyncMock) as mock_finish:
         mock_start.return_value = MagicMock()
@@ -558,7 +560,7 @@ async def test_post_ft_polling_window():
 
     db.execute = _exec
 
-    with patch("services.sync.score_match", new_callable=AsyncMock) as mock_score, \
+    with patch("core.scorer.score_match", new_callable=AsyncMock) as mock_score, \
          patch.object(svc, "_start_log", new_callable=AsyncMock) as mock_start, \
          patch.object(svc, "_finish_log", new_callable=AsyncMock) as mock_finish:
         mock_start.return_value = MagicMock()

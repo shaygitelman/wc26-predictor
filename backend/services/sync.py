@@ -42,6 +42,7 @@ _ROUND_MAP: dict[int, str] = {
 _last_ko_reconcile_at:         Optional[datetime] = None
 _last_pre_kickoff_poll_at:     Optional[datetime] = None  # throttle for 10-60 min pre-kickoff window
 _last_sync_at:                 Optional[datetime] = None  # last time a non-skipped sync ran
+_last_sync_mode:               str = "never_run"          # full|pre_kickoff|skipped
 _last_sync_records_affected:   int = 0
 _last_sync_errors:             list[str] = []
 _api_calls_today:              int = 0
@@ -1294,7 +1295,7 @@ class SyncService:
         are generated for any user who has not yet submitted a prediction.
         """
         global _last_ko_reconcile_at, _last_pre_kickoff_poll_at
-        global _last_sync_at, _last_sync_records_affected, _last_sync_errors
+        global _last_sync_at, _last_sync_mode, _last_sync_records_affected, _last_sync_errors
         global _api_calls_today, _api_calls_today_date
         from datetime import timedelta
 
@@ -1336,10 +1337,12 @@ class SyncService:
             ).limit(1))
 
             if not has_near:
+                _last_sync_mode = "skipped"
                 log.info("[Sync/live] SKIP — no live, imminent, post-FT, or near-kickoff matches at %s", _now.isoformat())
                 return SyncResult(status="skipped", entity_type="live", records_affected=0)
 
             if _last_pre_kickoff_poll_at and _now < _last_pre_kickoff_poll_at + timedelta(minutes=5):
+                _last_sync_mode = "skipped"
                 log.info(
                     "[Sync/live] SKIP — pre-kickoff 5-min throttle (last=%s)",
                     _last_pre_kickoff_poll_at.isoformat(),
@@ -1691,9 +1694,10 @@ class SyncService:
                     errors.append(f"ko-reconcile: {ko_exc}")
 
         # Update monitoring state
-        _last_sync_at              = _now
+        _last_sync_at               = _now
+        _last_sync_mode             = _run_mode
         _last_sync_records_affected = count
-        _last_sync_errors          = list(errors)
+        _last_sync_errors           = list(errors)
 
         await db.commit()
         return await self._finish_log(_log_entry, count, "\n".join(errors) if errors else None, db)

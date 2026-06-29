@@ -537,6 +537,7 @@ async def live_status(db: AsyncSession = Depends(get_db)) -> dict:
         "api_calls_today":          _sync_mod._api_calls_today,
         "api_calls_today_date":     _sync_mod._api_calls_today_date,
         "last_sync_at":             _sync_mod._last_sync_at.isoformat() if _sync_mod._last_sync_at else None,
+        "last_polling_mode":        _sync_mod._last_sync_mode,
         "last_sync_records_affected": _sync_mod._last_sync_records_affected,
         "last_sync_errors":         _sync_mod._last_sync_errors,
         "last_pre_kickoff_poll_at": _sync_mod._last_pre_kickoff_poll_at.isoformat() if _sync_mod._last_pre_kickoff_poll_at else None,

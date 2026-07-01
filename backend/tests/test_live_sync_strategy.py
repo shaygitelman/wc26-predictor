@@ -138,7 +138,7 @@ def _make_db(
 async def test_no_api_calls_when_idle():
     """sync_live skips external API entirely when no live/imminent matches exist."""
     svc = _make_service()
-    db = _make_db(scalar_returns=[None, None, None, None])  # live, imminent, post_ft, near all None
+    db = _make_db(scalar_returns=[None, None, None, None, None])  # live, imminent, post_ft, stale_scheduled, near all None
 
     with patch("services.sync.datetime") as mock_dt:
         mock_dt.now.return_value = _NOW
@@ -222,8 +222,8 @@ async def test_match_start_triggers_auto_picks():
         auto_picks_generated=False,
     )
 
-    # Gate makes 3 queries (has_live, has_imminent, has_post_ft) before Phase 1 match lookup
-    scalar_seq = ["live-exists", None, None, m]
+    # Gate makes 4 queries (has_live, has_imminent, has_post_ft, has_stale_scheduled) before Phase 1 match lookup
+    scalar_seq = ["live-exists", None, None, None, m]
     scalar_idx = [0]
 
     db = AsyncMock()
@@ -341,8 +341,8 @@ async def test_fulltime_triggers_scoring():
 
     m = _db_match(status="live", home_score=2, away_score=1)
 
-    # Gate makes 3 queries (has_live, has_imminent, has_post_ft) before Phase 1 match lookup
-    scalar_seq = ["live-exists", None, None, m]
+    # Gate makes 4 queries (has_live, has_imminent, has_post_ft, has_stale_scheduled) before Phase 1 match lookup
+    scalar_seq = ["live-exists", None, None, None, m]
     scalar_idx = [0]
 
     db = AsyncMock()
@@ -451,12 +451,14 @@ async def test_pre_kickoff_throttle():
         None,                    # has_live
         None,                    # has_imminent
         None,                    # has_post_ft
+        None,                    # has_stale_scheduled
         "near-kickoff-match",    # has_near  → triggers pre_kickoff mode
     ]
     scalar_seq_second = [
         None,    # has_live
         None,    # has_imminent
         None,    # has_post_ft
+        None,    # has_stale_scheduled
         "near-kickoff-match",    # has_near (still within 5 min of first poll)
     ]
 
@@ -571,3 +573,82 @@ async def test_post_ft_polling_window():
     svc.provider.fetch_by_id.assert_called_with("777001")
     # Score correction should re-trigger scoring
     mock_score.assert_called_once_with(finished_match.id, 0, 0, db)
+
+
+# ── Test 10: stuck "scheduled" match past kickoff forces a full sync ─────────
+
+@pytest.mark.asyncio
+async def test_stale_scheduled_match_forces_full_sync():
+    """
+    Regression test: a match whose live-feed update was missed during its
+    has_imminent window (e.g. a cron gap right at kickoff) must not be able
+    to silently fall out of every gate bucket forever. If it's still
+    'scheduled' well past kickoff — even when nothing else is live, imminent,
+    post-FT, or near-kickoff — sync_live must still run in 'full' mode so
+    Phase 3 (stale-scheduled recovery) gets a chance to fetch and correct it.
+    """
+    svc = _make_service()
+    svc.provider.fetch_live = AsyncMock(return_value=[])
+
+    stuck_match = _db_match(
+        external_id="888001",
+        status="scheduled",
+        scheduled_at=_NOW - timedelta(hours=8),  # kicked off long ago, never went live
+    )
+
+    corrected_fx = _provider_fixture(
+        external_id="888001",
+        status="finished",
+        period=None,
+        provider_status="FT",
+        home_score=2,
+        away_score=1,
+        minute=90,
+    )
+    svc.provider.fetch_by_id = AsyncMock(return_value=corrected_fx)
+
+    # Nothing else is live/imminent/post-FT/near-kickoff; only stale_scheduled is truthy
+    scalar_seq = [None, None, None, "stale-scheduled-exists"]
+    scalar_idx = [0]
+
+    async def _scalar(q):
+        if scalar_idx[0] < len(scalar_seq):
+            v = scalar_seq[scalar_idx[0]]
+            scalar_idx[0] += 1
+            return v
+        return None
+
+    db = AsyncMock()
+    db.commit = AsyncMock()
+    db.scalar = _scalar
+
+    results_seq = [
+        # Phase 2 (stale-live) — no candidates
+        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
+        # Phase 2.5 (post-FT) — no candidates
+        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
+        # Phase 3 (stale-scheduled) — returns our stuck match
+        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[stuck_match])))),
+    ]
+    exec_idx = [0]
+
+    async def _exec(q):
+        if exec_idx[0] < len(results_seq):
+            r = results_seq[exec_idx[0]]
+            exec_idx[0] += 1
+            return r
+        return MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))))
+
+    db.execute = _exec
+
+    with patch("core.scorer.score_match", new_callable=AsyncMock) as mock_score, \
+         patch.object(svc, "_start_log", new_callable=AsyncMock) as mock_start, \
+         patch.object(svc, "_finish_log", new_callable=AsyncMock) as mock_finish:
+        mock_start.return_value = MagicMock()
+        mock_finish.return_value = MagicMock(status="success")
+        result = await svc.sync_live(db)
+
+    assert result != "skipped"
+    # Phase 3 should have fetched the stuck match individually and recovered it
+    svc.provider.fetch_by_id.assert_called_with("888001")
+    mock_score.assert_called_once_with(stuck_match.id, 2, 1, db)

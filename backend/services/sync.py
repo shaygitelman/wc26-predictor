@@ -1288,7 +1288,17 @@ class SyncService:
             Match.external_id.isnot(None),
         ).limit(1))
 
-        if has_live or has_imminent or has_post_ft:
+        # Priority 3.5: still "scheduled" well past kickoff → stuck match, needs
+        # Phase 3 recovery. Without this, a match whose live-feed update is missed
+        # during its narrow has_imminent window falls out of every other bucket
+        # (not live, no longer imminent, not finished, not near-future) and the
+        # whole sync silently skips forever — Phase 3 never gets a chance to run.
+        has_stale_scheduled = await db.scalar(select(Match.id).where(
+            Match.status == "scheduled",
+            Match.scheduled_at <= _now - timedelta(minutes=5),
+        ).limit(1))
+
+        if has_live or has_imminent or has_post_ft or has_stale_scheduled:
             _run_mode = "full"
         else:
             # Priority 4: match 10-60 min from kickoff → pre-kickoff mode, throttled to 5 min
@@ -1300,7 +1310,7 @@ class SyncService:
 
             if not has_near:
                 _last_sync_mode = "skipped"
-                log.info("[Sync/live] SKIP — no live, imminent, post-FT, or near-kickoff matches at %s", _now.isoformat())
+                log.info("[Sync/live] SKIP — no live, imminent, post-FT, stale-scheduled, or near-kickoff matches at %s", _now.isoformat())
                 return SyncResult(status="skipped", entity_type="live", records_affected=0)
 
             if _last_pre_kickoff_poll_at and _now < _last_pre_kickoff_poll_at + timedelta(minutes=5):

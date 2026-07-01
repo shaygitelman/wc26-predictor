@@ -2,22 +2,28 @@ import secrets as _secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import get_db
 from core.player_seeds import GOLDEN_BOOT_PLAYER_SEEDS, _photo
-from core.scorer import score_match
+from core.scorer import _rerank_league, score_match
+from core.scoring import compute_outcome
 from core.wc2026_config import APIFOOTBALL_ID_TO_CODE, GROUPS
+from models.league import League, LeagueMember
 from models.match import Match
 from models.player import Player
+from models.prediction import Prediction
 from models.sync_log import SyncLog
 from models.team import Team
+from models.user import User
 from providers.apifootball import ApiFootballProvider
+from routers.auth import _unique_username
 from schemas.match import MatchOut
 from services.sync import SyncService
 from services.wc2026_seed import WC2026SeedService
@@ -1839,3 +1845,163 @@ async def get_api_usage() -> dict:
     """
     from services import api_stats
     return api_stats.get_stats()
+
+
+# ── Monkey AI user ──────────────────────────────────────────────────────
+# Creates (or reuses) a bot user whose picks are the app's own AI match-insights
+# recommendation, joined to every league, with points backfilled from the start
+# of the tournament — not just future matches.
+#
+# Resumable by design: each call only processes matches the monkey doesn't
+# already have a prediction for (up to `limit`), so a slow insights backend
+# or a request-size cap never loses progress — just call it again.
+
+_MONKEY_GOOGLE_ID     = "monkey-ai-bot"
+_MONKEY_INSIGHTS_BASE = "https://matchpoint26.vercel.app"
+
+
+def _monkey_score_from_edge(edge: dict | None) -> tuple[int, int]:
+    """
+    Turn the AI-insights qualitative "edge" (team + strength, no explicit
+    scoreline) into a concrete predicted score for the monkey to submit.
+    A "clear"/"dominant"/"strong" edge is a 2-goal margin; anything weaker
+    (e.g. "slight") is a 1-goal margin; a draw edge (or no edge at all) is 1-1.
+    """
+    team = (edge or {}).get("team")
+    if team not in ("home", "away"):
+        return (1, 1)
+    margin = 2 if (edge or {}).get("strength") in ("clear", "dominant", "strong") else 1
+    return (margin, 0) if team == "home" else (0, margin)
+
+
+def _known_team(code: str | None) -> bool:
+    return bool(code) and code.upper() not in ("TBD", "?", "")
+
+
+@router.post(
+    "/monkey/seed",
+    dependencies=[Depends(_verify_admin)],
+    summary="Create/refresh the Monkey AI user, backfill AI-recommended picks since the start of the tournament, and join every league.",
+)
+async def seed_monkey_user(
+    insights_base_url: str = Query(_MONKEY_INSIGHTS_BASE, description="Base URL of the deployed frontend used to fetch each match's AI insights"),
+    limit: int = Query(30, ge=1, le=200, description="Max not-yet-predicted matches to process this call — call again with the same params to continue"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    # ── 1. Find or create the monkey user ───────────────────────────
+    user = await db.scalar(select(User).where(User.google_id == _MONKEY_GOOGLE_ID))
+    created = False
+    if user is None:
+        username = await _unique_username("monkey_ai", db)
+        user = User(
+            google_id = _MONKEY_GOOGLE_ID,
+            email     = "monkey-ai@wc26.bot",
+            username  = username,
+            name      = "Monkey AI",
+        )
+        db.add(user)
+        await db.flush()
+        created = True
+
+    # ── 2. Join every existing league ───────────────────────────────
+    all_league_ids = [lid for (lid,) in (await db.execute(select(League.id))).all()]
+    existing_league_ids = {
+        lid for (lid,) in (await db.execute(
+            select(LeagueMember.league_id).where(LeagueMember.user_id == user.id)
+        )).all()
+    }
+    joined = 0
+    for lid in all_league_ids:
+        if lid not in existing_league_ids:
+            db.add(LeagueMember(league_id=lid, user_id=user.id, total_points=0))
+            joined += 1
+    await db.flush()
+
+    # ── 3. Matches still needing a monkey prediction ────────────────
+    predicted_match_ids = {
+        mid for (mid,) in (await db.execute(
+            select(Prediction.match_id).where(Prediction.user_id == user.id)
+        )).all()
+    }
+    all_matches = (await db.execute(select(Match).order_by(Match.scheduled_at))).scalars().all()
+    pending = [
+        m for m in all_matches
+        if m.id not in predicted_match_ids
+        and _known_team(m.home_team_code) and _known_team(m.away_team_code)
+    ]
+    batch = pending[:limit]
+
+    processed = 0
+    failed: list[dict] = []
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for m in batch:
+            try:
+                res = await client.get(f"{insights_base_url}/api/matches/{m.id}/insights")
+                res.raise_for_status()
+                edge = res.json().get("edge")
+            except Exception as exc:
+                failed.append({"match_id": m.id, "error": str(exc)})
+                continue
+
+            home_pred, away_pred = _monkey_score_from_edge(edge)
+            now = datetime.now(timezone.utc)
+            pred = Prediction(
+                user_id        = user.id,
+                match_id       = m.id,
+                predicted_home = home_pred,
+                predicted_away = away_pred,
+                is_auto_pick   = False,
+                locked_at      = m.scheduled_at if m.status != "scheduled" else None,
+                created_at     = now,
+                updated_at     = now,
+            )
+            if m.status == "finished" and m.home_score is not None and m.away_score is not None:
+                outcome, points = compute_outcome(home_pred, away_pred, m.home_score, m.away_score, m.round)
+                pred.outcome = outcome
+                pred.points_earned = points
+            db.add(pred)
+            processed += 1
+
+    await db.flush()
+
+    # ── 4. Recompute aggregates from ALL of the monkey's predictions ─
+    total_pts, exact_cnt, correct_cnt, pred_cnt = (await db.execute(
+        select(
+            func.coalesce(func.sum(Prediction.points_earned), 0),
+            func.count(Prediction.id).filter(Prediction.outcome == "exact"),
+            func.count(Prediction.id).filter(Prediction.outcome.in_(["exact", "outcome", "difference"])),
+            func.count(Prediction.id),
+        ).where(Prediction.user_id == user.id)
+    )).one()
+    user.total_points        = total_pts
+    user.exact_scores        = exact_cnt
+    user.correct_predictions = correct_cnt
+    user.total_predictions   = pred_cnt
+
+    # ── 5. Sync league_members + re-rank every league the monkey is in ─
+    await db.execute(
+        update(LeagueMember)
+        .where(LeagueMember.user_id == user.id)
+        .values(total_points=total_pts)
+        .execution_options(synchronize_session=False)
+    )
+    for lid in all_league_ids:
+        await _rerank_league(lid, db)
+
+    await db.commit()
+
+    return {
+        "user_id":                     user.id,
+        "username":                    user.username,
+        "created":                     created,
+        "leagues_joined_this_call":    joined,
+        "leagues_total":               len(all_league_ids),
+        "matches_processed_this_call": processed,
+        "matches_failed_this_call":    failed,
+        "matches_remaining":           len(pending) - processed,
+        "total_points":                total_pts,
+        "exact_scores":                exact_cnt,
+        "correct_predictions":         correct_cnt,
+        "total_predictions":           pred_cnt,
+    }

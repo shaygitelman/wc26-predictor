@@ -39,8 +39,17 @@ function kickoffLabel(scheduledAt: string) {
 //
 // "Shown" state lives in localStorage, keyed by fact id, so it persists across
 // visits on the same device without needing a backend.
+//
+// The key is versioned. Bump it whenever a change to scoring/ranking would
+// make old "shown" history misleading — e.g. a fact that scored low under an
+// old model and got marked shown early would otherwise keep blocking a
+// higher-scored fact from ever surfacing for a returning visitor, since the
+// anti-repeat lap logic only knows "already shown", not "shown by which
+// version of the algorithm". Bumping the key makes every visitor start a
+// clean lap under the current model instead of silently inheriting stale
+// history from before the change.
 
-const SHOWN_KEY = 'wc26:dyk:shown:v1'
+const SHOWN_KEY = 'wc26:dyk:shown:v2'
 
 interface ShownEntry {
   count:   number  // how many times this fact has ever been shown

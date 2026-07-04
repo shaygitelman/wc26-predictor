@@ -25,14 +25,17 @@ function kickoffLabel(scheduledAt: string) {
 //      which returns the H2H pool exclusively whenever one exists.
 //   2. Facts never shown to this visitor before, over facts already shown.
 //      Repeats only happen once every fact in the pool has been shown.
-//   3. Modern (2010-2026) over recent (1990-2010) over classic (1970-1990,
-//      only when individually iconic) over vintage (pre-1970, only when
-//      individually legendary) — see eraRank. Non-iconic classic/vintage
-//      facts aren't excluded, just ranked behind everything else.
-//   4. Among the survivors of (3), the highest interestingScore.
-//   5. Ties broken by least-recently-shown (never-shown counts as longest ago).
-//   6. Any remaining tie is broken by a deterministic day-based rotation, so
-//      it doesn't always resolve to the same array element.
+//   3. Among the survivors of (2), the highest interestingScore — which is
+//      authored to mean "wow, I didn't know that", not "how famous/modern is
+//      this". A bizarre 1986 stat can and should outrank a well-known 2022
+//      one; common-knowledge facts (Messi won the World Cup, Brazil have won
+//      five titles) are scored low regardless of how recent they are.
+//   4. Ties broken by least-recently-shown (never-shown counts as longest ago).
+//   5. Any remaining tie is broken by preferring the more modern fact — this
+//      only ever applies among facts that are already equally surprising and
+//      equally fresh, so modernity never overrides substance.
+//   6. Any tie still remaining is broken by a deterministic day-based
+//      rotation, so it doesn't always resolve to the same array element.
 //
 // "Shown" state lives in localStorage, keyed by fact id, so it persists across
 // visits on the same device without needing a backend.
@@ -77,20 +80,15 @@ function rotate<T>(arr: T[], seed: number): T {
   return arr[((seed % arr.length) + arr.length) % arr.length]
 }
 
-// How "modern" a fact is allowed to feel. A fact only earns credit for its
-// era if it's either from that era outright, or — for older eras — if it's
-// individually scored as iconic/legendary (interestingScore 9+). A mediocre
-// fact that happens to be from 1975 doesn't get to rank above a great modern
-// one just because it's old; it drops all the way to the bottom instead.
-const ICONIC_THRESHOLD = 9
-
-function eraRank(f: MatchFact): number {
-  const iconic = f.interestingScore >= ICONIC_THRESHOLD
+// Used only as the very last tiebreaker, once two facts are already tied on
+// surprise value (interestingScore) and on how recently they were shown. It
+// never overrides substance — see pickBestFact.
+function eraWeight(f: MatchFact): number {
   switch (f.era) {
-    case 'modern':  return 5
-    case 'recent':  return 4
-    case 'classic': return iconic ? 3 : 1
-    case 'vintage': return iconic ? 2 : 0
+    case 'modern':  return 3
+    case 'recent':  return 2
+    case 'classic': return 1
+    case 'vintage': return 0
   }
 }
 
@@ -101,25 +99,25 @@ function eraRank(f: MatchFact): number {
 // the exhaustion behavior repeats at every level instead of collapsing into a
 // tight loop over just the top-scored handful once the pool empties out once.
 // Within whichever lap is currently open, the ordering is exactly the
-// requested priority: modern-first era tier, then highest interestingScore,
-// tie-broken by least recently shown, tie-broken by a deterministic
-// day-based rotation.
+// requested priority: highest interestingScore (surprise value) first,
+// tie-broken by least recently shown, tie-broken by preferring the more
+// modern fact, tie-broken by a deterministic day-based rotation.
 function pickBestFact(pool: MatchFact[], shownMap: ShownMap, dayIndex: number): MatchFact {
   const countOf = (f: MatchFact) => shownMap[f.id]?.count ?? 0
   const minCount   = Math.min(...pool.map(countOf))
   const candidates = pool.filter(f => countOf(f) === minCount)
 
-  const bestEra = Math.max(...candidates.map(eraRank))
-  const eraTier = candidates.filter(f => eraRank(f) === bestEra)
-
-  const bestScore = Math.max(...eraTier.map(f => f.interestingScore))
-  const topScored = eraTier.filter(f => f.interestingScore === bestScore)
+  const bestScore = Math.max(...candidates.map(f => f.interestingScore))
+  const topScored = candidates.filter(f => f.interestingScore === bestScore)
 
   const lastDayOf   = (f: MatchFact) => shownMap[f.id]?.lastDay ?? -Infinity
   const oldestShown = Math.min(...topScored.map(lastDayOf))
   const leastRecent = topScored.filter(f => lastDayOf(f) === oldestShown)
 
-  return rotate(leastRecent, dayIndex)
+  const bestEra = Math.max(...leastRecent.map(eraWeight))
+  const finalTier = leastRecent.filter(f => eraWeight(f) === bestEra)
+
+  return rotate(finalTier, dayIndex)
 }
 
 function relevantPool(homeCode: string, awayCode: string): MatchFact[] {

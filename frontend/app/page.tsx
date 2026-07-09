@@ -12,6 +12,7 @@ import { LeagueCard } from '@/components/molecules/league-card'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
 import { DidYouKnow } from '@/components/atoms/did-you-know'
 import { apiGet, apiGetCached } from '@/lib/api-server'
+import { compareMatchesChronologically } from '@/lib/utils'
 import { getSessionUser } from '@/lib/session'
 import type { User, UserStats } from '@/types/user'
 import type { Match, TeamDetail } from '@/types/match'
@@ -69,7 +70,7 @@ export default async function HomePage() {
 
   const scheduled    = matches
     .filter(m => m.status === 'scheduled')
-    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+    .sort(compareMatchesChronologically)
   const earliestTime = scheduled[0]?.scheduledAt ?? null
   const nextMatches  = earliestTime ? scheduled.filter(m => m.scheduledAt === earliestTime) : []
 

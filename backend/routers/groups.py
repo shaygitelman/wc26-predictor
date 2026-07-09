@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.ordering import MATCH_ORDER_BY
 from core.wc2026_config import CODE_TO_GROUP, GROUP_ORDER, GROUPS as CONFIG_GROUPS
 from models.match import Match
 from models.team import Team
@@ -178,7 +179,7 @@ async def group_standings(db: AsyncSession = Depends(get_db)) -> list[GroupStand
         await db.execute(
             select(Match)
             .where(Match.round == "group", Match.external_id.is_not(None))
-            .order_by(Match.scheduled_at)
+            .order_by(*MATCH_ORDER_BY)
         )
     ).scalars().all()
 
@@ -363,7 +364,7 @@ async def bracket(db: AsyncSession = Depends(get_db)) -> list[BracketEntry]:
         await db.execute(
             select(Match)
             .where(Match.round.in_(["r32", "r16", "qf", "sf", "3rd", "final"]))
-            .order_by(Match.scheduled_at)
+            .order_by(*MATCH_ORDER_BY)
         )
     ).scalars().all()
 

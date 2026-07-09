@@ -5,6 +5,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Deterministic chronological match ordering, shared by the matches page and
+ * home page "next match" widget so the schedule can't sort differently
+ * between pages. Ties on scheduledAt (including two rows that turn out to be
+ * duplicates of the same fixture) fall back to `id` instead of being left in
+ * whatever order the API/array happened to return them.
+ */
+export function compareMatchesChronologically(
+  a: { scheduledAt: string; id: string },
+  b: { scheduledAt: string; id: string },
+): number {
+  const byTime = new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+  return byTime !== 0 ? byTime : a.id.localeCompare(b.id)
+}
+
 // All match times are stored as UTC and displayed in Israel Standard / Daylight Time.
 const IL_TZ = 'Asia/Jerusalem'
 

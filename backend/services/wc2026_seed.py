@@ -146,6 +146,42 @@ _PREV_ROUND: dict[str, str] = {
 }
 
 
+def _is_tbd_code(code: "str | None") -> bool:
+    return (code or "TBD").upper() in ("TBD", "", "NONE")
+
+
+def group_duplicate_matches(matches: "list[Match]") -> "dict[tuple[str, str, str], list[Match]]":
+    """
+    Group matches by (round, sorted team-code pair). Any group with more than
+    one row is a duplicate: the same real-world fixture stored as two DB rows
+    (see merge_duplicate_matches for how this happens). TBD rows are excluded
+    since many legitimately share "TBD" as a placeholder code within a round.
+    """
+    groups: dict[tuple[str, str, str], list[Match]] = {}
+    for m in matches:
+        if _is_tbd_code(m.home_team_code) or _is_tbd_code(m.away_team_code):
+            continue
+        key = (m.round, *sorted([m.home_team_code.upper(), m.away_team_code.upper()]))
+        groups.setdefault(key, []).append(m)
+    return groups
+
+
+def pick_duplicate_keeper(dup_matches: "list[Match]") -> "tuple[Match, list[Match]]":
+    """
+    Given 2+ rows for the same real fixture, decide which one to keep.
+    Prefers a real (provider-confirmed) external_id over a manual-wc2026-*
+    placeholder, since the real one carries the confirmed kickoff time/venue.
+    Ties (both or neither real) fall back to the older row.
+    Returns (keeper, [losers...]).
+    """
+    def _rank(m: "Match") -> tuple:
+        is_placeholder = (m.external_id or "").startswith("manual-wc2026-")
+        return (1 if is_placeholder else 0, m.created_at)
+
+    ordered = sorted(dup_matches, key=_rank)
+    return ordered[0], ordered[1:]
+
+
 @dataclass
 class SeedResult:
     created: int = 0
@@ -394,6 +430,88 @@ class WC2026SeedService:
             count += res.rowcount
         await self.db.commit()
         return count
+
+    async def merge_duplicate_matches(self) -> dict:
+        """
+        One-time cleanup: find knockout matches within the same round that share
+        the same team pair (home/away, either order) across more than one row,
+        and merge them into a single row.
+
+        Root cause this repairs: reconcile_knockout_slots' bracket-slot
+        propagation (Phase A) and its legacy positional-zip matching (Phase B)
+        used to run without checking each other's work — Phase A could write
+        the real advancing teams onto the bracket-correct placeholder while
+        Phase B, moments later, matched the same real fixture onto a different
+        still-"unreconciled" placeholder purely by chronological position. That
+        produced two DB rows for the same real match (e.g. Norway vs England),
+        one keeping a stale estimated kickoff time, the other the confirmed one.
+        The matching bug is fixed going forward; this repairs rows already
+        duplicated by it. Idempotent — finds nothing to merge once clean.
+
+        Keeps the row with a real (non-"manual-wc2026-") external_id when the
+        rows disagree, since that one carries the provider-confirmed date/venue.
+        If both or neither do, keeps the older row (earliest created_at).
+        Any predictions on the removed row are reassigned to the kept row
+        unless that user already has a prediction there (in which case the
+        duplicate prediction is dropped, never double-counted).
+        """
+        from models.prediction import Prediction
+
+        rows = (await self.db.execute(
+            select(Match).where(
+                Match.round.in_(["r32", "r16", "qf", "sf", "3rd", "final"])
+            )
+        )).scalars().all()
+
+        groups = group_duplicate_matches(rows)
+
+        merged = 0
+        merged_pairs: list[str] = []
+        for key, dup_ms in groups.items():
+            if len(dup_ms) < 2:
+                continue
+
+            keeper, losers = pick_duplicate_keeper(dup_ms)
+
+            for loser in losers:
+                preds = (await self.db.execute(
+                    select(Prediction).where(Prediction.match_id == loser.id)
+                )).scalars().all()
+                if preds:
+                    existing_user_ids = {
+                        p.user_id for p in (await self.db.execute(
+                            select(Prediction).where(Prediction.match_id == keeper.id)
+                        )).scalars().all()
+                    }
+                    for p in preds:
+                        if p.user_id in existing_user_ids:
+                            await self.db.delete(p)
+                        else:
+                            p.match_id = keeper.id
+
+                # Backfill keeper fields that are null, from the row being removed.
+                backfill: dict = {}
+                for field in (
+                    "venue", "city", "thumb_url", "home_score", "away_score",
+                    "penalty_home", "penalty_away", "minute", "bracket_slot",
+                ):
+                    if getattr(keeper, field) is None and getattr(loser, field) is not None:
+                        backfill[field] = getattr(loser, field)
+                if backfill:
+                    backfill["updated_at"] = datetime.now(timezone.utc)
+                    from sqlalchemy import update as _upd
+                    await self.db.execute(
+                        _upd(Match).where(Match.id == keeper.id)
+                        .values(**backfill)
+                        .execution_options(synchronize_session=False)
+                    )
+
+                await self.db.delete(loser)
+                merged += 1
+                merged_pairs.append(f"{key[0]}:{key[1]}-{key[2]} (kept={keeper.id}, removed={loser.id})")
+
+        await self.db.commit()
+        return {"merged": merged, "pairs": merged_pairs}
 
     # ── Helpers ──────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ import { ContextHeader } from '@/components/layout/context-header'
 import { MatchCard } from '@/components/molecules/match-card'
 import { LiveDot } from '@/components/atoms/live-dot'
 import { LiveRefresh } from '@/components/atoms/live-refresh'
-import { formatMatchDate } from '@/lib/utils'
+import { compareMatchesChronologically, formatMatchDate } from '@/lib/utils'
 import type { Match } from '@/types/match'
 import { apiFetch } from '@/lib/api-client'
 import type { Prediction } from '@/types/prediction'
@@ -60,7 +60,7 @@ function groupByDate(matches: Match[]): Array<{ dateKey: string; dateLabel: stri
         const aLive = a.status === 'live' ? 0 : 1
         const bLive = b.status === 'live' ? 0 : 1
         if (aLive !== bLive) return aLive - bLive
-        return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+        return compareMatchesChronologically(a, b)
       }),
     }))
 }

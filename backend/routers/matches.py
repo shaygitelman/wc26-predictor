@@ -9,6 +9,7 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.ordering import MATCH_ORDER_BY
 from dependencies.auth import get_current_user
 from models.league import League, LeagueMember
 from models.match import Match
@@ -32,7 +33,7 @@ async def list_matches(
     group_filter:  Optional[str] = Query(None, alias="group"),
     db: AsyncSession = Depends(get_db),
 ) -> list[MatchOut]:
-    q = select(Match).order_by(Match.scheduled_at)
+    q = select(Match).order_by(*MATCH_ORDER_BY)
     if status_filter:
         q = q.where(Match.status == status_filter)
     if round_filter:

@@ -1,14 +1,15 @@
 #!/bin/bash
 # Run Alembic migrations before starting the server.
-# If upgrade fails because tables already exist (DuplicateTableError),
-# stamp head so Alembic learns the current state, then retry.
-# A genuine new-migration failure on the second run still exits non-zero.
+# If the migration fails, the deploy must fail visibly — never silently
+# stamp head to paper over a failed upgrade, since that can mark a migration
+# as applied when its schema changes were never actually made.
 set -e
 
+echo "[start.sh] running alembic upgrade head..."
 if ! alembic upgrade head; then
-    echo "alembic upgrade head failed — tables may already exist, stamping head and retrying"
-    alembic stamp head
-    alembic upgrade head
+    echo "[start.sh] FATAL: alembic upgrade head failed — aborting deploy" >&2
+    exit 1
 fi
+echo "[start.sh] alembic upgrade head succeeded"
 
 exec uvicorn main:app --host 0.0.0.0 --port "$PORT"

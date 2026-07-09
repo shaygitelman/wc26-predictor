@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import get_db
+from core.ordering import MATCH_ORDER_BY
 from core.player_seeds import GOLDEN_BOOT_PLAYER_SEEDS, _photo
 from core.scorer import _rerank_league, score_match
 from core.scoring import compute_outcome
@@ -593,7 +594,7 @@ async def fixture_mapping_audit(db: AsyncSession = Depends(get_db)) -> dict:
     """
     # ── Per-match classification ──────────────────────────────────
     all_matches = (
-        await db.execute(select(Match).order_by(Match.scheduled_at))
+        await db.execute(select(Match).order_by(*MATCH_ORDER_BY))
     ).scalars().all()
 
     synced:  list[dict] = []
@@ -1270,7 +1271,7 @@ async def schedule_audit(db: AsyncSession = Depends(get_db)) -> dict:
     from datetime import date as _date, timedelta as _td
 
     all_matches = (
-        await db.execute(select(Match).order_by(Match.scheduled_at))
+        await db.execute(select(Match).order_by(*MATCH_ORDER_BY))
     ).scalars().all()
 
     date_round_counts: dict[str, dict[str, int]] = _dd(lambda: _dd(int))
@@ -1446,6 +1447,25 @@ async def admin_fix_r32_placeholder_rounds(db: AsyncSession = Depends(get_db)) -
         "r16_count":        r16,
         "summary_verdict":  "OK — r32=16, r16=8" if not issues else "ISSUES: " + "; ".join(issues),
     }
+
+
+@router.post(
+    "/maintenance/merge-duplicate-matches",
+    dependencies=[Depends(_verify_admin)],
+    summary=(
+        "One-time cleanup: merge knockout matches that were split into two DB "
+        "rows for the same real fixture (same round + team pair, different "
+        "external_id/date) by the reconcile_knockout_slots matching bug. Keeps "
+        "the row with a real (non-placeholder) external_id, reassigns any "
+        "predictions from the removed row, and deletes it. Idempotent — safe "
+        "to call repeatedly; call after deploying the reconcile_knockout_slots "
+        "fix to clean up rows duplicated before the fix landed."
+    ),
+)
+async def merge_duplicate_matches(db: AsyncSession = Depends(get_db)) -> dict:
+    from services.wc2026_seed import WC2026SeedService
+
+    return await WC2026SeedService(db).merge_duplicate_matches()
 
 
 # ── Official bracket map ──────────────────────────────────────────────

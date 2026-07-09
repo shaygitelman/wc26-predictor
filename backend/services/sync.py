@@ -78,6 +78,77 @@ def _ko_winner(
     )
 
 
+def _is_tbd_code(code: "str | None") -> bool:
+    return (code or "TBD").upper() in ("TBD", "", "NONE")
+
+
+def _split_ko_placeholders_by_identity(
+    placeholders: list["Match"],
+) -> "tuple[dict[tuple[str, str], Match], list[Match]]":
+    """
+    Partition R16+ round placeholders ahead of reconcile_knockout_slots' Phase B.
+
+    Phase A (bracket-slot propagation) may already have written the real
+    advancing teams onto a placeholder's home/away codes before Phase B runs.
+    Those rows must be matched to their real fixture by team identity, not by
+    chronological position — matching by position let a real fixture land on
+    whichever placeholder slot merely sorted first among "still unreconciled"
+    rows, even when a *different* slot already held the correct teams for that
+    exact match. That produced two DB rows for the same real-world fixture
+    (e.g. Norway vs England twice, one with a stale placeholder date, one with
+    the confirmed date) — this split is what prevents it.
+
+    Returns (by_codes, still_tbd):
+      by_codes:  {(HOME, AWAY): placeholder} for both team orders, for any
+                 placeholder whose teams are already known.
+      still_tbd: placeholders with no known teams yet, in their original
+                 (slot-number) order, for positional fallback matching.
+    """
+    by_codes: dict[tuple[str, str], "Match"] = {}
+    still_tbd: list["Match"] = []
+    for p in placeholders:
+        if _is_tbd_code(p.home_team_code) or _is_tbd_code(p.away_team_code):
+            still_tbd.append(p)
+        else:
+            pair = (p.home_team_code.upper(), p.away_team_code.upper())
+            by_codes[pair] = p
+            by_codes[(pair[1], pair[0])] = p
+    return by_codes, still_tbd
+
+
+def _fixture_to_new_match_values(fx: "ProviderFixture", round_code: str) -> dict:
+    """
+    Build the insert values for a real fixture that couldn't be matched to any
+    R32 placeholder guess in _R32_LABELS (see reconcile_knockout_slots).
+
+    _R32_LABELS is a hand-picked estimate of the bracket for slots not yet
+    confirmed when it was written; if the real pairing (e.g. Spain vs
+    Switzerland) doesn't match any guess, the old code silently dropped the
+    fixture instead of inserting it. This produces a real Match row so the
+    fixture is at least visible with the correct teams/date. It has no
+    bracket_slot (the guess table couldn't place it), so it won't participate
+    in Phase A bracket propagation until an admin backfills one.
+    """
+    return dict(
+        id             = str(uuid.uuid4()),
+        external_id    = fx.external_id,
+        home_team_code = fx.home_team_code,
+        home_team_name = fx.home_team_name,
+        home_flag_url  = fx.home_flag_url,
+        away_team_code = fx.away_team_code,
+        away_team_name = fx.away_team_name,
+        away_flag_url  = fx.away_flag_url,
+        scheduled_at   = fx.scheduled_at,
+        venue          = fx.venue,
+        city           = fx.city,
+        round          = round_code,
+        status         = fx.status,
+        home_score     = fx.home_score,
+        away_score     = fx.away_score,
+        minute         = fx.minute,
+    )
+
+
 @dataclass
 class SyncResult:
     status:           str
@@ -992,10 +1063,31 @@ class SyncService:
 
                         ph = _ph_by_label.get((h_lbl, a_lbl)) or _ph_by_label.get((a_lbl, h_lbl))
                         if not ph or ph.id in _updated_ids:
-                            if not ph:
-                                if fx.external_id not in _reconciled_ext:
+                            if not ph and fx.external_id not in _reconciled_ext:
+                                # _R32_LABELS is a hand-picked guess at the bracket for
+                                # slots not yet confirmed; if the real pairing doesn't
+                                # match any guess, insert the fixture directly instead
+                                # of silently dropping it. It won't carry a bracket_slot
+                                # (so Phase A propagation won't advance its winner until
+                                # an admin backfills one), but it's visible with correct
+                                # teams/date rather than missing entirely.
+                                try:
+                                    await db.execute(
+                                        pg_insert(Match)
+                                        .values(**_fixture_to_new_match_values(fx, "r32"))
+                                        .on_conflict_do_nothing(index_elements=["external_id"])
+                                    )
+                                    count += 1
+                                    log.warning(
+                                        "[Sync/reconcile_knockout] r32 %s: inserted unmatched "
+                                        "fixture %s vs %s (labels %s/%s not in _R32_LABELS) — "
+                                        "no bracket_slot assigned",
+                                        fx.external_id, fx.home_team_code, fx.away_team_code,
+                                        h_lbl, a_lbl,
+                                    )
+                                except Exception as exc:
                                     errors.append(
-                                        f"r32 {fx.external_id}: no placeholder for ({h_lbl}, {a_lbl})"
+                                        f"r32 {fx.external_id}: insert-unmatched failed: {exc}"
                                     )
                             continue
                         _updated_ids.add(ph.id)
@@ -1117,8 +1209,21 @@ class SyncService:
                 continue  # r32 done — move to next round
 
             # Progressive matching for R16 and later — no count-equality gate.
-            # API fixtures and DB placeholders are both in chronological (slot) order.
-            # Skip already-reconciled API fixtures; fill unreconciled DB slots in sequence.
+            # Two-tier matching, in order:
+            #   1. Identity match: Phase A (bracket-slot propagation, above) may
+            #      have already written the real advancing teams into a
+            #      placeholder's home/away codes before this phase runs. If so,
+            #      match this fixture to that exact placeholder by team code —
+            #      this is authoritative and must win over guesswork.
+            #   2. Positional fallback: for placeholders Phase A hasn't resolved
+            #      yet (both sides still TBD), fall back to zipping by
+            #      chronological order, same as before.
+            # Matching purely by position (the old approach) let a real fixture
+            # get written onto whichever slot sorted first among "unreconciled"
+            # placeholders, even when Phase A had already put the correct teams
+            # on a *different* slot — producing two rows for the same real match
+            # (one via Phase A's correct slot, one via Phase B's mis-slotted
+            # positional guess), each keeping a different external_id/date.
             # Inline per-fixture duplicate removal replaces the old upfront orphan sweep.
             from models.prediction import Prediction
 
@@ -1133,15 +1238,18 @@ class SyncService:
                 and m.id not in _ph_ids
             }
 
+            _ph_by_codes, _ph_tbd = _split_ko_placeholders_by_identity(db_placeholders)
+
             _upd_rnd: set[str] = set()
-            _ph_iter = iter(db_placeholders)
+            _ph_iter = iter(_ph_tbd)
 
             for fx in api_fixtures:
                 try:
                     if fx.external_id in _rec_rnd:
                         continue
 
-                    ph = next(_ph_iter, None)
+                    _fx_pair = (fx.home_team_code.upper(), fx.away_team_code.upper())
+                    ph = _ph_by_codes.get(_fx_pair) or next(_ph_iter, None)
                     if ph is None:
                         if fx.external_id not in _rec_rnd:
                             errors.append(
